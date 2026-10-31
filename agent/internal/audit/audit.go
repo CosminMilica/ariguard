@@ -37,7 +37,25 @@ func lookup(table []string, v uint32) string {
 func ActionName(a uint32) string { return lookup(actionNames[:], a) }
 
 // Names holds the bundle metadata of the active policy; safe for concurrent use.
-type Names struct{ meta atomic.Pointer[fsm.Meta] }
+type Names struct {
+	meta  atomic.Pointer[fsm.Meta]
+	comms CommCache
+}
+
+// SetComm records the last-seen process command of a cgroup.
+func (n *Names) SetComm(cgroup uint64, comm string) {
+	if n != nil {
+		n.comms.Set(cgroup, comm)
+	}
+}
+
+// Comm returns the last-seen process command of a cgroup.
+func (n *Names) Comm(cgroup uint64) (string, bool) {
+	if n == nil {
+		return "", false
+	}
+	return n.comms.Get(cgroup)
+}
 
 // Store publishes the names of a newly applied bundle.
 func (n *Names) Store(m fsm.Meta) { n.meta.Store(&m) }

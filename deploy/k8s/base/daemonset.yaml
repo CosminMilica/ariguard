@@ -32,6 +32,15 @@ spec:
             - --object=/opt/ariguard/ariguard.bpf.o
             - --bundle=/opt/ariguard/policy.bin
             - --metrics-addr=:9102
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           ports:
             - name: metrics
               containerPort: 9102

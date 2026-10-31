@@ -1,0 +1,19 @@
+services:
+  ariguard-console-backend:
+    build: ./backend
+    image: ariguard-console-backend:dev
+    volumes:
+      - console-db:/data
+    restart: unless-stopped
+
+  ariguard-console-frontend:
+    build: ./frontend
+    image: ariguard-console-frontend:dev
+    ports:
+      - "8080:80"
+    depends_on:
+      - ariguard-console-backend
+    restart: unless-stopped
+
+volumes:
+  console-db:
