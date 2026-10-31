@@ -35,6 +35,16 @@ spec:
           ports:
             - name: metrics
               containerPort: 9102
+          # The metrics server binds only after the policy is applied and the
+          # programs are attached, so a successful probe means the agent is
+          # actually enforcing — not merely that the container started.
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            failureThreshold: 20
           securityContext:
             privileged: true
             capabilities:
