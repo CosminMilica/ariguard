@@ -3,7 +3,7 @@ name = "statewall-compiler"
 version = "0.1.0"
 description = "Compile threat intelligence (ATT&CK / Sigma / syscall traces) into Statewall in-kernel FSM transition tables."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["PyYAML>=6.0"]
 
 [project.scripts]
 statewall-compile = "statewall_compiler.cli:main"

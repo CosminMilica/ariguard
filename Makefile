@@ -1,13 +1,18 @@
-.PHONY: help dev-up dev-down build build-bpf build-go build-compiler deploy load-policy demo-escape test fmt clean
+.PHONY: help dev-up dev-down build build-bpf build-go build-compiler proto golden deploy load-policy demo-escape test fmt clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-dev-up: ## Provision a Linux VM + single-node kind cluster
-	@echo "TODO(phase-0): provision Lima/multipass VM + kind cluster"
+dev-up: ## Provision the Linux dev VM (Lima) + kind cluster
+	limactl start --name=statewall --tty=false deploy/lima/statewall.yaml
+	limactl stop statewall && limactl start statewall --tty=false   # apply BPF LSM cmdline
+	limactl shell statewall -- bash -lc 'cd $(CURDIR) && kind create cluster --name statewall-dev --config deploy/kind/cluster.yaml'
+	@echo "Dev VM ready. Enter with: limactl shell statewall"
 
 dev-down: ## Tear down the local dev environment
-	@echo "TODO(phase-0): destroy VM + kind cluster"
+	-limactl shell statewall -- kind delete cluster --name statewall-dev
+	-limactl stop statewall
+	limactl delete statewall
 
 build: build-bpf build-go build-compiler ## Build everything
 
@@ -19,6 +24,14 @@ build-go: ## Build the Go agent + control-plane
 
 build-compiler: ## Install the Python rule compiler (editable)
 	cd compiler && pip install -e .
+
+proto: ## Generate Go + gRPC from proto/ (needs: buf, protoc-gen-go, protoc-gen-go-grpc — see proto/README.md)
+	buf generate proto
+
+golden: ## Regenerate the cross-language golden transition table
+	cd compiler && python -m statewall_compiler.cli \
+		--input rules/container-escape.yml \
+		--out ../testdata/golden/container-escape.bin
 
 deploy: ## Deploy the DaemonSet + operator to the kind cluster
 	@echo "TODO(phase-1): kubectl apply -k deploy/k8s"

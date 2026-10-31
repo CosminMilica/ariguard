@@ -1,0 +1,37 @@
+# Container-escape kill chain (see README.md).
+# open docker.sock -> setns/unshare -> mount -> execve -> compromised.
+name: container-escape
+
+states:
+  - normal
+  - suspicious
+  - escalating
+  - breakout_imminent
+  - compromised
+
+events:
+  runtime_socket_open: [open, openat]
+  namespace_manipulation: [setns, unshare]
+  host_mount: [mount]
+  critical_execve: [execve]
+
+transitions:
+  - from: normal
+    event: runtime_socket_open
+    to: suspicious
+    action: observe
+
+  - from: suspicious
+    event: namespace_manipulation
+    to: escalating
+    action: throttle
+
+  - from: escalating
+    event: host_mount
+    to: breakout_imminent
+    action: deny
+
+  - from: breakout_imminent
+    event: critical_execve
+    to: compromised
+    action: kill
