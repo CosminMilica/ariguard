@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="logo.jpeg" alt="Statewall" width="440">
+  <img src="logo.png" alt="AriGuard" width="440">
 </p>
 
-# Statewall
+# AriGuard
 
 > **In-kernel, zero-allocation threat mitigation.**
-> Statewall recognizes *multi-stage* attacks as they unfold inside the Linux kernel and blocks the critical step **synchronously** — before the payload executes.
+> AriGuard recognizes *multi-stage* attacks as they unfold inside the Linux kernel and blocks the critical step **synchronously** — before the payload executes.
 
 [![status](https://img.shields.io/badge/status-early--development-orange)](#project-status)
 [![data plane](https://img.shields.io/badge/data%20plane-Rust%20%2B%20Aya-dea584)](#technology-stack)
@@ -14,7 +14,7 @@
 
 ---
 
-## What is Statewall?
+## What is AriGuard?
 
 Most runtime security tools (Falco, Tetragon) are **reactive** and **point-based**: they
 observe a single syscall, ship the event to user space over a ring buffer, and *then*
@@ -23,9 +23,9 @@ decide what to do — by which time the payload has already run. They also reaso
 escalation → persistence → exfiltration. Any single step looks benign; the *chain* is the
 attack.
 
-Statewall takes a different approach. It runs a **finite state machine entirely in the
+AriGuard takes a different approach. It runs a **finite state machine entirely in the
 kernel**. Syscalls are *transitions*; each process/container carries a *state*. When a
-sequence advances to a compromised state, Statewall mitigates **synchronously** from
+sequence advances to a compromised state, AriGuard mitigates **synchronously** from
 inside the kernel (deny the syscall with `-EPERM`, kill, or quarantine) — on the hot path,
 before the critical operation completes.
 
@@ -41,7 +41,7 @@ traces) is turned into the compact in-kernel transition tables by an offline **c
 
 ## Why it's different
 
-| | Falco / Tetragon (typical) | **Statewall** |
+| | Falco / Tetragon (typical) | **AriGuard** |
 |---|---|---|
 | Detection unit | single event | **multi-stage sequence (FSM)** |
 | Decision location | user space (async) | **in-kernel (synchronous)** |
@@ -78,7 +78,7 @@ observed via kprobe/tracepoint/LSM hook.
 A single `mount` or `setns` is normal in many workloads. The **ordered sequence** is what
 trips the machine.
 
-Each rule is one such chain. Statewall runs **several rules at once**, each scoped to a
+Each rule is one such chain. AriGuard runs **several rules at once**, each scoped to a
 container (cgroup) or to a single process, and a syscall can advance more than one rule.
 Bindings carry predicates on the syscall arguments (a path prefix, a flag mask), so a rule
 fires on the real step and not on its benign look-alike — e.g. `mount` counts only when it
@@ -176,7 +176,7 @@ number of processes" curve should be **flat** — that flat line is the headline
 
 > **Design note.** The eBPF objects are authored in Rust (`aya-ebpf`) but loaded by a Go
 > agent (`cilium/ebpf`). The phase 0 gate confirmed this works unchanged with BTF-style
-> maps; the shared layouts live in `bpf/statewall-common` and are mirrored in `pkg/fsm`
+> maps; the shared layouts live in `bpf/ariguard-common` and are mirrored in `pkg/fsm`
 > with size/offset tests. See [docs/architecture.md](docs/architecture.md).
 
 ---
@@ -184,20 +184,20 @@ number of processes" curve should be **flat** — that flat line is the headline
 ## Repository layout
 
 ```
-statewall/
+ariguard/
 ├── bpf/                      # eBPF data plane — Rust workspace (no_std, zero-alloc)
-│   ├── statewall-ebpf/       #   kernel programs: kprobes, tracepoints, LSM, FSM engine
-│   └── statewall-common/     #   shared ABI types (State/Event/Action, map layouts)
+│   ├── ariguard-ebpf/       #   kernel programs: kprobes, tracepoints, LSM, FSM engine
+│   └── ariguard-common/     #   shared ABI types (State/Event/Action, map layouts)
 ├── agent/                    # node DaemonSet — Go, cilium/ebpf
-│   ├── cmd/statewall-agent/
+│   ├── cmd/ariguard-agent/
 │   └── internal/{loader,mitigator,audit}/
 ├── control-plane/            # cluster operator — Go, controller-runtime
-│   ├── cmd/statewall-ctl/
+│   ├── cmd/ariguard-ctl/
 │   ├── apis/v1alpha1/        #   CRDs: ThreatPolicy
 │   └── controllers/
 ├── pkg/                      # shared Go libraries (used by agent + control-plane)
 ├── compiler/                 # threat-intel → FSM tables — Python (ML/LLM)
-│   └── statewall_compiler/{sigma,mine,emit}.py
+│   └── ariguard_compiler/{sigma,mine,emit}.py
 ├── proto/                    # gRPC contract (agent ↔ control-plane)
 ├── deploy/
 │   ├── kind/                 # local single-node cluster
@@ -257,10 +257,10 @@ make dev-up            # Lima VM + kind; also runs `make kubeconfig`
 # host: compile the rules into one policy bundle
 make golden            # compiler/rules/*.yml -> testdata/golden/policy.bin
 
-# in the VM (limactl shell statewall), from the repo:
-make build-bpf build-agent        # bin/statewall.bpf.o + bin/statewall-agent
-sudo bin/statewall-agent \
-  --object bin/statewall.bpf.o \
+# in the VM (limactl shell ariguard), from the repo:
+make build-bpf build-agent        # bin/ariguard.bpf.o + bin/ariguard-agent
+sudo bin/ariguard-agent \
+  --object bin/ariguard.bpf.o \
   --bundle testdata/golden/policy.bin \
   --kubeconfig ~/.kube/config     # streams audit JSON, detection only
 
@@ -287,7 +287,7 @@ the evaluation rigorous. Known false-positive risks and residual races are track
 
 ## Academic context
 
-Statewall is the engineering artifact of a master's dissertation. Its contribution is
+AriGuard is the engineering artifact of a master's dissertation. Its contribution is
 threefold: a **systems** contribution (a zero-allocation in-kernel state machine with
 deterministic overhead), a **security** contribution (sequence-based synchronous
 mitigation vs. event-based async alerting), and an **AI bridge** (compiling high-level

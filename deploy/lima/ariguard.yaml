@@ -1,9 +1,9 @@
-# Lima VM for Statewall development on macOS.
+# Lima VM for AriGuard development on macOS.
 # Ubuntu 24.04 ships kernel 6.8 with BTF and CONFIG_BPF_LSM=y — the baseline
-# Statewall needs for eBPF CO-RE and BPF LSM enforcement.
+# AriGuard needs for eBPF CO-RE and BPF LSM enforcement.
 #
-#   limactl start --name=statewall deploy/lima/statewall.yaml   (or: make dev-up)
-#   limactl shell statewall
+#   limactl start --name=ariguard deploy/lima/ariguard.yaml   (or: make dev-up)
+#   limactl shell ariguard
 
 vmType: "vz"
 # Nested virtualization lets the ci-kernel gate boot guest kernels under vimto
@@ -24,7 +24,7 @@ disk: "40GiB"
 # the host. Lima mounts host paths at the same path inside the guest, so $(CURDIR)
 # works from the Makefile. Adjust the location if your checkout lives elsewhere.
 mounts:
-  - location: "~/work/statewall"
+  - location: "~/work/ariguard"
     writable: true
 
 containerd:
@@ -42,7 +42,7 @@ provision:
     script: |
       #!/bin/bash
       set -euo pipefail
-      CFG=/etc/default/grub.d/99-statewall-lsm.cfg
+      CFG=/etc/default/grub.d/99-ariguard-lsm.cfg
       LINE='GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} lsm=landlock,lockdown,yama,integrity,apparmor,bpf"'
       if [ "$(cat "$CFG" 2>/dev/null)" != "$LINE" ]; then
         echo "$LINE" > "$CFG"

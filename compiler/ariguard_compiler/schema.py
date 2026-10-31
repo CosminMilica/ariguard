@@ -3,7 +3,7 @@
 A rule describes one kill chain: named states, named events (each a list of hook
 bindings with optional path and argument predicates), transitions (from + event ->
 to + action), a scope and a time window. See docs/architecture.md ("Rule file schema v3").
-Numeric values mirror bpf/statewall-common/src/lib.rs (ABI v3).
+Numeric values mirror bpf/ariguard-common/src/lib.rs (ABI v3).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-# ABI mirror (bpf/statewall-common/src/lib.rs). Keep in sync.
+# ABI mirror (bpf/ariguard-common/src/lib.rs). Keep in sync.
 HOOKS = (
     "openat",
     "setns",

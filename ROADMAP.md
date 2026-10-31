@@ -1,4 +1,4 @@
-# Statewall — Development Roadmap
+# AriGuard — Development Roadmap
 
 Complete development plan. Work is organized into **phases**; each phase has an exit
 criterion. Concrete tasks live in each component's `TASKS.md` and are referenced here by

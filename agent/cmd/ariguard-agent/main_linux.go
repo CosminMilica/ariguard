@@ -1,6 +1,6 @@
 //go:build linux
 
-// Command statewall-agent loads the statewall eBPF object, applies a policy
+// Command ariguard-agent loads the ariguard eBPF object, applies a policy
 // bundle and streams audit events as JSON lines (dev mode, D7).
 package main
 
@@ -17,17 +17,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/CosminMilica/statewall/agent/internal/audit"
-	"github.com/CosminMilica/statewall/agent/internal/audit/ringbuf"
-	"github.com/CosminMilica/statewall/agent/internal/loader"
-	"github.com/CosminMilica/statewall/agent/internal/metrics"
-	"github.com/CosminMilica/statewall/agent/internal/metrics/metricmap"
-	"github.com/CosminMilica/statewall/agent/internal/podmeta"
-	"github.com/CosminMilica/statewall/agent/internal/podsync"
-	"github.com/CosminMilica/statewall/agent/internal/podsync/podmap"
-	"github.com/CosminMilica/statewall/agent/internal/policy"
-	"github.com/CosminMilica/statewall/agent/internal/policy/kmap"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/audit"
+	"github.com/CosminMilica/ariguard/agent/internal/audit/ringbuf"
+	"github.com/CosminMilica/ariguard/agent/internal/loader"
+	"github.com/CosminMilica/ariguard/agent/internal/metrics"
+	"github.com/CosminMilica/ariguard/agent/internal/metrics/metricmap"
+	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/agent/internal/podsync"
+	"github.com/CosminMilica/ariguard/agent/internal/podsync/podmap"
+	"github.com/CosminMilica/ariguard/agent/internal/policy"
+	"github.com/CosminMilica/ariguard/agent/internal/policy/kmap"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 const podSyncInterval = 2 * time.Second
@@ -35,13 +35,13 @@ const podSyncInterval = 2 * time.Second
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(log); err != nil {
-		log.Error("statewall-agent failed", "err", err)
+		log.Error("ariguard-agent failed", "err", err)
 		os.Exit(1)
 	}
 }
 
 func run(log *slog.Logger) error {
-	objectPath := flag.String("object", "", "path to the statewall eBPF object (required)")
+	objectPath := flag.String("object", "", "path to the ariguard eBPF object (required)")
 	bundlePath := flag.String("bundle", "", "path to the policy bundle v3 (required)")
 	auditOut := flag.String("audit-out", "-", `audit JSON lines output file, "-" for stdout`)
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig for pod names (empty: in-cluster config)")

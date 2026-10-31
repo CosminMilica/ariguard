@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/CosminMilica/statewall/agent/internal/hooks"
-	"github.com/CosminMilica/statewall/agent/internal/podmeta"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/hooks"
+	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // RecordSize is the wire size of fsm.AuditRecord.

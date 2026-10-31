@@ -13,7 +13,7 @@ pub const ACTION_DENY: u32 = 2;
 pub const ACTION_KILL: u32 = 3;
 
 /// Hook points: one `syscalls/sys_enter_<name>` tracepoint program each.
-/// Index into SW_BINDINGS.
+/// Index into AG_BINDINGS.
 pub const HOOK_OPENAT: u32 = 0;
 pub const HOOK_SETNS: u32 = 1;
 pub const HOOK_UNSHARE: u32 = 2;
@@ -66,7 +66,7 @@ pub const MAX_RULES: u32 = 16;
 pub const MAX_TRANSITIONS: u32 = 1024;
 pub const MAX_TRACKED_WORKLOADS: u32 = 16384;
 
-/// Key into SW_STATE: `id` is the cgroup id or the tgid, per the rule's scope.
+/// Key into AG_STATE: `id` is the cgroup id or the tgid, per the rule's scope.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct FsmKey {
@@ -109,7 +109,7 @@ pub struct Binding {
     pub pattern: [u8; PATTERN_LEN],
 }
 
-/// Value of SW_BINDINGS, indexed by hook.
+/// Value of AG_BINDINGS, indexed by hook.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct HookBindings {
@@ -118,7 +118,7 @@ pub struct HookBindings {
     pub entries: [Binding; MAX_BINDINGS_PER_HOOK],
 }
 
-/// One rule. Its cells start at `trans_base` in SW_TRANSITIONS. States with
+/// One rule. Its cells start at `trans_base` in AG_TRANSITIONS. States with
 /// index >= `terminal_from` never expire; `window_ns` = 0 disables expiry.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -132,7 +132,7 @@ pub struct Rule {
     pub window_ns: u64,
 }
 
-/// SW_POLICY[0]. `num_rules` = 0 means no policy (programs return at once).
+/// AG_POLICY[0]. `num_rules` = 0 means no policy (programs return at once).
 /// `enforce` = 1 applies mitigations; 0 is detect-only (dry run).
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -141,7 +141,7 @@ pub struct Policy {
     pub enforce: u32,
 }
 
-/// Emitted to SW_AUDIT when a state changes or the action is not observe.
+/// Emitted to AG_AUDIT when a state changes or the action is not observe.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct AuditRecord {

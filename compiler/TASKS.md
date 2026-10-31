@@ -8,7 +8,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 |---|---|---|---|
 | `[x]` CMP-1.1 | Rule file schema (YAML): states, events, transitions, actions | — | one kill chain expressible in YAML |
 | `[x]` CMP-1.2 | `emit.py`: serialize FSM → transition-table binary matching the ABI | CMP-1.1, PKG-0.1 | output loads via `AGT-1.3` |
-| `[x]` CMP-1.3 | CLI `statewall-compile` (rule file → table) | CMP-1.2 | `statewall-compile` produces a table |
+| `[x]` CMP-1.3 | CLI `ariguard-compile` (rule file → table) | CMP-1.2 | `ariguard-compile` produces a table |
 | `[x]` CMP-1.4 | Golden test: emitted table matches the committed golden | CMP-1.2 | `pytest` matches `testdata/golden/` |
 | `[x]` CMP-1.5 | Schema v2: events bind to hooks + optional `path_prefix`; `window_seconds` | BPF-1.0 | container-escape rule matches only runtime sockets |
 | `[x]` CMP-1.6 | Emit policy bundle v2 (see `docs/architecture.md`); regenerate golden | CMP-1.5 | bundle passes limits; golden updated |

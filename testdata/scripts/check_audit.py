@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert the Phase 1.5 / Phase 2 exit criteria on a Statewall v3 JSONL audit stream."""
+"""Assert the Phase 1.5 / Phase 2 exit criteria on a AriGuard v3 JSONL audit stream."""
 
 import argparse
 import itertools
@@ -218,7 +218,7 @@ def self_test(exp_path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("audit", nargs="?", help="JSONL audit file from statewall-agent")
+    parser.add_argument("audit", nargs="?", help="JSONL audit file from ariguard-agent")
     parser.add_argument(
         "--expectations", default=str(DEFAULT_EXPECTATIONS), help="expectations JSON"
     )

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/CosminMilica/statewall/agent/internal/podmeta"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 func TestRecordSize(t *testing.T) {
@@ -87,10 +87,10 @@ func line(t *testing.T, r fsm.AuditRecord, m *fsm.Meta, pod podmeta.Info) string
 func TestWriteLine(t *testing.T) {
 	r, _ := Decode(sample())
 	m := meta()
-	pod := podmeta.Info{Namespace: "statewall-eval", Pod: "container-escape", Container: "attacker"}
+	pod := podmeta.Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker"}
 	want := `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"openat",` +
 		`"rule":"container-escape","event":"runtime_socket_open","from":"normal","to":"suspicious","action":"observe","enforced":false,` +
-		`"namespace":"statewall-eval","pod":"container-escape","container":"attacker"}` + "\n"
+		`"namespace":"ariguard-eval","pod":"container-escape","container":"attacker"}` + "\n"
 	if got := line(t, r, &m, pod); got != want {
 		t.Fatalf("line = %s\nwant   %s", got, want)
 	}

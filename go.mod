@@ -1,4 +1,4 @@
-module github.com/CosminMilica/statewall
+module github.com/CosminMilica/ariguard
 
 go 1.26.0
 

@@ -5,7 +5,7 @@ package kmap
 import (
 	"github.com/cilium/ebpf"
 
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // KernelMaps implements policy.Maps over the loaded BPF maps.

@@ -6,7 +6,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 ## Phase 0 — ABI mirror
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[x]` PKG-0.1 | Go mirror of `bpf/statewall-common` (states, events, actions, key/value structs) | — | constants + structs defined in `pkg/fsm` |
+| `[x]` PKG-0.1 | Go mirror of `bpf/ariguard-common` (states, events, actions, key/value structs) | — | constants + structs defined in `pkg/fsm` |
 | `[x]` PKG-0.2 | Size/offset assertion test guarding ABI drift vs the Rust source of truth | PKG-0.1 | test fails if layouts diverge |
 
 ## Phase 1 — Serialization
@@ -28,7 +28,7 @@ Contract: [docs/architecture.md](../docs/architecture.md#phase-15-decisions).
 ## Phase 2 — Mitigation (branch `feat/mitigation`)
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` PKG-2.1 | Mirror ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, `SW_PODS`/`SW_METRICS` map names + metric indices; extend size/offset + btf tests | — | `go test ./pkg/...` passes; btf test covers the new fields and maps |
+| `[ ]` PKG-2.1 | Mirror ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, `AG_PODS`/`AG_METRICS` map names + metric indices; extend size/offset + btf tests | — | `go test ./pkg/...` passes; btf test covers the new fields and maps |
 
 ## Phase 3 — Generated proto
 | ID | Task | Depends | Done when |

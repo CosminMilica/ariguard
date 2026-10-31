@@ -1,13 +1,13 @@
 [package]
-name = "statewall-ebpf"
+name = "ariguard-ebpf"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
 aya-ebpf = "0.3.0"
-statewall-common = { path = "../statewall-common" }
+ariguard-common = { path = "../ariguard-common" }
 
 [[bin]]
-name = "statewall"
+name = "ariguard"
 path = "src/main.rs"

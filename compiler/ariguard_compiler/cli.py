@@ -1,4 +1,4 @@
-"""Command-line entry point for the Statewall rule compiler."""
+"""Command-line entry point for the AriGuard rule compiler."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .schema import RuleError
 def main() -> None:
     """Link YAML rule files into one policy bundle."""
     parser = argparse.ArgumentParser(
-        prog="statewall-compile",
+        prog="ariguard-compile",
         description="Link kill-chain rule files into one FSM policy bundle (v3).",
     )
     parser.add_argument("--rules-dir", help="directory of *.yml rule files")
@@ -27,7 +27,7 @@ def main() -> None:
     try:
         rules, bundle = compile_files(files)
     except RuleError as exc:
-        sys.exit(f"statewall-compile: {exc}")
+        sys.exit(f"ariguard-compile: {exc}")
     Path(args.out).write_bytes(bundle)
     transitions = sum(r.num_states * r.num_events for r in rules)
     bindings = sum(len(r.bindings) for r in rules)

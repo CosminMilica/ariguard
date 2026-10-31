@@ -17,8 +17,8 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 	"golang.org/x/sys/unix"
 
-	"github.com/CosminMilica/statewall/agent/internal/hooks"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/hooks"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // Maps are the contract maps of a loaded object.
@@ -34,7 +34,7 @@ type Maps struct {
 	Metrics     *ebpf.Map
 }
 
-// Object is a loaded statewall collection and its attached links.
+// Object is a loaded ariguard collection and its attached links.
 type Object struct {
 	Maps  Maps
 	coll  *ebpf.Collection

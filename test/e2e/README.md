@@ -19,30 +19,30 @@ path is `testdata/scripts/phase{1,2}-exit-check.sh`; those stay in place.
 ## What it provisions
 
 - Builds `make image kind-load` once per run (fresh image, never cached).
-- Deploys `deploy/k8s/overlays/{detect,enforce}` into `statewall-system`; each
+- Deploys `deploy/k8s/overlays/{detect,enforce}` into `ariguard-system`; each
   mode starts from a clean slate (prior namespace deleted and waited gone).
-- Creates `statewall-eval` fresh each mode (pinned by `testdata/expectations.json`
+- Creates `ariguard-eval` fresh each mode (pinned by `testdata/expectations.json`
   and the workload manifests — it cannot be randomized without breaking the
   checker), applies `testdata/workloads/{benign,attack}`.
 
 ## What it asserts
 
 **Detect (`overlays/detect`)**
-- `SW_POLICY`: `enforce == 0`, `num_rules == 3`.
-- `SW_RULES`, `SW_TRANSITIONS` non-empty.
+- `AG_POLICY`: `enforce == 0`, `num_rules == 3`.
+- `AG_RULES`, `AG_TRANSITIONS` non-empty.
 - `check_audit.py` (dry-run) exits 0.
 - Every attack pod is Running/Succeeded (never Failed) — detection only.
-- `statewall_kills_total == 0`.
+- `ariguard_kills_total == 0`.
 
 **Enforce (`overlays/enforce`)**
-- `SW_POLICY`: `enforce == 1`, `num_rules == 3`.
-- `SW_RULES`, `SW_TRANSITIONS` non-empty; `SW_PODS` non-empty.
+- `AG_POLICY`: `enforce == 1`, `num_rules == 3`.
+- `AG_RULES`, `AG_TRANSITIONS` non-empty; `AG_PODS` non-empty.
 - `check_audit.py --enforce` exits 0 — every attacker's terminal record has
   `enforced=true` and nothing non-attacker is enforced. By decision F5 the kernel
-  sets `enforced=1` only when the cgroup is in `SW_PODS`, so this proves per-pod
-  attribution and the `SW_PODS` gate end to end (chosen over resolving pod→cgroup
+  sets `enforced=1` only when the cgroup is in `AG_PODS`, so this proves per-pod
+  attribution and the `AG_PODS` gate end to end (chosen over resolving pod→cgroup
   ids directly, which depends on the node's cgroup-driver layout).
-- `statewall_kills_total` rose by exactly one per attacker (4).
+- `ariguard_kills_total` rose by exactly one per attacker (4).
 - Benign and `kube-system` pods are neither Failed nor restarted.
 - Pod phase `Failed` is required only for `container-escape` and
   `container-escape-connect`. `reverse-seq` and `fileless-seq` run their terminal
@@ -61,20 +61,20 @@ make ci-e2e
 ```
 
 `ci-e2e` builds everything fresh (`build-bpf build-agent golden`), then runs the
-Go test with `-tags e2e` and `STATEWALL_REQUIRE_E2E=1`; the test itself runs both
-modes (detect then enforce). It needs a kill-capable `bin/statewall.bpf.o`.
+Go test with `-tags e2e` and `ARIGUARD_REQUIRE_E2E=1`; the test itself runs both
+modes (detect then enforce). It needs a kill-capable `bin/ariguard.bpf.o`.
 
-Standalone: `STATEWALL_REQUIRE_E2E=1 go test -tags e2e -v ./test/e2e` (the test
-drives `make image kind-load`, so `bin/statewall-agent`, `bin/statewall.bpf.o`
+Standalone: `ARIGUARD_REQUIRE_E2E=1 go test -tags e2e -v ./test/e2e` (the test
+drives `make image kind-load`, so `bin/ariguard-agent`, `bin/ariguard.bpf.o`
 and `testdata/golden/policy.bin` must already be built).
 
 ## What must be true in the VM
 
 - kind cluster reachable (`kubectl get nodes`) and kernel BTF at
   `/sys/kernel/btf/vmlinux` — otherwise the test SKIPs, or FAILs under
-  `STATEWALL_REQUIRE_E2E=1`.
+  `ARIGUARD_REQUIRE_E2E=1`.
 - Passwordless `sudo bpftool` (the maps live in the host kernel).
-- `bin/statewall.bpf.o` is the Phase 2 **kill-capable** object, and the
+- `bin/ariguard.bpf.o` is the Phase 2 **kill-capable** object, and the
   `KILL` capability / BPF LSM cmdline from `make dev-up` is in effect.
 - A single agent instance (one node) so `bpftool map dump name` is unambiguous.
 
@@ -82,12 +82,12 @@ and `testdata/golden/policy.bin` must already be built).
 
 | Var | Default | Meaning |
 |---|---|---|
-| `STATEWALL_REQUIRE_E2E` | unset | `1`: missing prerequisites FAIL instead of SKIP (CI) |
-| `STATEWALL_E2E_ARTIFACTS` | temp dir | where logs, events, descriptions and `SW_*.json` dumps are written |
-| `STATEWALL_E2E_ATTACK_SECONDS` | `30` | settle time after attacks are applied |
-| `STATEWALL_KUBECONFIG` | kubectl default | kubeconfig for the kind cluster |
-| `STATEWALL_KUBE_CONTEXT` | `kind-statewall-dev` | kube context (empty to omit) |
+| `ARIGUARD_REQUIRE_E2E` | unset | `1`: missing prerequisites FAIL instead of SKIP (CI) |
+| `ARIGUARD_E2E_ARTIFACTS` | temp dir | where logs, events, descriptions and `AG_*.json` dumps are written |
+| `ARIGUARD_E2E_ATTACK_SECONDS` | `30` | settle time after attacks are applied |
+| `ARIGUARD_KUBECONFIG` | kubectl default | kubeconfig for the kind cluster |
+| `ARIGUARD_KUBE_CONTEXT` | `kind-ariguard-dev` | kube context (empty to omit) |
 
 On teardown the harness always dumps pod logs, `kubectl get events`,
-`kubectl describe` of the attack pods, and the `SW_*` map dumps to the artifacts
-dir, then deletes `statewall-eval` and the overlay.
+`kubectl describe` of the attack pods, and the `AG_*` map dumps to the artifacts
+dir, then deletes `ariguard-eval` and the overlay.

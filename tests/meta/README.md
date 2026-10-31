@@ -10,7 +10,7 @@ Run from the repo root:
 | Test | Guards |
 |---|---|
 | `test_workflow_pins.py` | `.github/workflows/*.yml` and `.github/actions/**` parse as YAML; every `uses:` is a 40-hex commit SHA or a local `./` path (or is in `UNPINNED_ALLOWLIST`). |
-| `test_test_presence.py` | Every Go package with non-test sources under `agent/` and `pkg/` has a `_test.go`; every `compiler/statewall_compiler/*.py` module has a `test_<mod>.py` or is imported by a test (or is in `PY_STUB_ALLOWLIST`). |
+| `test_test_presence.py` | Every Go package with non-test sources under `agent/` and `pkg/` has a `_test.go`; every `compiler/ariguard_compiler/*.py` module has a `test_<mod>.py` or is imported by a test (or is in `PY_STUB_ALLOWLIST`). |
 | `test_docs_truth.py` | Every task ID in `ROADMAP.md` (`AGT-1.5.4`, `EVAL-1.5.4`, wildcards like `BPF-2.*`) resolves to a row in the matching `*/TASKS.md`; each TASKS.md legend is exactly `[ ] [~] [x] [!]` and rows use only those; IDs are unique and in the right component file. |
 | `test_abi_doc_sync.py` | Struct names in the latest "Kernel object contract" table of `docs/architecture.md` exist as exported structs in `pkg/fsm/abi.go` (names only, not layout; the Go-only `Binding` is not required in the doc). |
 

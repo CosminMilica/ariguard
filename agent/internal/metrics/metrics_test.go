@@ -21,9 +21,9 @@ func (f fakeReader) Read() (Counters, error) { return f.c, f.err }
 func TestFormat(t *testing.T) {
 	got := Format(Counters{Events: 7, Kills: 2, AuditDropped: 1})
 	for _, want := range []string{
-		"# TYPE statewall_events_total counter\nstatewall_events_total 7\n",
-		"# TYPE statewall_kills_total counter\nstatewall_kills_total 2\n",
-		"# TYPE statewall_audit_dropped_total counter\nstatewall_audit_dropped_total 1\n",
+		"# TYPE ariguard_events_total counter\nariguard_events_total 7\n",
+		"# TYPE ariguard_kills_total counter\nariguard_kills_total 2\n",
+		"# TYPE ariguard_audit_dropped_total counter\nariguard_audit_dropped_total 1\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in\n%s", want, got)
@@ -34,7 +34,7 @@ func TestFormat(t *testing.T) {
 func TestHandler(t *testing.T) {
 	rec := httptest.NewRecorder()
 	Handler(fakeReader{c: Counters{Kills: 3}}).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "statewall_kills_total 3\n") {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "ariguard_kills_total 3\n") {
 		t.Fatalf("code %d body %s", rec.Code, rec.Body)
 	}
 	rec = httptest.NewRecorder()
@@ -71,7 +71,7 @@ func TestServeShutsDown(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if !strings.Contains(string(body), "statewall_events_total 5") {
+	if !strings.Contains(string(body), "ariguard_events_total 5") {
 		t.Fatalf("body %s", body)
 	}
 	cancel()

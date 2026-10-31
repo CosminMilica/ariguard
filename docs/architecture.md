@@ -14,7 +14,7 @@
 
 ## The ABI boundary (critical)
 
-`bpf/statewall-common` is the single source of truth for map key/value layouts and the
+`bpf/ariguard-common` is the single source of truth for map key/value layouts and the
 state/event/action enums. The Go mirror in `pkg/fsm` must match it byte-for-byte.
 
 **Resolved (phase 0 gate):** the Go agent (cilium/ebpf v0.22) loads the Rust object
@@ -57,14 +57,14 @@ Program and map names are the contract between `bpf/` and `agent/`.
 | Kind | Name | Type / attach point | Key → value |
 |---|---|---|---|
 | program | `sw_openat` … `sw_ptrace` | tracepoint `syscalls/sys_enter_<hook>` | — |
-| map | `SW_STATE` | `LRU_HASH`, `MAX_TRACKED_WORKLOADS` | `FsmKey` → `FsmState` |
-| map | `SW_TRANSITIONS` | `ARRAY`, `MAX_TRANSITIONS` | `u32` index → `Transition` |
-| map | `SW_BINDINGS` | `ARRAY`, `NUM_HOOKS` | `u32` hook → `HookBindings` |
-| map | `SW_DIMS` | `ARRAY`, 1 | `0` → `Dims` |
-| map | `SW_AUDIT` | `RINGBUF`, 256 KiB | `AuditRecord` stream |
-| map | `SW_SCRATCH` | `PERCPU_ARRAY`, 1 | `0` → `[u8; PATTERN_LEN]` |
+| map | `AG_STATE` | `LRU_HASH`, `MAX_TRACKED_WORKLOADS` | `FsmKey` → `FsmState` |
+| map | `AG_TRANSITIONS` | `ARRAY`, `MAX_TRANSITIONS` | `u32` index → `Transition` |
+| map | `AG_BINDINGS` | `ARRAY`, `NUM_HOOKS` | `u32` hook → `HookBindings` |
+| map | `AG_DIMS` | `ARRAY`, 1 | `0` → `Dims` |
+| map | `AG_AUDIT` | `RINGBUF`, 256 KiB | `AuditRecord` stream |
+| map | `AG_SCRATCH` | `PERCPU_ARRAY`, 1 | `0` → `[u8; PATTERN_LEN]` |
 
-Transition index = `state * num_events + event`. An empty `SW_DIMS` means no policy:
+Transition index = `state * num_events + event`. An empty `AG_DIMS` means no policy:
 programs return immediately.
 
 ### Policy bundle format v2
@@ -109,26 +109,26 @@ argument predicates, more hooks. It replaces the phase 1 ABI (v2) and bundle (v2
 | Kind | Name | Type, capacity | Key → value |
 |---|---|---|---|
 | program | `sw_<hook>` for the 16 hooks | tracepoint `syscalls/sys_enter_<hook>` | — |
-| map | `SW_POLICY` | `ARRAY`, 1 | `0` → `Policy` |
-| map | `SW_RULES` | `ARRAY`, `MAX_RULES` | rule → `Rule` |
-| map | `SW_TRANSITIONS` | `ARRAY`, `MAX_TRANSITIONS` | `trans_base + state * num_events + event` → `Transition` |
-| map | `SW_BINDINGS` | `ARRAY`, `NUM_HOOKS` | hook → `HookBindings` (up to 8) |
-| map | `SW_STATE` | `LRU_HASH`, `MAX_TRACKED_WORKLOADS` | `FsmKey` → `FsmState` |
-| map | `SW_AUDIT` | `RINGBUF`, 256 KiB | `AuditRecord` (64 B) |
-| map | `SW_SCRATCH` | `PERCPU_ARRAY`, 1 | `0` → `[u8; PATTERN_LEN]` |
+| map | `AG_POLICY` | `ARRAY`, 1 | `0` → `Policy` |
+| map | `AG_RULES` | `ARRAY`, `MAX_RULES` | rule → `Rule` |
+| map | `AG_TRANSITIONS` | `ARRAY`, `MAX_TRANSITIONS` | `trans_base + state * num_events + event` → `Transition` |
+| map | `AG_BINDINGS` | `ARRAY`, `NUM_HOOKS` | hook → `HookBindings` (up to 8) |
+| map | `AG_STATE` | `LRU_HASH`, `MAX_TRACKED_WORKLOADS` | `FsmKey` → `FsmState` |
+| map | `AG_AUDIT` | `RINGBUF`, 256 KiB | `AuditRecord` (64 B) |
+| map | `AG_SCRATCH` | `PERCPU_ARRAY`, 1 | `0` → `[u8; PATTERN_LEN]` |
 
 Hooks, in id order: `openat setns unshare mount execve ptrace connect dup2 dup3
 memfd_create execveat fsmount move_mount init_module finit_module bpf`. Syscall
 argument `i` is read from the tracepoint record at offset `16 + 8 * i`.
 
-Per syscall, a program: reads `SW_POLICY` (returns if no rules); skips the root cgroup;
+Per syscall, a program: reads `AG_POLICY` (returns if no rules); skips the root cgroup;
 walks the hook's bindings; for each binding whose rule has not matched yet and whose
 predicates hold, applies one transition in that rule: key by scope, expire if allowed,
 read the cell, update the state atomically, emit an `AuditRecord` if the state changed
 or the action is not `observe`.
 
-Hot swap: `SW_POLICY = {0}` → `SW_RULES` → `SW_TRANSITIONS` → `SW_BINDINGS` (all 16
-hooks) → `SW_POLICY = {num_rules}`.
+Hot swap: `AG_POLICY = {0}` → `AG_RULES` → `AG_TRANSITIONS` → `AG_BINDINGS` (all 16
+hooks) → `AG_POLICY = {num_rules}`.
 
 ### Policy bundle format v3
 
@@ -190,27 +190,27 @@ enforcement** from the existing tracepoint engine plus the safety machinery it r
 | # | Decision | Why |
 |---|---|---|
 | F1 | Enforce by `bpf_send_signal(SIGKILL)` from the tracepoint engine | a tracepoint cannot deny a syscall, but it can kill the current task; highest-value, lowest-risk enforcement, no new attach surface |
-| F2 | Only pod cgroups are mitigation candidates | detection runs for every cgroup, but a KILL only fires when the workload's cgroup is in `SW_PODS`, so the node's own runtime/systemd cgroups can never be killed (closes the Phase 1.5 host false-positive at the enforcement layer) |
+| F2 | Only pod cgroups are mitigation candidates | detection runs for every cgroup, but a KILL only fires when the workload's cgroup is in `AG_PODS`, so the node's own runtime/systemd cgroups can never be killed (closes the Phase 1.5 host false-positive at the enforcement layer) |
 | F3 | Global enforce switch in `Policy.enforce` (0 = detect-only, 1 = enforce) | run dry (actions recorded, nothing applied), then flip to enforcing; the demo shows both. Default 0 (safe) |
 | F4 | Atomic transition before enforcing: CAS on `FsmState.state` | replaces last-writer-wins (E9); only the committed winner enforces, so a concurrent syscall can't skip the step that triggers the kill |
-| F5 | KILL fires only when `enforce==1` AND the committed transition's action is `kill` AND the cgroup ∈ `SW_PODS` | `throttle`/`deny` stay audit-only on this branch; `deny` becomes real with the LSM follow-up |
+| F5 | KILL fires only when `enforce==1` AND the committed transition's action is `kill` AND the cgroup ∈ `AG_PODS` | `throttle`/`deny` stay audit-only on this branch; `deny` becomes real with the LSM follow-up |
 | F6 | `dup2` has no tracepoint on arm64 | glibc maps `dup2`→`dup3` there (already covered); LSM coverage is a follow-up |
-| F7 | Per-CPU metrics map `SW_METRICS` | events / kills / dropped-audit counters, read by the agent and exposed as Prometheus metrics |
+| F7 | Per-CPU metrics map `AG_METRICS` | events / kills / dropped-audit counters, read by the agent and exposed as Prometheus metrics |
 
 ### ABI additions (v3.1, additive — no existing field moves)
 
 - `Policy._pad` → `enforce: u32` (same 8-byte layout).
 - `AuditRecord._pad` → `enforced: u32` (1 when a mitigation was applied; same 64-byte layout).
-- New map `SW_PODS`: `LRU_HASH`, key `u64` cgroup id → `u8` present; the agent populates it
+- New map `AG_PODS`: `LRU_HASH`, key `u64` cgroup id → `u8` present; the agent populates it
   from `podmeta` (every tracked pod cgroup) and prunes on pod deletion.
-- New map `SW_METRICS`: `PERCPU_ARRAY` of `u64` counters (indices: events, kills, audit_dropped).
+- New map `AG_METRICS`: `PERCPU_ARRAY` of `u64` counters (indices: events, kills, audit_dropped).
 
 Mirrored in `pkg/fsm`; the `btf_test.go` size/offset checks extend to the new fields and maps.
 
 ### Enforcement path (kernel)
 
 After the committed transition (F4): if `policy.enforce == 1`, `action == ACTION_KILL`, and
-`SW_PODS` contains the cgroup id, call `bpf_send_signal(SIGKILL)` and set `enforced = 1` on
-the audit record; bump the `SW_METRICS` kill counter. Everything else is unchanged from
+`AG_PODS` contains the cgroup id, call `bpf_send_signal(SIGKILL)` and set `enforced = 1` on
+the audit record; bump the `AG_METRICS` kill counter. Everything else is unchanged from
 Phase 1.5 — detection, audit and the dry-run path are identical whether or not enforcement
 is on.

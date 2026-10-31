@@ -1,6 +1,6 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-name: statewall-dev
+name: ariguard-dev
 networking:
   # Fixed port so the host kubeconfig (make kubeconfig) stays valid across
   # re-creations; Lima forwards guest 127.0.0.1 ports to the host.

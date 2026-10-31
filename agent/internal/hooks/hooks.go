@@ -4,7 +4,7 @@ package hooks
 import (
 	"strconv"
 
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // Names maps each fsm.Hook* constant to its syscall name.

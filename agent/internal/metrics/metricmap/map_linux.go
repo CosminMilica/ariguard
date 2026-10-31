@@ -7,11 +7,11 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/CosminMilica/statewall/agent/internal/metrics"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/metrics"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
-// Reader reads SW_METRICS, summing the per-CPU values.
+// Reader reads AG_METRICS, summing the per-CPU values.
 type Reader struct{ M *ebpf.Map }
 
 func (r Reader) Read() (metrics.Counters, error) {
@@ -19,7 +19,7 @@ func (r Reader) Read() (metrics.Counters, error) {
 	for i := range out {
 		var percpu []uint64
 		if err := r.M.Lookup(uint32(i), &percpu); err != nil {
-			return metrics.Counters{}, fmt.Errorf("read SW_METRICS[%d]: %w", i, err)
+			return metrics.Counters{}, fmt.Errorf("read AG_METRICS[%d]: %w", i, err)
 		}
 		for _, v := range percpu {
 			out[i] += v

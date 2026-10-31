@@ -8,24 +8,24 @@ import (
 
 	"github.com/cilium/ebpf"
 
-	"github.com/CosminMilica/statewall/agent/internal/hooks"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/hooks"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // maxInstructions caps each program's pre-verifier size. Raise it deliberately
 // when a change needs more; an unexpected jump usually means unrolling or inlining.
-// Phase 2 raised it from 512: the per-pod gate, SW_METRICS counters, enforcement
+// Phase 2 raised it from 512: the per-pod gate, AG_METRICS counters, enforcement
 // re-read and bpf_send_signal path add ~78 inlined insns (programs are 571-581).
 const maxInstructions = 640
 
 func loadSpec(t *testing.T) *ebpf.CollectionSpec {
 	t.Helper()
-	path := os.Getenv("STATEWALL_OBJECT")
+	path := os.Getenv("ARIGUARD_OBJECT")
 	if path == "" {
-		path = filepath.Join("..", "..", "..", "bin", "statewall.bpf.o")
+		path = filepath.Join("..", "..", "..", "bin", "ariguard.bpf.o")
 	}
 	if _, err := os.Stat(path); err != nil {
-		if os.Getenv("STATEWALL_REQUIRE_OBJECT") != "" {
+		if os.Getenv("ARIGUARD_REQUIRE_OBJECT") != "" {
 			t.Fatalf("BPF object: %v (build with `make build-bpf`)", err)
 		}
 		t.Skipf("BPF object %s not built, skipping", path)

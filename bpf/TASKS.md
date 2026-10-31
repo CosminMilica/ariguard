@@ -12,25 +12,25 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 ## Phase 1 — Passive FSM
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[x]` BPF-1.0 | ABI v2 types in `statewall-common` (hooks, `Binding`, `HookBindings`, `Dims`, `AuditRecord`, capacities) | — | Go mirror passes; Rust compiles in the VM |
-| `[x]` BPF-1.1 | `SW_STATE`: preallocated `LRU_HASH` keyed by `cgroup_id` (D5) | BPF-0.2 | state persists across syscalls for one workload |
-| `[x]` BPF-1.2 | `SW_TRANSITIONS`, `SW_BINDINGS`, `SW_DIMS` maps | BPF-1.0 | agent can populate all three |
+| `[x]` BPF-1.0 | ABI v2 types in `ariguard-common` (hooks, `Binding`, `HookBindings`, `Dims`, `AuditRecord`, capacities) | — | Go mirror passes; Rust compiles in the VM |
+| `[x]` BPF-1.1 | `AG_STATE`: preallocated `LRU_HASH` keyed by `cgroup_id` (D5) | BPF-0.2 | state persists across syscalls for one workload |
+| `[x]` BPF-1.2 | `AG_TRANSITIONS`, `AG_BINDINGS`, `AG_DIMS` maps | BPF-1.0 | agent can populate all three |
 | `[x]` BPF-1.3 | Zero-allocation FSM engine (lookup, advance, write-back) | BPF-1.1, BPF-1.2 | no heap/stack growth; passes verifier |
 | `[x]` BPF-1.4 | Tracepoint programs `sw_openat` … `sw_ptrace` (D1, D2) | BPF-1.3 | each hook fires on its syscall |
-| `[x]` BPF-1.5 | Binding evaluation: hook → event, path-prefix match via `SW_SCRATCH` (D3, D6) | BPF-1.4 | only matching paths raise an event |
-| `[x]` BPF-1.6 | Emit `AuditRecord` to `SW_AUDIT` on every transition | BPF-1.3 | agent (`AGT-1.2`) receives records |
+| `[x]` BPF-1.5 | Binding evaluation: hook → event, path-prefix match via `AG_SCRATCH` (D3, D6) | BPF-1.4 | only matching paths raise an event |
+| `[x]` BPF-1.6 | Emit `AuditRecord` to `AG_AUDIT` on every transition | BPF-1.3 | agent (`AGT-1.2`) receives records |
 | `[x]` BPF-1.7 | Skip the root cgroup; track every other cgroup (D8) | BPF-1.1 | host processes ignored |
 | `[x]` BPF-1.8 | State expiry: reset to `normal` after `window_ns` without progress (D4) | BPF-1.3 | stale chains do not accumulate |
 | `[x]` BPF-1.9 | Cover the new mount API (`fsopen`/`fsmount`/`move_mount`) as mount hooks — folded into E7 / `BPF-1.5.5` | BPF-1.4 | `fsmount` and `move_mount` tracepoints raise `host_mount`; propagation-only `mount` is excluded by the `mask_none` predicate |
 
 > Phase 0 gate (VM, aya-ebpf 0.3.0, bpf-linker 0.12.0): BPF-0.1 is a tracepoint
 > (`sw_execve`), not a kprobe, per D1. All six contract maps are BTF maps; the agent
-> loads them, writes SW_TRANSITIONS/SW_BINDINGS/SW_DIMS and reads `AuditRecord`s
-> from SW_AUDIT. BPF-1.0: `cargo build --release` succeeds in the VM.
+> loads them, writes AG_TRANSITIONS/AG_BINDINGS/AG_DIMS and reads `AuditRecord`s
+> from AG_AUDIT. BPF-1.0: `cargo build --release` succeeds in the VM.
 
 > Phase 1 (VM, kernel 6.8): six tracepoints share one inlined handler; no bpf-to-bpf calls,
 > 172–296 xlated insns per program. The object needs a GPL license section
-> (`bpf_probe_read_*` are GPL-only). Root cgroup = id 1 (cgroup v2). `SW_STATE` holds only
+> (`bpf_probe_read_*` are GPL-only). Root cgroup = id 1 (cgroup v2). `AG_STATE` holds only
 > non-normal workloads: an entry is deleted when its workload returns to normal (expired or by
 > transition). Path prefix is evaluated for `openat`/`execve` (filename) and `mount`
 > (dir_name). Verified with the manual chain, out-of-order, expiry and SIGHUP runs, and EVAL-1.3.
@@ -40,8 +40,8 @@ Decisions E1–E14 and the v3 contract: [docs/architecture.md](../docs/architect
 
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[x]` BPF-1.5.1 | ABI v3 in `statewall-common` (rules, scope, predicates, 16 hooks, `comm`) | — | Go mirror passes; Rust compiles in the VM |
-| `[x]` BPF-1.5.2 | Maps v3: `SW_POLICY`, `SW_RULES`, `SW_BINDINGS` (8 per hook), `SW_STATE` keyed by `FsmKey` v3 | BPF-1.5.1 | `pkg/fsm` BTF + capacity tests pass on the object |
+| `[x]` BPF-1.5.1 | ABI v3 in `ariguard-common` (rules, scope, predicates, 16 hooks, `comm`) | — | Go mirror passes; Rust compiles in the VM |
+| `[x]` BPF-1.5.2 | Maps v3: `AG_POLICY`, `AG_RULES`, `AG_BINDINGS` (8 per hook), `AG_STATE` keyed by `FsmKey` v3 | BPF-1.5.1 | `pkg/fsm` BTF + capacity tests pass on the object |
 | `[x]` BPF-1.5.3 | 16 tracepoint programs; syscall argument `i` read at offset `16 + 8i` | BPF-1.5.2 | all programs load; `dup2` missing on arm64 skipped by the agent (E14) |
 | `[x]` BPF-1.5.4 | Multi-rule evaluation: per-rule first match, several rules per syscall (E1, E4) | BPF-1.5.3 | `execve` advances container-escape + fileless/reverse rules in one call; integration test green |
 | `[x]` BPF-1.5.5 | Predicates: `PATH_PREFIX`, `PATH_SUN_PREFIX`, `ARG_EQ/LE/MASK_ANY/MASK_NONE` (E5, E6) | BPF-1.5.4 | propagation-only mount excluded; `connect` to the runtime socket counts |
@@ -52,12 +52,12 @@ Decisions E1–E14 and the v3 contract: [docs/architecture.md](../docs/architect
 | `[x]` BPF-1.5.10 | Verifies on the CI kernel matrix (5.15 → stable) (E13) | BPF-1.5.4 … 1.5.9 | `ci-kernel KERNEL=5.15` and `KERNEL=stable` pass (vimto TCG — no nested KVM in Lima); instruction budget NOT raised (503/512) |
 
 > Phase 1.5 (VM, kernel 6.8; matrix 5.15 + stable via vimto/TCG). One inlined handler per
-> tracepoint reads `SW_POLICY`, skips the root cgroup, and walks the hook's `SW_BINDINGS`
+> tracepoint reads `AG_POLICY`, skips the root cgroup, and walks the hook's `AG_BINDINGS`
 > (bounded 0..8). Per binding: path predicate (`PATH_PREFIX`/`PATH_SUN_PREFIX`, arg read once
-> per invocation into `SW_SCRATCH`; `sun_path` at +2) and argument predicate
+> per invocation into `AG_SCRATCH`; `sun_path` at +2) and argument predicate
 > (`EQ/LE/MASK_ANY/MASK_NONE` on arg `i` at record offset `16+8i`). First matching binding per
 > rule wins (tracked in a `u32` bitmask), so one syscall can advance several rules. Each match
-> reads `SW_RULES[rule]`, keys `SW_STATE` by cgroup id or tgid (scope), applies expiry only
+> reads `AG_RULES[rule]`, keys `AG_STATE` by cgroup id or tgid (scope), applies expiry only
 > while `state < terminal_from` (E8), reads the cell at `trans_base + state*num_events + event`
 > and emits a 64-byte `AuditRecord` with `comm` on a state change or non-observe action.
 > Loops stay as bounded loops (no unrolling, no `bpf_loop`, no kfuncs); all 16 programs are
@@ -81,23 +81,23 @@ Decisions F1–F7 and the v3.1 ABI additions: [docs/architecture.md](../docs/arc
 ### Val 0 — safety prerequisites (detection stays identical)
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[x]` BPF-2.1 | ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, maps `SW_PODS`, `SW_METRICS` | — | Go mirror + btf tests pass on the object |
+| `[x]` BPF-2.1 | ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, maps `AG_PODS`, `AG_METRICS` | — | Go mirror + btf tests pass on the object |
 | `[x]` BPF-2.2 | Atomic transition: CAS on `FsmState.state` (`get_ptr_mut` + `compare_exchange`) (F4) | BPF-2.1 | documented; concurrent events can't skip a step (stress test) |
-| `[x]` BPF-2.3 | Per-pod gate: read `SW_PODS`; detection unchanged, enforcement gated to pod cgroups (F2) | BPF-2.1 | non-pod cgroups never enforce |
+| `[x]` BPF-2.3 | Per-pod gate: read `AG_PODS`; detection unchanged, enforcement gated to pod cgroups (F2) | BPF-2.1 | non-pod cgroups never enforce |
 
 ### Val 1 — kill
 | ID | Task | Depends | Done when |
 |---|---|---|---|
 | `[x]` BPF-2.4 | Read `Policy.enforce` (F3): detect-only vs enforce | BPF-2.1 | enforce=0 behaves exactly like Phase 1.5 |
-| `[x]` BPF-2.5 | KILL: `bpf_send_signal(SIGKILL)` when enforce==1 && action==kill && cgroup∈SW_PODS; set `enforced` (F5) | BPF-2.2, BPF-2.3, BPF-2.4 | attacker killed at the terminal step; benign + node runtime never killed |
-| `[x]` BPF-2.6 | `SW_METRICS` per-CPU counters: events, kills, audit_dropped (F7) | BPF-2.1 | counters readable from `AGT-2.2` |
+| `[x]` BPF-2.5 | KILL: `bpf_send_signal(SIGKILL)` when enforce==1 && action==kill && cgroup∈AG_PODS; set `enforced` (F5) | BPF-2.2, BPF-2.3, BPF-2.4 | attacker killed at the terminal step; benign + node runtime never killed |
+| `[x]` BPF-2.6 | `AG_METRICS` per-CPU counters: events, kills, audit_dropped (F7) | BPF-2.1 | counters readable from `AGT-2.2` |
 | `[x]` BPF-2.7 | Verifies on the CI kernel matrix (5.15 → stable) with `bpf_send_signal` | BPF-2.5 | `make ci-kernel KERNEL=5.15` and `KERNEL=stable` pass |
 
 > Phase 2 (VM, kernel 6.8; matrix 5.15 + stable via vimto/TCG, `VIMTO_DISABLE_KVM=1`).
-> ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, plus `SW_PODS` (LRU_HASH `u64`
-> cgroup id → `u8`, 16384) and `SW_METRICS` (PERCPU_ARRAY of 3 `u64`: events, kills,
-> audit_dropped). `handle` reads `enforce` from `SW_POLICY[0]`, and, only when `enforce==1`,
-> looks up the cgroup in `SW_PODS` to form `can_kill` (short-circuit keeps the detect-only
+> ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, plus `AG_PODS` (LRU_HASH `u64`
+> cgroup id → `u8`, 16384) and `AG_METRICS` (PERCPU_ARRAY of 3 `u64`: events, kills,
+> audit_dropped). `handle` reads `enforce` from `AG_POLICY[0]`, and, only when `enforce==1`,
+> looks up the cgroup in `AG_PODS` to form `can_kill` (short-circuit keeps the detect-only
 > path lookup-free). Per matched binding it bumps the events counter; on a ring-buffer
 > reserve failure it bumps audit_dropped. After the committed transition, a kill fires
 > (`bpf_send_signal(SIGKILL)`, audit `enforced=1`, kills counter bumped) only when
@@ -111,7 +111,7 @@ Decisions F1–F7 and the v3.1 ABI additions: [docs/architecture.md](../docs/arc
 > `FsmState.state` cannot be expressed or verified. Per the documented fallback, the state
 > write stays last-writer-wins (E9) and enforcement is gated by re-reading the state before
 > killing: a kill fires only if the workload's current committed state is still the one this
-> transition produced (`next_state == from || SW_STATE[key].state == next_state`). This
+> transition produced (`next_state == from || AG_STATE[key].state == next_state`). This
 > closes the race *at the enforcement layer* — a concurrent syscall that clobbers the
 > kill-triggering step makes the re-read miss, so no kill fires on a stale decision, and a
 > self-loop kill (terminal state re-firing) still enforces. The underlying detection race is

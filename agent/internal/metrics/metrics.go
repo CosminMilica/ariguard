@@ -1,4 +1,4 @@
-// Package metrics exposes the SW_METRICS counters in Prometheus text format.
+// Package metrics exposes the AG_METRICS counters in Prometheus text format.
 package metrics
 
 import (
@@ -42,9 +42,9 @@ func Format(c Counters) string {
 		name, help string
 		v          uint64
 	}{
-		{"statewall_events_total", "Syscall events that matched a policy binding.", c.Events},
-		{"statewall_kills_total", "Processes killed by enforcement.", c.Kills},
-		{"statewall_audit_dropped_total", "Audit records dropped because the ring buffer was full.", c.AuditDropped},
+		{"ariguard_events_total", "Syscall events that matched a policy binding.", c.Events},
+		{"ariguard_kills_total", "Processes killed by enforcement.", c.Kills},
+		{"ariguard_audit_dropped_total", "Audit records dropped because the ring buffer was full.", c.AuditDropped},
 	} {
 		s += fmt.Sprintf("# HELP %s %s\n# TYPE %s counter\n%s %d\n", m.name, m.help, m.name, m.name, m.v)
 	}

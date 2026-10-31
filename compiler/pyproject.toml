@@ -1,7 +1,7 @@
 [project]
-name = "statewall-compiler"
+name = "ariguard-compiler"
 version = "0.1.0"
-description = "Compile threat intelligence (ATT&CK / Sigma / syscall traces) into Statewall in-kernel FSM transition tables."
+description = "Compile threat intelligence (ATT&CK / Sigma / syscall traces) into AriGuard in-kernel FSM transition tables."
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
 
@@ -9,7 +9,7 @@ dependencies = ["PyYAML>=6.0"]
 test = ["pytest>=8", "pytest-cov>=5"]
 
 [project.scripts]
-statewall-compile = "statewall_compiler.cli:main"
+ariguard-compile = "ariguard_compiler.cli:main"
 
 [build-system]
 requires = ["hatchling"]

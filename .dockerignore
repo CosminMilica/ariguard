@@ -1,4 +1,4 @@
 *
-!bin/statewall-agent
-!bin/statewall.bpf.o
+!bin/ariguard-agent
+!bin/ariguard.bpf.o
 !testdata/golden/policy.bin

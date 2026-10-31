@@ -1,36 +1,36 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: statewall-agent
-  namespace: statewall-system
+  name: ariguard-agent
+  namespace: ariguard-system
   labels:
-    app.kubernetes.io/name: statewall-agent
+    app.kubernetes.io/name: ariguard-agent
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: statewall-agent
+      app.kubernetes.io/name: ariguard-agent
   updateStrategy:
     type: RollingUpdate
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: statewall-agent
+        app.kubernetes.io/name: ariguard-agent
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9102"
         prometheus.io/path: /metrics
     spec:
-      serviceAccountName: statewall-agent
+      serviceAccountName: ariguard-agent
       hostPID: true
       tolerations:
         - operator: Exists
       containers:
         - name: agent
-          image: statewall-agent:dev
+          image: ariguard-agent:dev
           imagePullPolicy: IfNotPresent
           args:
-            - --object=/opt/statewall/statewall.bpf.o
-            - --bundle=/opt/statewall/policy.bin
+            - --object=/opt/ariguard/ariguard.bpf.o
+            - --bundle=/opt/ariguard/policy.bin
             - --metrics-addr=:9102
           ports:
             - name: metrics

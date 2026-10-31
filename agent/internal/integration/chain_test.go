@@ -24,17 +24,17 @@ import (
 	"github.com/cilium/ebpf/ringbuf"
 	"golang.org/x/sys/unix"
 
-	"github.com/CosminMilica/statewall/agent/internal/audit"
-	"github.com/CosminMilica/statewall/agent/internal/loader"
-	"github.com/CosminMilica/statewall/agent/internal/podmeta"
-	"github.com/CosminMilica/statewall/agent/internal/policy"
-	"github.com/CosminMilica/statewall/agent/internal/policy/kmap"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/audit"
+	"github.com/CosminMilica/ariguard/agent/internal/loader"
+	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/agent/internal/policy"
+	"github.com/CosminMilica/ariguard/agent/internal/policy/kmap"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 const (
-	stepsEnv = "STATEWALL_CHAIN_STEPS"
-	cpuEnv   = "STATEWALL_CHAIN_CPU"
+	stepsEnv = "ARIGUARD_CHAIN_STEPS"
+	cpuEnv   = "ARIGUARD_CHAIN_CPU"
 )
 
 func TestMain(m *testing.M) {
@@ -84,13 +84,13 @@ func runSteps(steps []string) {
 		case "setns":
 			_ = unix.Setns(-1, 0)
 		case "mount":
-			_ = unix.Mount("none", "/nonexistent-statewall", "statewall-none", 0, "")
+			_ = unix.Mount("none", "/nonexistent-ariguard", "ariguard-none", 0, "")
 		case "private-mount":
-			_ = unix.Mount("none", "/nonexistent-statewall", "", unix.MS_PRIVATE, "")
+			_ = unix.Mount("none", "/nonexistent-ariguard", "", unix.MS_PRIVATE, "")
 		case "memfd":
-			_, _ = unix.MemfdCreate("statewall", 0)
+			_, _ = unix.MemfdCreate("ariguard", 0)
 		case "execve":
-			_ = unix.Exec("/nonexistent-statewall", []string{"x"}, nil)
+			_ = unix.Exec("/nonexistent-ariguard", []string{"x"}, nil)
 		case "sleep":
 			time.Sleep(200 * time.Millisecond)
 		default:
@@ -195,13 +195,13 @@ type harness struct {
 func setup(t *testing.T) *harness {
 	t.Helper()
 	if os.Geteuid() != 0 {
-		if os.Getenv("STATEWALL_REQUIRE_OBJECT") != "" {
+		if os.Getenv("ARIGUARD_REQUIRE_OBJECT") != "" {
 			t.Fatal("integration tests need root")
 		}
 		t.Skip("integration tests need root")
 	}
 	root := repoRoot(t)
-	objPath := envOr("STATEWALL_OBJECT", filepath.Join(root, "bin", "statewall.bpf.o"))
+	objPath := envOr("ARIGUARD_OBJECT", filepath.Join(root, "bin", "ariguard.bpf.o"))
 	obj, err := loader.Load(objPath, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -375,7 +375,7 @@ func TestChain(t *testing.T) {
 	})
 }
 
-// setEnforce flips Policy.enforce in the live SW_POLICY, keeping NumRules.
+// setEnforce flips Policy.enforce in the live AG_POLICY, keeping NumRules.
 func (h *harness) setEnforce(t *testing.T, on uint32) {
 	t.Helper()
 	var p fsm.Policy
@@ -388,14 +388,14 @@ func (h *harness) setEnforce(t *testing.T, on uint32) {
 	}
 }
 
-// runEnforce runs steps in a fresh cgroup, registering it in SW_PODS when pod is true.
+// runEnforce runs steps in a fresh cgroup, registering it in AG_PODS when pod is true.
 // It reports whether the child died from SIGKILL and the raw audit records for the cgroup.
 func (h *harness) runEnforce(t *testing.T, pod bool, steps ...string) (bool, []fsm.AuditRecord) {
 	t.Helper()
 	cgID, cgFD := newCgroup(t)
 	if pod {
 		if err := h.obj.Maps.Pods.Put(cgID, uint8(1)); err != nil {
-			t.Fatalf("SW_PODS put: %v", err)
+			t.Fatalf("AG_PODS put: %v", err)
 		}
 		t.Cleanup(func() { _ = h.obj.Maps.Pods.Delete(cgID) })
 	}
@@ -501,7 +501,7 @@ func TestEnforcement(t *testing.T) {
 	})
 }
 
-// logRunCounts reports how often each statewall program ran, to tell a hook
+// logRunCounts reports how often each ariguard program ran, to tell a hook
 // that never fires from one that fires without matching.
 func logRunCounts(t *testing.T) {
 	t.Helper()
@@ -539,7 +539,7 @@ func newCgroup(t *testing.T) (uint64, int) {
 			t.Fatalf("mount cgroup2: %v", err)
 		}
 	}
-	dir, err := os.MkdirTemp(base, "statewall-it-")
+	dir, err := os.MkdirTemp(base, "ariguard-it-")
 	if err != nil {
 		t.Fatalf("create cgroup: %v", err)
 	}

@@ -4,9 +4,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   replicas: 1
   selector:
@@ -16,7 +16,7 @@ spec:
     metadata:
       labels:
         app: web
-        app.kubernetes.io/part-of: statewall-eval
+        app.kubernetes.io/part-of: ariguard-eval
     spec:
       containers:
         - name: nginx
@@ -28,7 +28,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: web
-  namespace: statewall-eval
+  namespace: ariguard-eval
 spec:
   selector:
     app: web
@@ -40,9 +40,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web-client
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   replicas: 1
   selector:
@@ -52,7 +52,7 @@ spec:
     metadata:
       labels:
         app: web-client
-        app.kubernetes.io/part-of: statewall-eval
+        app.kubernetes.io/part-of: ariguard-eval
     spec:
       containers:
         - name: curl
@@ -61,6 +61,6 @@ spec:
           args:
             - |
               while true; do
-                curl -fsS -o /dev/null http://web.statewall-eval.svc.cluster.local/ || true
+                curl -fsS -o /dev/null http://web.ariguard-eval.svc.cluster.local/ || true
                 sleep 0.5
               done

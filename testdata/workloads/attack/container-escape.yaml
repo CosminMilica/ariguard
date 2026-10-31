@@ -8,10 +8,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: container-escape
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
     app: container-escape
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   restartPolicy: Never
   hostPID: true

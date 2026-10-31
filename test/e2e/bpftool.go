@@ -76,7 +76,7 @@ func rawBytes(raw json.RawMessage) ([]byte, bool) {
 	return out, true
 }
 
-// policyFields reads SW_POLICY[0] as (num_rules, enforce), from either the byte
+// policyFields reads AG_POLICY[0] as (num_rules, enforce), from either the byte
 // or the formatted representation.
 func policyFields(e bpfEntry) (numRules, enforce uint32, err error) {
 	if b, ok := rawBytes(e.Value); ok && len(b) >= 8 {
@@ -84,7 +84,7 @@ func policyFields(e bpfEntry) (numRules, enforce uint32, err error) {
 	}
 	var m map[string]json.Number
 	if err := json.Unmarshal(e.Value, &m); err != nil {
-		return 0, 0, fmt.Errorf("decode SW_POLICY value %s: %w", string(e.Value), err)
+		return 0, 0, fmt.Errorf("decode AG_POLICY value %s: %w", string(e.Value), err)
 	}
 	nr, _ := m["num_rules"].Int64()
 	en, _ := m["enforce"].Int64()

@@ -201,15 +201,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "statewall-common"
+name = "ariguard-common"
 version = "0.1.0"
 
 [[package]]
-name = "statewall-ebpf"
+name = "ariguard-ebpf"
 version = "0.1.0"
 dependencies = [
  "aya-ebpf",
- "statewall-common",
+ "ariguard-common",
 ]
 
 [[package]]

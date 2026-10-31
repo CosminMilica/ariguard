@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["statewall-ebpf", "statewall-common"]
+members = ["ariguard-ebpf", "ariguard-common"]
 
 [profile.release]
 # eBPF requires optimizations; the verifier rejects unoptimized output.

@@ -4,10 +4,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: fileless-seq
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
     app: fileless-seq
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   restartPolicy: Never
   containers:

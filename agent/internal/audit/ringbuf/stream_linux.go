@@ -12,11 +12,11 @@ import (
 	"github.com/cilium/ebpf"
 	cringbuf "github.com/cilium/ebpf/ringbuf"
 
-	"github.com/CosminMilica/statewall/agent/internal/audit"
-	"github.com/CosminMilica/statewall/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/agent/internal/audit"
+	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
 )
 
-// Stream reads SW_AUDIT and writes one JSON line per record to w until ctx is done.
+// Stream reads AG_AUDIT and writes one JSON line per record to w until ctx is done.
 // Names are read per record, so a reload takes effect on the next line; pods may be nil.
 func Stream(ctx context.Context, m *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, log *slog.Logger) error {
 	rd, err := cringbuf.NewReader(m)

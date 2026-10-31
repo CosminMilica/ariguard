@@ -3,7 +3,7 @@
 
 // Phase 1.5 generic FSM engine: one tracepoint per hook, a shared inlined handler
 // that evaluates every binding of the hook, advances each matching rule's per-workload
-// state through its block of SW_TRANSITIONS and emits an AuditRecord. Detection only,
+// state through its block of AG_TRANSITIONS and emits an AuditRecord. Detection only,
 // no enforcement (that is phase 2, BPF LSM).
 
 use aya_ebpf::{
@@ -15,7 +15,7 @@ use aya_ebpf::{
     macros::{btf_map, tracepoint},
     programs::TracePointContext,
 };
-use statewall_common::{
+use ariguard_common::{
     AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_KILL,
     ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT,
     HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT,
@@ -44,45 +44,45 @@ const SUN_PATH_OFF: u64 = 2;
 // SIGKILL, delivered by bpf_send_signal to the current task (F1, F5).
 const SIGKILL: u32 = 9;
 
-// SW_METRICS per-CPU counters; indices mirror pkg/fsm (events, kills, audit_dropped).
+// AG_METRICS per-CPU counters; indices mirror pkg/fsm (events, kills, audit_dropped).
 const NUM_METRICS: usize = 3;
 const METRIC_EVENTS: u32 = 0;
 const METRIC_KILLS: u32 = 1;
 const METRIC_AUDIT_DROPPED: u32 = 2;
 
 #[btf_map]
-static SW_POLICY: Array<Policy, 1> = Array::new();
+static AG_POLICY: Array<Policy, 1> = Array::new();
 
 #[btf_map]
-static SW_RULES: Array<Rule, { MAX_RULES as usize }> = Array::new();
+static AG_RULES: Array<Rule, { MAX_RULES as usize }> = Array::new();
 
 #[btf_map]
-static SW_TRANSITIONS: Array<Transition, { MAX_TRANSITIONS as usize }> = Array::new();
+static AG_TRANSITIONS: Array<Transition, { MAX_TRANSITIONS as usize }> = Array::new();
 
 #[btf_map]
-static SW_BINDINGS: Array<HookBindings, { statewall_common::NUM_HOOKS as usize }> = Array::new();
+static AG_BINDINGS: Array<HookBindings, { ariguard_common::NUM_HOOKS as usize }> = Array::new();
 
 #[btf_map]
-static SW_STATE: LruHashMap<
+static AG_STATE: LruHashMap<
     FsmKey,
     FsmState,
-    { statewall_common::MAX_TRACKED_WORKLOADS as usize },
+    { ariguard_common::MAX_TRACKED_WORKLOADS as usize },
 > = LruHashMap::new();
 
 #[btf_map]
-static SW_AUDIT: RingBuf<AuditRecord, AUDIT_RING_BYTES> = RingBuf::new();
+static AG_AUDIT: RingBuf<AuditRecord, AUDIT_RING_BYTES> = RingBuf::new();
 
 #[btf_map]
-static SW_SCRATCH: PerCpuArray<[u8; PATTERN_LEN], 1> = PerCpuArray::new();
+static AG_SCRATCH: PerCpuArray<[u8; PATTERN_LEN], 1> = PerCpuArray::new();
 
 // Pod cgroup ids that are mitigation candidates (F2); the agent populates it from
 // podmeta. A KILL fires only for a cgroup present here.
 #[btf_map]
-static SW_PODS: LruHashMap<u64, u8, 16384> = LruHashMap::new();
+static AG_PODS: LruHashMap<u64, u8, 16384> = LruHashMap::new();
 
 // Per-CPU counters read by the agent (F7). Indices: events, kills, audit_dropped.
 #[btf_map]
-static SW_METRICS: PerCpuArray<u64, NUM_METRICS> = PerCpuArray::new();
+static AG_METRICS: PerCpuArray<u64, NUM_METRICS> = PerCpuArray::new();
 
 #[tracepoint(category = "syscalls", name = "sys_enter_openat")]
 pub fn sw_openat(ctx: TracePointContext) -> u32 {
@@ -170,7 +170,7 @@ fn read_arg(ctx: &TracePointContext, i: u32) -> Option<u64> {
     unsafe { ctx.read_at::<u64>(ARG_BASE + 8 * i as usize) }.ok()
 }
 
-// Reads the hook's path argument into SW_SCRATCH; returns the string length (no NUL).
+// Reads the hook's path argument into AG_SCRATCH; returns the string length (no NUL).
 // PATH_SUN_PREFIX reads sockaddr_un.sun_path at offset 2 of the pointed-to struct.
 #[inline(always)]
 fn read_path(ctx: &TracePointContext, path_arg: u32, path_kind: u32) -> Option<usize> {
@@ -183,14 +183,14 @@ fn read_path(ctx: &TracePointContext, path_arg: u32, path_kind: u32) -> Option<u
     } else {
         ptr
     };
-    let buf = SW_SCRATCH.get_ptr_mut(0)?;
+    let buf = AG_SCRATCH.get_ptr_mut(0)?;
     let len = unsafe { bpf_probe_read_user_str_bytes(addr as *const u8, &mut *buf) }
         .ok()?
         .len();
     Some(len)
 }
 
-// Prefix match against the current SW_SCRATCH contents. The loop never breaks on a
+// Prefix match against the current AG_SCRATCH contents. The loop never breaks on a
 // variable bound: a pre-6.8 verifier cannot bound an early exit on `plen`.
 #[inline(always)]
 fn prefix_matches(len: usize, pattern: &[u8; PATTERN_LEN], plen: u32) -> bool {
@@ -198,7 +198,7 @@ fn prefix_matches(len: usize, pattern: &[u8; PATTERN_LEN], plen: u32) -> bool {
     if plen == 0 || plen > len {
         return false;
     }
-    let Some(buf) = SW_SCRATCH.get_ptr(0) else {
+    let Some(buf) = AG_SCRATCH.get_ptr(0) else {
         return false;
     };
     let buf = unsafe { &*buf };
@@ -230,7 +230,7 @@ fn arg_matches(ctx: &TracePointContext, op: u32, index: u32, value: u64) -> bool
 // Increments a per-CPU counter (F7). Per-CPU, so a plain read-modify-write is race-free.
 #[inline(always)]
 fn bump_metric(index: u32) {
-    if let Some(p) = SW_METRICS.get_ptr_mut(index) {
+    if let Some(p) = AG_METRICS.get_ptr_mut(index) {
         unsafe { *p += 1 };
     }
 }
@@ -239,19 +239,19 @@ fn bump_metric(index: u32) {
 // to gate enforcement so a kill fires only on the last-writer-wins commit (see advance).
 #[inline(always)]
 fn state_is(key: &FsmKey, state: u32) -> bool {
-    match SW_STATE.get_ptr(key) {
+    match AG_STATE.get_ptr(key) {
         Some(p) => unsafe { (*p).state == state },
         None => false,
     }
 }
 
 // Applies one transition of `rule` on `event` to the workload's state. `can_kill` is
-// (policy.enforce == 1 && cgroup in SW_PODS); when the committed transition's action is
+// (policy.enforce == 1 && cgroup in AG_PODS); when the committed transition's action is
 // KILL and can_kill holds, the current task is SIGKILLed and the audit record is marked
 // enforced (F5). Detection, state and audit are identical to Phase 1.5 otherwise.
 #[inline(always)]
 fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill: bool) {
-    let Some(rp) = SW_RULES.get_ptr(rule) else {
+    let Some(rp) = AG_RULES.get_ptr(rule) else {
         return;
     };
     let (num_states, num_events, trans_base, scope, terminal_from, window_ns) = unsafe {
@@ -276,7 +276,7 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
     let key = FsmKey { id, rule, _pad: 0 };
 
     let now = unsafe { bpf_ktime_get_ns() };
-    let (tracked, mut state, updated_ns) = match SW_STATE.get_ptr(&key) {
+    let (tracked, mut state, updated_ns) = match AG_STATE.get_ptr(&key) {
         Some(p) => unsafe { (true, (*p).state, (*p).updated_ns) },
         None => (false, STATE_INITIAL, 0),
     };
@@ -293,7 +293,7 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
     if rel >= num_states * num_events || index >= MAX_TRANSITIONS {
         return;
     }
-    let Some(tp) = SW_TRANSITIONS.get_ptr(index) else {
+    let Some(tp) = AG_TRANSITIONS.get_ptr(index) else {
         return;
     };
     let (next_state, action) = unsafe { ((*tp).next_state, (*tp).action) };
@@ -305,7 +305,7 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
     // residual-race note in bpf/TASKS.md.
     if next_state == STATE_INITIAL {
         if tracked {
-            let _ = SW_STATE.remove(&key);
+            let _ = AG_STATE.remove(&key);
         }
     } else if next_state != state {
         let value = FsmState {
@@ -314,7 +314,7 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
             updated_ns: now,
         };
         let flags = if tracked { 0 } else { BPF_NOEXIST };
-        let _ = SW_STATE.insert(&key, &value, flags);
+        let _ = AG_STATE.insert(&key, &value, flags);
     }
 
     // Enforcement (F5): kill only when the committed action is KILL, can_kill holds, and the
@@ -325,7 +325,7 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
         can_kill && action == ACTION_KILL && (next_state == state || state_is(&key, next_state));
 
     if next_state != state || action != ACTION_OBSERVE {
-        if let Some(mut entry) = SW_AUDIT.reserve(0) {
+        if let Some(mut entry) = AG_AUDIT.reserve(0) {
             let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
             entry.write(AuditRecord {
                 cgroup_id,
@@ -356,7 +356,7 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
 
 #[inline(always)]
 fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
-    let Some(pp) = SW_POLICY.get_ptr(0) else {
+    let Some(pp) = AG_POLICY.get_ptr(0) else {
         return 0;
     };
     let (num_rules, enforce) = unsafe { ((*pp).num_rules, (*pp).enforce) };
@@ -372,9 +372,9 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
 
     // Per-pod enforcement gate (F2, F3): a KILL fires only when enforcement is on and the
     // cgroup is a tracked pod. Short-circuit keeps the detect-only path free of the lookup.
-    let can_kill = enforce == 1 && SW_PODS.get_ptr(&cgroup_id).is_some();
+    let can_kill = enforce == 1 && AG_PODS.get_ptr(&cgroup_id).is_some();
 
-    let Some(hb) = SW_BINDINGS.get_ptr(hook) else {
+    let Some(hb) = AG_BINDINGS.get_ptr(hook) else {
         return 0;
     };
     let count = unsafe { (*hb).count } as usize;

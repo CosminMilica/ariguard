@@ -1,6 +1,6 @@
 //go:build e2e
 
-// Package e2e is the Statewall end-to-end gate: it builds a fresh agent image,
+// Package e2e is the AriGuard end-to-end gate: it builds a fresh agent image,
 // deploys the DaemonSet into the kind cluster, runs the benign + attack
 // workloads, and asserts from the three sources of truth — the BPF maps in the
 // VM host kernel (bpftool), the audit JSONL (check_audit.py), and Kubernetes pod
@@ -8,7 +8,7 @@
 // enforce mode proves attackers are killed and nothing else is touched.
 //
 // It runs inside the Lima VM against the kind cluster. Without a reachable
-// cluster and a BTF kernel it SKIPS, unless STATEWALL_REQUIRE_E2E=1 (CI), where
+// cluster and a BTF kernel it SKIPS, unless ARIGUARD_REQUIRE_E2E=1 (CI), where
 // the same condition is a hard failure. See README.md.
 package e2e
 
@@ -26,10 +26,10 @@ import (
 )
 
 const (
-	systemNS    = "statewall-system" // DaemonSet namespace (kustomize base)
-	evalNS      = "statewall-eval"   // workload namespace, pinned by expectations.json
-	dsName      = "statewall-agent"
-	agentLabel  = "app.kubernetes.io/name=statewall-agent"
+	systemNS    = "ariguard-system" // DaemonSet namespace (kustomize base)
+	evalNS      = "ariguard-eval"   // workload namespace, pinned by expectations.json
+	dsName      = "ariguard-agent"
+	agentLabel  = "app.kubernetes.io/name=ariguard-agent"
 	metricsPort = "9102"
 )
 
@@ -48,9 +48,9 @@ var podPhaseKillExpected = map[string]bool{
 	"container-escape-connect": true,
 }
 
-// swMaps are dumped to the artifacts dir on teardown. SW_AUDIT is a ring buffer
+// swMaps are dumped to the artifacts dir on teardown. AG_AUDIT is a ring buffer
 // that bpftool cannot dump; the failing dump is ignored.
-var swMaps = []string{"SW_POLICY", "SW_RULES", "SW_TRANSITIONS", "SW_BINDINGS", "SW_STATE", "SW_PODS", "SW_METRICS", "SW_SCRATCH"}
+var swMaps = []string{"AG_POLICY", "AG_RULES", "AG_TRANSITIONS", "AG_BINDINGS", "AG_STATE", "AG_PODS", "AG_METRICS", "AG_SCRATCH"}
 
 var (
 	imageOnce sync.Once
@@ -60,16 +60,16 @@ var (
 func TestDetectMode(t *testing.T) {
 	dir, agentPod := setupMode(t, "detect", "detect")
 
-	// SW_POLICY: detect-only, three rules loaded.
+	// AG_POLICY: detect-only, three rules loaded.
 	numRules, enforce := readPolicy(t)
 	if enforce != 0 {
-		t.Errorf("SW_POLICY.enforce = %d, want 0 in detect mode", enforce)
+		t.Errorf("AG_POLICY.enforce = %d, want 0 in detect mode", enforce)
 	}
 	if numRules != 3 {
-		t.Errorf("SW_POLICY.num_rules = %d, want 3", numRules)
+		t.Errorf("AG_POLICY.num_rules = %d, want 3", numRules)
 	}
-	assertMapNonEmpty(t, "SW_RULES")
-	assertMapNonEmpty(t, "SW_TRANSITIONS")
+	assertMapNonEmpty(t, "AG_RULES")
+	assertMapNonEmpty(t, "AG_TRANSITIONS")
 
 	recreateNamespace(t, evalNS)
 	applyBenign(t)
@@ -94,23 +94,23 @@ func TestDetectMode(t *testing.T) {
 		}
 	}
 	if kills := scrapeKills(t, agentPod); kills != 0 {
-		t.Errorf("statewall_kills_total = %d in detect mode, want 0", kills)
+		t.Errorf("ariguard_kills_total = %d in detect mode, want 0", kills)
 	}
 }
 
 func TestEnforceMode(t *testing.T) {
 	dir, agentPod := setupMode(t, "enforce", "enforce")
 
-	// SW_POLICY: enforcing, three rules loaded.
+	// AG_POLICY: enforcing, three rules loaded.
 	numRules, enforce := readPolicy(t)
 	if enforce != 1 {
-		t.Errorf("SW_POLICY.enforce = %d, want 1 in enforce mode", enforce)
+		t.Errorf("AG_POLICY.enforce = %d, want 1 in enforce mode", enforce)
 	}
 	if numRules != 3 {
-		t.Errorf("SW_POLICY.num_rules = %d, want 3", numRules)
+		t.Errorf("AG_POLICY.num_rules = %d, want 3", numRules)
 	}
-	assertMapNonEmpty(t, "SW_RULES")
-	assertMapNonEmpty(t, "SW_TRANSITIONS")
+	assertMapNonEmpty(t, "AG_RULES")
+	assertMapNonEmpty(t, "AG_TRANSITIONS")
 
 	recreateNamespace(t, evalNS)
 	applyBenign(t)
@@ -139,23 +139,23 @@ func TestEnforceMode(t *testing.T) {
 	audit := collectAudit(t, agentPod, dir)
 	// check_audit.py --enforce: every attacker's terminal record has enforced=true
 	// and nothing non-attacker is enforced. By decision F5 the kernel sets
-	// enforced=1 only when the cgroup is in SW_PODS, so this proves per-pod
-	// attribution and the SW_PODS gate end to end.
+	// enforced=1 only when the cgroup is in AG_PODS, so this proves per-pod
+	// attribution and the AG_PODS gate end to end.
 	runChecker(t, audit, true)
 
-	// SW_PODS carries the tracked pod cgroups. A direct pod->cgroup-id mapping is
+	// AG_PODS carries the tracked pod cgroups. A direct pod->cgroup-id mapping is
 	// not resolved here (it depends on the node's cgroup driver layout); instead
 	// non-emptiness is asserted and attribution is proven by check_audit.py above
 	// (attacker kills landed, benign/host did not — see the undisturbed check).
-	pods := bpftoolMapDump(t, "SW_PODS")
+	pods := bpftoolMapDump(t, "AG_PODS")
 	if len(pods) < len(attackers) {
-		t.Errorf("SW_PODS has %d entries, want >= %d (one per tracked pod cgroup)", len(pods), len(attackers))
+		t.Errorf("AG_PODS has %d entries, want >= %d (one per tracked pod cgroup)", len(pods), len(attackers))
 	}
 
 	// Kill counter rose by exactly one per attacker.
 	kills := scrapeKills(t, agentPod)
 	if got := kills - baseKills; got != uint64(len(attackers)) {
-		t.Errorf("statewall_kills_total rose by %d (%d -> %d), want %d", got, baseKills, kills, len(attackers))
+		t.Errorf("ariguard_kills_total rose by %d (%d -> %d), want %d", got, baseKills, kills, len(attackers))
 	}
 
 	// Collateral check: benign and kube-system pods neither failed nor restarted.
@@ -181,11 +181,11 @@ func setupMode(t *testing.T, overlay, mode string) (dir, agentPod string) {
 	return dir, agentPod
 }
 
-// requireE2E skips (or, under STATEWALL_REQUIRE_E2E=1, fails) unless the kind
+// requireE2E skips (or, under ARIGUARD_REQUIRE_E2E=1, fails) unless the kind
 // cluster is reachable and the kernel exposes BTF.
 func requireE2E(t *testing.T) {
 	t.Helper()
-	required := os.Getenv("STATEWALL_REQUIRE_E2E") == "1"
+	required := os.Getenv("ARIGUARD_REQUIRE_E2E") == "1"
 	gate := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
 		if required {
@@ -228,21 +228,21 @@ func agentPodName(t *testing.T) string {
 	out := kubectl(t, "-n", systemNS, "get", "pods", "-l", agentLabel, "-o", "jsonpath={.items[0].metadata.name}")
 	name := strings.TrimSpace(out)
 	if name == "" {
-		t.Fatal("no statewall-agent pod found")
+		t.Fatal("no ariguard-agent pod found")
 	}
 	return name
 }
 
-// readPolicy returns SW_POLICY[0] (num_rules, enforce).
+// readPolicy returns AG_POLICY[0] (num_rules, enforce).
 func readPolicy(t *testing.T) (numRules, enforce uint32) {
 	t.Helper()
-	entries := bpftoolMapDump(t, "SW_POLICY")
+	entries := bpftoolMapDump(t, "AG_POLICY")
 	if len(entries) == 0 {
-		t.Fatal("SW_POLICY is empty")
+		t.Fatal("AG_POLICY is empty")
 	}
 	nr, en, err := policyFields(entries[0])
 	if err != nil {
-		t.Fatalf("decode SW_POLICY: %v", err)
+		t.Fatalf("decode AG_POLICY: %v", err)
 	}
 	return nr, en
 }
@@ -312,7 +312,7 @@ func runChecker(t *testing.T, auditPath string, enforce bool) {
 
 func scrapeKills(t *testing.T, pod string) uint64 {
 	t.Helper()
-	return scrapeMetric(t, pod, "statewall_kills_total")
+	return scrapeMetric(t, pod, "ariguard_kills_total")
 }
 
 // scrapeMetric reads /metrics from inside the agent pod over bash's /dev/tcp (no
@@ -516,7 +516,7 @@ func waitDaemonSetReady(t *testing.T, ns, name string, timeout time.Duration) {
 
 func artifactsDir(t *testing.T, mode string) string {
 	t.Helper()
-	base := os.Getenv("STATEWALL_E2E_ARTIFACTS")
+	base := os.Getenv("ARIGUARD_E2E_ARTIFACTS")
 	if base == "" {
 		base = t.TempDir()
 	}
@@ -527,7 +527,7 @@ func artifactsDir(t *testing.T, mode string) string {
 	return dir
 }
 
-// dumpArtifacts captures pod logs, events, attack-pod descriptions and the SW_*
+// dumpArtifacts captures pod logs, events, attack-pod descriptions and the AG_*
 // map dumps before teardown. Best-effort: dump failures are logged, not fatal.
 func dumpArtifacts(t *testing.T, dir string) {
 	t.Helper()
@@ -562,7 +562,7 @@ func dumpArtifacts(t *testing.T, dir string) {
 // --- helpers ---------------------------------------------------------------
 
 func attackSeconds() time.Duration {
-	return time.Duration(envInt("STATEWALL_E2E_ATTACK_SECONDS", 30)) * time.Second
+	return time.Duration(envInt("ARIGUARD_E2E_ATTACK_SECONDS", 30)) * time.Second
 }
 
 func envInt(name string, def int) int {

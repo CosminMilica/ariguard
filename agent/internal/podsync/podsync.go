@@ -1,4 +1,4 @@
-// Package podsync mirrors the node's pod cgroups into SW_PODS, the set of mitigation candidates (F2).
+// Package podsync mirrors the node's pod cgroups into AG_PODS, the set of mitigation candidates (F2).
 package podsync
 
 import (
@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// PodSet is the SW_PODS map.
+// PodSet is the AG_PODS map.
 type PodSet interface {
 	Put(cgid uint64) error
 	Delete(cgid uint64) error
@@ -59,9 +59,9 @@ func Run(ctx context.Context, set PodSet, src Source, interval time.Duration, lo
 		added, removed, err := Sync(set, src.PodCgroups())
 		switch {
 		case err != nil:
-			log.Warn("sync SW_PODS", "err", err)
+			log.Warn("sync AG_PODS", "err", err)
 		case added > 0 || removed > 0:
-			log.Info("SW_PODS updated", "added", added, "removed", removed)
+			log.Info("AG_PODS updated", "added", added, "removed", removed)
 		}
 		select {
 		case <-ctx.Done():

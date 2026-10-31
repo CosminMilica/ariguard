@@ -8,7 +8,7 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-// Map implements podsync.PodSet over SW_PODS.
+// Map implements podsync.PodSet over AG_PODS.
 type Map struct{ M *ebpf.Map }
 
 func (m Map) Put(cgid uint64) error { return m.M.Put(cgid, uint8(1)) }

@@ -8,6 +8,6 @@ import (
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "statewall-agent: eBPF requires linux")
+	fmt.Fprintln(os.Stderr, "ariguard-agent: eBPF requires linux")
 	os.Exit(1)
 }

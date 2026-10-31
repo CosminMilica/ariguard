@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package statewall.v1;
+package ariguard.v1;
 
-option go_package = "github.com/CosminMilica/statewall/pkg/proto/statewallv1";
+option go_package = "github.com/CosminMilica/ariguard/pkg/proto/ariguardv1";
 
-// Statewall is the contract between the cluster control plane and the node agents.
-service Statewall {
+// AriGuard is the contract between the cluster control plane and the node agents.
+service AriGuard {
   // PushPolicy distributes a compiled transition table to an agent.
   rpc PushPolicy(PushPolicyRequest) returns (PushPolicyResponse);
 

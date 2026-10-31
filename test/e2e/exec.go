@@ -62,7 +62,7 @@ func runTry(timeout time.Duration, name string, args ...string) (string, error) 
 // harness talks to the kind cluster the same way an operator would.
 func kubeconfigArgs(args ...string) []string {
 	var base []string
-	if kc := os.Getenv("STATEWALL_KUBECONFIG"); kc != "" {
+	if kc := os.Getenv("ARIGUARD_KUBECONFIG"); kc != "" {
 		base = append(base, "--kubeconfig", kc)
 	}
 	if ctxName := kubeContext(); ctxName != "" {
@@ -72,10 +72,10 @@ func kubeconfigArgs(args ...string) []string {
 }
 
 func kubeContext() string {
-	if v, ok := os.LookupEnv("STATEWALL_KUBE_CONTEXT"); ok {
+	if v, ok := os.LookupEnv("ARIGUARD_KUBE_CONTEXT"); ok {
 		return v
 	}
-	return "kind-statewall-dev"
+	return "kind-ariguard-dev"
 }
 
 // kubectl runs kubectl and fails the test on error.

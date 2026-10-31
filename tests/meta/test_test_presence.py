@@ -4,7 +4,7 @@ GO_ROOTS = ["agent", "pkg"]
 
 # Package dir (repo-relative) -> reason it may have no _test.go.
 GO_NO_TEST_ALLOWLIST = {
-    "agent/cmd/statewall-agent": "main package: flag parsing and wiring only, logic lives in internal/*",
+    "agent/cmd/ariguard-agent": "main package: flag parsing and wiring only, logic lives in internal/*",
     # TODO: add unit tests for the mitigator decision logic.
     "agent/internal/mitigator": "no tests yet; behaviour covered only by kind e2e (testdata)",
     "agent/internal/audit/ringbuf": "linux-only eBPF ring buffer glue; exercised by ci-kernel/ci-e2e",
@@ -13,7 +13,7 @@ GO_NO_TEST_ALLOWLIST = {
     "agent/internal/podsync/podmap": "linux-only eBPF map glue; exercised by ci-kernel/ci-e2e",
 }
 
-# Module stem under compiler/statewall_compiler/ -> reason it may have no test.
+# Module stem under compiler/ariguard_compiler/ -> reason it may have no test.
 PY_STUB_ALLOWLIST = {
     "__init__": "package marker",
     "sigma": "Phase-3 stub, covered by compiler/tests/test_stubs.py (NotImplementedError)",
@@ -51,7 +51,7 @@ def test_go_allowlist_paths_exist(repo_root):
 
 
 def test_python_modules_have_tests(repo_root):
-    pkg = repo_root / "compiler" / "statewall_compiler"
+    pkg = repo_root / "compiler" / "ariguard_compiler"
     tests = repo_root / "compiler" / "tests"
     corpus = "\n".join(p.read_text() for p in tests.glob("test_*.py"))
     missing = []
@@ -60,10 +60,10 @@ def test_python_modules_have_tests(repo_root):
         if stem in PY_STUB_ALLOWLIST:
             continue
         has_file = (tests / f"test_{stem}.py").exists()
-        references = f"statewall_compiler.{stem}" in corpus or f"import {stem}" in corpus \
+        references = f"ariguard_compiler.{stem}" in corpus or f"import {stem}" in corpus \
             or f" {stem}," in corpus or f"import {stem}" in corpus
         if not (has_file or references):
-            missing.append(f"compiler/statewall_compiler/{mod.name}")
+            missing.append(f"compiler/ariguard_compiler/{mod.name}")
     assert not missing, (
         "Python modules with no test file or test import; add a test or an entry in "
         "PY_STUB_ALLOWLIST:\n" + "\n".join(missing)

@@ -6,7 +6,7 @@ Evaluation workloads, expectations, fixtures and the exit check. Tasks: [TASKS.m
 testdata/
 ├── expectations.json                per rule: terminal, chain, expected attacker pods
 ├── golden/policy.bin                compiled policy bundle (make golden)
-├── workloads/                       namespace statewall-eval
+├── workloads/                       namespace ariguard-eval
 │   ├── benign/
 │   │   ├── web.yaml                 nginx + curl client loop
 │   │   ├── busy.yaml                file churn + frequent exec
@@ -19,8 +19,8 @@ testdata/
 │       ├── reverse-seq.yaml               connect -> dup2(1) -> execve /bin/sh
 │       └── fileless-seq.yaml              memfd_create -> execve /proc/self/fd/<n>
 ├── scripts/
-│   ├── phase1-exit-check.sh         agent + workloads + assertions (STATEWALL_ENFORCE=1 for enforce mode)
-│   ├── phase2-exit-check.sh         phase1-exit-check.sh with STATEWALL_ENFORCE=1
+│   ├── phase1-exit-check.sh         agent + workloads + assertions (ARIGUARD_ENFORCE=1 for enforce mode)
+│   ├── phase2-exit-check.sh         phase1-exit-check.sh with ARIGUARD_ENFORCE=1
 │   └── check_audit.py               asserts on the v3 JSONL audit stream (stdlib only)
 └── fixtures/                        JSONL inputs for check_audit.py --self-test
     ├── pass.jsonl, fail-a1-*, fail-a2-*, fail-a3-*   v1 (no `enforced` key; dry-run only)
@@ -73,7 +73,7 @@ records / records). Exit codes: `0` pass, `1` assertion failed, `2` bad input.
 
 ## Run
 
-Exit check, inside the Lima VM (`limactl shell statewall`), with the kind cluster up and
+Exit check, inside the Lima VM (`limactl shell ariguard`), with the kind cluster up and
 the agent, BPF object and bundle built:
 
 ```
@@ -81,19 +81,19 @@ testdata/scripts/phase1-exit-check.sh
 ```
 
 Enforce mode (Phase 2): `testdata/scripts/phase2-exit-check.sh`, or
-`STATEWALL_ENFORCE=1 testdata/scripts/phase1-exit-check.sh`. The agent gets `--enforce` and the
+`ARIGUARD_ENFORCE=1 testdata/scripts/phase1-exit-check.sh`. The agent gets `--enforce` and the
 checker gets `--enforce`. Besides the audit assertions, it requires every attack pod to reach
 phase `Failed` and every benign pod to be neither `Failed` nor restarted; the agent and node
 must stay up (host untouched).
 
 | Variable | Default |
 |---|---|
-| `STATEWALL_ENFORCE` | `0` (`1` = enforce mode) |
-| `STATEWALL_AGENT` | `bin/statewall-agent` |
-| `STATEWALL_OBJECT` | `bpf/target/bpfel-unknown-none/release/statewall` |
-| `STATEWALL_BUNDLE` | `testdata/golden/policy.bin` |
-| `STATEWALL_KUBECONFIG` | invoking user's `~/.kube/config` (resolved before sudo) |
-| `KUBE_CONTEXT` | `kind-statewall-dev` |
+| `ARIGUARD_ENFORCE` | `0` (`1` = enforce mode) |
+| `ARIGUARD_AGENT` | `bin/ariguard-agent` |
+| `ARIGUARD_OBJECT` | `bpf/target/bpfel-unknown-none/release/ariguard` |
+| `ARIGUARD_BUNDLE` | `testdata/golden/policy.bin` |
+| `ARIGUARD_KUBECONFIG` | invoking user's `~/.kube/config` (resolved before sudo) |
+| `KUBE_CONTEXT` | `kind-ariguard-dev` |
 | `BENIGN_SECONDS` / `ATTACK_SECONDS` | `30` / `15` |
 
 The audit stream and agent log stay in the printed temp directory. Re-check a saved stream:
