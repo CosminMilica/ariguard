@@ -13,5 +13,5 @@ kernel. Runs **offline, at compile time** — never on the data path.
 
 ```sh
 pip install -e .
-statewall-compile --input rules/container-escape.yml --out policies/container-escape.bin
+statewall-compile --rules-dir rules --out policies/policy.bin   # or repeat --input FILE
 ```

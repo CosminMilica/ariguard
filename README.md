@@ -57,22 +57,29 @@ observed via kprobe/tracepoint/LSM hook.
 
 ```
  S0  normal
-  │  open("/var/run/docker.sock")            → runtime socket touched
+  │  openat / connect  ".../containerd.sock"   → runtime socket touched
   ▼
  S1  suspicious
-  │  setns() / unshare(CLONE_NEWNS)          → namespace manipulation
+  │  setns / unshare (mount/pid/user ns)       → namespace manipulation
   ▼
  S2  escalating
-  │  mount()                                 → host mount attempt
+  │  mount (not propagation-only)              → host mount attempt
   ▼
  S3  breakout-imminent
-  │  execve() from the new mount             → CRITICAL
+  │  execve                                    → CRITICAL
   ▼
  S_COMPROMISED  ──►  MITIGATE  (deny -EPERM / SIGKILL / network quarantine)
 ```
 
-A single `mount()` or `setns()` is normal in many workloads. The **ordered sequence**,
-tracked per cgroup, is what trips the machine.
+A single `mount` or `setns` is normal in many workloads. The **ordered sequence** is what
+trips the machine.
+
+Each rule is one such chain. Statewall runs **several rules at once**, each scoped to a
+container (cgroup) or to a single process, and a syscall can advance more than one rule.
+Bindings carry predicates on the syscall arguments (a path prefix, a flag mask), so a rule
+fires on the real step and not on its benign look-alike — e.g. `mount` counts only when it
+is not a propagation-only remount. Three rules ship today: container escape, reverse shell,
+and fileless execution.
 
 ### 2. Dynamic, escalating mitigation
 
@@ -170,7 +177,7 @@ number of processes" curve should be **flat** — that flat line is the headline
 
 ---
 
-## Repository layout (planned)
+## Repository layout
 
 ```
 statewall/
@@ -191,8 +198,8 @@ statewall/
 ├── deploy/
 │   ├── kind/                 # local single-node cluster
 │   └── k8s/                  # DaemonSet + operator manifests
-├── testdata/                 # synthetic benign + attack syscall traces
-├── docs/                     # architecture.md, threat-model.md
+├── testdata/                 # benign + attack workloads, golden bundle, exit-check + checker
+├── docs/                     # architecture.md, threat-model.md, ci-plan.md
 ├── go.mod                    # single Go module (covers agent/, control-plane/, pkg/)
 └── Makefile                  # orchestrates the Rust / Go / Python toolchains
 ```
@@ -201,14 +208,32 @@ statewall/
 
 ## Project status
 
-Early development — defining the baseline. Built in phases; **Phases 1–2 alone are a
-complete contribution**, Phase 3 is the differentiator.
+Built in phases; **Phases 1–2 alone are a complete contribution**, Phase 3 is the
+differentiator. The detailed plan and per-component tasks are in
+[ROADMAP.md](ROADMAP.md) and each component's `TASKS.md`.
 
-- [ ] **Phase 0 — Spike:** validate the Rust-eBPF ↔ Go-loader map ABI (see design note).
-- [ ] **Phase 1 — Passive FSM:** in-kernel state machine, detection only (audit log).
+- [x] **Phase 0 — Spike:** Rust-eBPF object loads unchanged via the Go (`cilium/ebpf`) loader (BTF maps).
+- [x] **Phase 1 — Passive FSM:** single-chain state machine in-kernel, detection only; exit check green on kind.
+- [x] **Phase 1.5 — Generic engine:** many rules at once, per-container or per-process scope, argument predicates, 16 hooks; three rules (container-escape, reverse-shell, fileless-exec) detected together on kind; verifies on kernels 5.15 → stable.
 - [ ] **Phase 2 — Synchronous mitigation:** LSM-based deny / kill / quarantine.
-- [ ] **Phase 3 — Rule compiler:** threat intel → transition tables (ML, then LLM).
+- [ ] **Phase 3 — Rule compiler:** threat intel → rules (ML, then LLM) + cluster distribution.
 - [ ] **Phase 4 — Evaluation:** efficacy, latency, and the flat memory curve vs. Falco.
+
+### What works today
+
+A node agent loads the Rust eBPF object, compiles a set of YAML rules into one policy
+bundle, and runs a generic multi-rule finite state machine entirely in the kernel. It
+tracks each container (or process) through its own state per rule, recognizes three
+multi-stage attack chains by the *ordered sequence* of syscalls (not single events),
+attributes events to the Kubernetes pod, and streams an audit record on every transition.
+Detection only — nothing is blocked yet (Phase 2). The per-program instruction count stays
+under the 512 budget, memory is a fixed pre-allocated set of maps, and the end-to-end exit
+check passes on kind with no false positives on the benign workloads or the node's own
+runtime.
+
+Tests: `pkg/fsm`, `compiler` and the agent packages are unit-tested; the kernel engine is
+covered by an in-kernel integration test and the kind exit check. CI enforces a per-package
+80% coverage floor (`make cover`).
 
 ---
 
@@ -219,22 +244,27 @@ complete contribution**, Phase 3 is the differentiator.
 - Rust toolchain + `bpf-linker`; Go ≥ 1.25; Python ≥ 3.11
 - For local work on macOS: a Linux VM (Lima / multipass) + kind
 
-## Quickstart (planned)
+## Quickstart
 
 ```sh
-# bring up a local single-node cluster inside a Linux VM
-make dev-up            # lima/multipass VM + kind
+# host: bring up the Linux VM + kind cluster, export the kubeconfig
+make dev-up            # Lima VM + kind; also runs `make kubeconfig`
 
-# build eBPF (Rust) + agent (Go)
-make build
+# host: compile the rules into one policy bundle
+make golden            # compiler/rules/*.yml -> testdata/golden/policy.bin
 
-# deploy the DaemonSet and load a demo threat policy
-make deploy
-make load-policy POLICY=container-escape
+# in the VM (limactl shell statewall), from the repo:
+make build-bpf build-agent        # bin/statewall.bpf.o + bin/statewall-agent
+sudo bin/statewall-agent \
+  --object bin/statewall.bpf.o \
+  --bundle testdata/golden/policy.bin \
+  --kubeconfig ~/.kube/config     # streams audit JSON, detection only
 
-# run the demo: a benign workload trains, then an exploit is blocked in-kernel
-make demo-escape
+# end-to-end: benign + attack workloads on kind, asserted by the checker
+testdata/scripts/phase1-exit-check.sh
 ```
+
+Blocking (`deny` / `kill`) is recorded but not yet enforced — that is Phase 2.
 
 ---
 
@@ -245,8 +275,9 @@ attack chains on a single node (container escape, local privilege escalation).
 
 **Out of scope (for now):** kernel-exploit-based eBPF bypass, attacks that never touch the
 monitored syscalls, cluster-wide correlation across nodes, and full MITRE ATT&CK coverage.
-The FSM is deliberately scoped to **one or two well-chosen kill chains** to keep the work
-tractable and the evaluation rigorous.
+The engine is generic, but the shipped ruleset is **three well-chosen kill chains** to keep
+the evaluation rigorous. Known false-positive risks and residual races are tracked in
+[docs/threat-model.md](docs/threat-model.md).
 
 ---
 

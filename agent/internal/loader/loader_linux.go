@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/cilium/ebpf"
@@ -21,7 +22,8 @@ type Maps struct {
 	State       *ebpf.Map
 	Transitions *ebpf.Map
 	Bindings    *ebpf.Map
-	Dims        *ebpf.Map
+	Rules       *ebpf.Map
+	Policy      *ebpf.Map
 	Audit       *ebpf.Map
 	Scratch     *ebpf.Map
 }
@@ -65,7 +67,8 @@ func Load(path string, log *slog.Logger) (*Object, error) {
 		{MapState, &o.Maps.State},
 		{MapTransitions, &o.Maps.Transitions},
 		{MapBindings, &o.Maps.Bindings},
-		{MapDims, &o.Maps.Dims},
+		{MapRules, &o.Maps.Rules},
+		{MapPolicy, &o.Maps.Policy},
 		{MapAudit, &o.Maps.Audit},
 		{MapScratch, &o.Maps.Scratch},
 	}
@@ -81,7 +84,7 @@ func Load(path string, log *slog.Logger) (*Object, error) {
 }
 
 // Attach attaches every sw_<hook> program to syscalls/sys_enter_<hook>.
-// Missing programs are skipped with a warning.
+// Missing programs and tracepoints the kernel lacks (E14) are skipped with a warning.
 func (o *Object) Attach() error {
 	for h := uint32(0); h < fsm.NumHooks; h++ {
 		name := hooks.Program(h)
@@ -91,6 +94,10 @@ func (o *Object) Attach() error {
 			continue
 		}
 		l, err := link.Tracepoint("syscalls", hooks.Tracepoint(h), prog, nil)
+		if errors.Is(err, os.ErrNotExist) {
+			o.log.Warn("tracepoint missing on this kernel, hook not attached", "program", name, "tracepoint", "syscalls/"+hooks.Tracepoint(h))
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("attach %s to syscalls/%s: %w", name, hooks.Tracepoint(h), err)
 		}

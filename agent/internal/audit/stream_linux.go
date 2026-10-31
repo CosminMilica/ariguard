@@ -11,10 +11,13 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
+
+	"github.com/CosminMilica/statewall/agent/internal/podmeta"
 )
 
 // Stream reads SW_AUDIT and writes one JSON line per record to w until ctx is done.
-func Stream(ctx context.Context, m *ebpf.Map, w io.Writer, log *slog.Logger) error {
+// Names are read per record, so a reload takes effect on the next line; pods may be nil.
+func Stream(ctx context.Context, m *ebpf.Map, w io.Writer, names *Names, pods Pods, log *slog.Logger) error {
 	rd, err := ringbuf.NewReader(m)
 	if err != nil {
 		return fmt.Errorf("open audit ring buffer: %w", err)
@@ -36,7 +39,11 @@ func Stream(ctx context.Context, m *ebpf.Map, w io.Writer, log *slog.Logger) err
 			log.Warn("drop audit sample", "err", err)
 			continue
 		}
-		if err := WriteLine(w, r); err != nil {
+		var pod podmeta.Info
+		if pods != nil {
+			pod = pods.Lookup(ctx, r.CgroupID)
+		}
+		if err := WriteLine(w, NewEvent(r, names.Load(), pod)); err != nil {
 			return fmt.Errorf("write audit event: %w", err)
 		}
 	}

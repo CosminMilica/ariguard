@@ -1,5 +1,5 @@
-.PHONY: help dev-up kubeconfig dev-down build build-bpf build-agent build-go build-compiler proto golden deploy load-policy demo-escape test fmt clean \
-	ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-kernel-host ci-e2e ci-security
+.PHONY: help dev-up kubeconfig vm-sync dev-down build build-bpf build-agent build-go build-compiler proto golden deploy load-policy demo-escape test fmt clean \
+	cover ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-kernel-host ci-e2e ci-security
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -16,6 +16,13 @@ kubeconfig: ## Export the kind kubeconfig to ~/.kube/statewall-dev.yaml (for kub
 	limactl shell statewall -- kind get kubeconfig --name statewall-dev > $(HOME)/.kube/statewall-dev.yaml
 	@chmod 600 $(HOME)/.kube/statewall-dev.yaml
 	@echo "Use: KUBECONFIG=$(HOME)/.kube/statewall-dev.yaml kubectl get nodes  (or add the file in Lens)"
+
+# Checkouts outside the VM's mount (~/work/statewall) are copied to the VM's own disk.
+VM_DIR ?= /home/$(USER).guest/$(notdir $(CURDIR))
+
+vm-sync: ## Copy this checkout into the VM ($(VM_DIR)); then: limactl shell --workdir $(VM_DIR) statewall
+	rsync -a --delete --exclude bin/ --exclude bpf/target/ --exclude compiler/.venv/ \
+		-e "ssh -F $(HOME)/.lima/statewall/ssh.config" ./ lima-statewall:$(VM_DIR)/
 
 dev-down: ## Tear down the local dev environment
 	-limactl shell statewall -- kind delete cluster --name statewall-dev
@@ -45,9 +52,7 @@ proto: ## Generate Go + gRPC from proto/ (needs: buf, protoc-gen-go, protoc-gen-
 	buf generate proto
 
 golden: ## Regenerate the cross-language golden transition table
-	cd compiler && python -m statewall_compiler.cli \
-		--input rules/container-escape.yml \
-		--out ../testdata/golden/container-escape.bin
+	cd compiler && python -m statewall_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
 
 deploy: ## Deploy the DaemonSet + operator to the kind cluster
 	@echo "TODO(phase-1): kubectl apply -k deploy/k8s"
@@ -79,7 +84,28 @@ ci-hygiene: ## G0: format + lint
 	buf lint proto
 	shellcheck testdata/scripts/*.sh
 
-ci-unit: test ## G1: unit tests
+PYTHON ?= python
+COVER_MIN := 80.0
+# Linux-only kernel glue, covered by ci-kernel; "[no statements]" packages are skipped too.
+COVER_EXCLUDE := agent/cmd/statewall-agent agent/internal/loader
+COVER_DIR := bin/cover
+
+cover: ## Per-package coverage gate: Go + Python >= $(COVER_MIN)%
+	@mkdir -p $(COVER_DIR)
+	@fail=0; for pkg in $$(go list -f '{{.ImportPath}}' ./...); do \
+		rel=$${pkg#$$(go list -m)/}; \
+		case " $(COVER_EXCLUDE) " in *" $$rel "*) printf '%-45s skipped (excluded)\n' $$rel; continue;; esac; \
+		rm -f $(COVER_DIR)/c.out; \
+		out=$$(go test -count=1 -coverprofile=$(COVER_DIR)/c.out $$pkg) || { echo "$$out"; fail=1; continue; }; \
+		if [ "$$(awk 'NR>1{n+=$$2} END{print n+0}' $(COVER_DIR)/c.out 2>/dev/null)" -eq 0 ]; then printf '%-45s skipped (no statements)\n' $$rel; continue; fi; \
+		pct=$$(go tool cover -func=$(COVER_DIR)/c.out | tail -1 | awk '{print $$NF}' | tr -d %); \
+		if awk "BEGIN{exit !($$pct >= $(COVER_MIN))}"; then st=ok; else st=FAIL; fail=1; fi; \
+		printf '%-45s %5s%%  %s\n' $$rel $$pct $$st; \
+	done; \
+	cd compiler && $(PYTHON) -m pytest -q --cov=statewall_compiler --cov-report=term --cov-fail-under=80 || fail=1; \
+	exit $$fail
+
+ci-unit: test cover ## G1: unit tests + coverage gate
 	python3 testdata/scripts/check_audit.py --self-test
 
 ci-contract: golden ## G2: generated artifacts fresh, contracts unbroken

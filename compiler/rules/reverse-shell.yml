@@ -1,0 +1,21 @@
+# Reverse shell: outbound connect -> stdin/stdout/stderr redirected -> shell exec.
+name: reverse-shell
+scope: process
+window_seconds: 10
+states: [normal, connected, stdio_redirected, compromised]
+terminal: [compromised]
+events:
+  outbound_connect:
+    - hook: connect
+  stdio_redirect:
+    - hook: dup2
+      arg: {index: 1, le: 2}
+    - hook: dup3
+      arg: {index: 1, le: 2}
+  shell_exec:
+    - hook: execve
+      path_prefix: [/bin/sh, /bin/bash, /usr/bin/sh, /usr/bin/bash]
+transitions:
+  - {from: normal, event: outbound_connect, to: connected, action: observe}
+  - {from: connected, event: stdio_redirect, to: stdio_redirected, action: observe}
+  - {from: stdio_redirected, event: shell_exec, to: compromised, action: kill}

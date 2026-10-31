@@ -9,12 +9,22 @@ import (
 
 // Names maps each fsm.Hook* constant to its syscall name.
 var Names = [fsm.NumHooks]string{
-	fsm.HookOpenat:  "openat",
-	fsm.HookSetns:   "setns",
-	fsm.HookUnshare: "unshare",
-	fsm.HookMount:   "mount",
-	fsm.HookExecve:  "execve",
-	fsm.HookPtrace:  "ptrace",
+	fsm.HookOpenat:      "openat",
+	fsm.HookSetns:       "setns",
+	fsm.HookUnshare:     "unshare",
+	fsm.HookMount:       "mount",
+	fsm.HookExecve:      "execve",
+	fsm.HookPtrace:      "ptrace",
+	fsm.HookConnect:     "connect",
+	fsm.HookDup2:        "dup2",
+	fsm.HookDup3:        "dup3",
+	fsm.HookMemfdCreate: "memfd_create",
+	fsm.HookExecveat:    "execveat",
+	fsm.HookFsmount:     "fsmount",
+	fsm.HookMoveMount:   "move_mount",
+	fsm.HookInitModule:  "init_module",
+	fsm.HookFinitModule: "finit_module",
+	fsm.HookBPF:         "bpf",
 }
 
 // Name returns the hook name, or the decimal value for unknown hooks.

@@ -71,7 +71,7 @@ jobs:
 
       - name: Install tools
         run: |
-          pip install pytest "ruff==${RUFF_VERSION}" "pip-audit==${PIP_AUDIT_VERSION}" -e ./compiler
+          pip install pytest pytest-cov "ruff==${RUFF_VERSION}" "pip-audit==${PIP_AUDIT_VERSION}" -e ./compiler
           go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           CGO_ENABLED=0 go install "lmb.io/vimto@${VIMTO_VERSION}"
           curl -fsSL "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst" \

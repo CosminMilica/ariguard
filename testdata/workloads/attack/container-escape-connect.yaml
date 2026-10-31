@@ -1,0 +1,44 @@
+# Benign syscall-sequence emitter (not a functional attack): exercises rule container-escape with the connect variant.
+# Syscalls: connect (unix, containerd.sock) -> setns (nsenter) -> mount (tmpfs) -> execve.
+# Harmless: connect may fail, nsenter runs `true`, the tmpfs is container-local.
+# LIBMOUNT_FORCE_MOUNT2 makes util-linux use mount(2) instead of the new fsopen/fsmount API.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: container-escape-connect
+  namespace: statewall-eval
+  labels:
+    app: container-escape-connect
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  restartPolicy: Never
+  hostPID: true
+  containers:
+    - name: attacker
+      image: python:3.12-slim
+      securityContext:
+        privileged: true
+      env:
+        - name: LIBMOUNT_FORCE_MOUNT2
+          value: always
+      command: ["python3", "-c"]
+      args:
+        - |
+          import os, socket, subprocess, time
+          time.sleep(8)  # let the agent resolve this pod's cgroup before the chain
+          s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          try: s.connect("/run/containerd/containerd.sock")   # may fail; sys_enter_connect still fires
+          except OSError: pass
+          try: subprocess.run(["nsenter","--target","1","--mount","--","true"])  # setns
+          except Exception: pass
+          subprocess.run(["mount","-t","tmpfs","tmpfs","/mnt"])  # container-local tmpfs
+          subprocess.run(["/bin/true"])                           # execve
+          import time; time.sleep(3600)
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /run/containerd/containerd.sock
+        type: Socket

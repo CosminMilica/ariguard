@@ -48,7 +48,7 @@ func TestObjectContract(t *testing.T) {
 			t.Errorf("%s: section %s, want %s", name, p.SectionName, want)
 		}
 	}
-	for _, name := range []string{MapState, MapTransitions, MapBindings, MapDims, MapAudit, MapScratch} {
+	for _, name := range MapNames {
 		if _, ok := spec.Maps[name]; !ok {
 			t.Errorf("map %s missing", name)
 		}
