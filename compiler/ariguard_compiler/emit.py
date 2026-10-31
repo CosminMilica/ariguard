@@ -118,9 +118,7 @@ def compile_files(files: list[Path]) -> tuple[list[Rule], bytes]:
     return rules, emit_bundle(rules)
 
 
-def compile_sources(
-    yaml_files: list[Path], sigma_files: list[Path]
-) -> tuple[list[Rule], bytes]:
+def compile_sources(yaml_files: list[Path], sigma_files: list[Path]) -> tuple[list[Rule], bytes]:
     """Link hand-written YAML rule files and Sigma correlation files into a bundle."""
     from . import sigma
 

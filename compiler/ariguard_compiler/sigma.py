@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import RuleError, Rule, parse_rule
+from .schema import Rule, RuleError, parse_rule
 
 # Sigma field modifier -> v3 arg op key.
 _ARG_OPS = {"mask_any": "mask_any", "mask_none": "mask_none", "lte": "le", "eq": "eq"}
@@ -59,7 +59,9 @@ def _selections(sub: dict, name: str) -> list[dict]:
     detection = sub.get("detection")
     _require(isinstance(detection, dict), f"sub-rule {name!r}: detection must be a mapping")
     condition = detection.get("condition")
-    _require(isinstance(condition, str) and condition, f"sub-rule {name!r}: detection needs a condition")
+    _require(
+        isinstance(condition, str) and condition, f"sub-rule {name!r}: detection needs a condition"
+    )
     tokens = condition.split()
     names = [t for t in tokens[::2]]
     joiners = [t for t in tokens[1::2]]

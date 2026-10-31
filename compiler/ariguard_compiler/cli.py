@@ -18,7 +18,9 @@ def main() -> None:
     )
     parser.add_argument("--rules-dir", help="directory of *.yml rule files")
     parser.add_argument("--input", action="append", default=[], help="rule file (repeatable)")
-    parser.add_argument("--sigma", action="append", default=[], help="Sigma correlation file (repeatable)")
+    parser.add_argument(
+        "--sigma", action="append", default=[], help="Sigma correlation file (repeatable)"
+    )
     parser.add_argument("--sigma-dir", help="directory of *.yml Sigma correlation files")
     parser.add_argument("--out", required=True, help="path to write the policy bundle")
     args = parser.parse_args()

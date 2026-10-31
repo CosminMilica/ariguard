@@ -16,10 +16,10 @@ import pytest
 
 from ariguard_compiler.emit import HEADER, MAGIC, VERSION, emit_bundle
 from ariguard_compiler.schema import (
+    HOOK_VALUES,
     MAX_BINDINGS_PER_HOOK,
     MAX_RULES,
     MAX_TRANSITIONS,
-    HOOK_VALUES,
     Rule,
     RuleError,
     load_rule,
@@ -44,9 +44,7 @@ def _bindings_by_event(rule: Rule) -> dict[int, frozenset[tuple]]:
     """Map event index -> the set of its binding tuples (name-independent)."""
     per: dict[int, set[tuple]] = collections.defaultdict(set)
     for b in rule.bindings:
-        per[b.event].add(
-            (b.hook, b.path_kind, b.pattern, b.arg_op, b.arg_index, b.arg_value)
-        )
+        per[b.event].add((b.hook, b.path_kind, b.pattern, b.arg_op, b.arg_index, b.arg_value))
     return {idx: frozenset(tuples) for idx, tuples in per.items()}
 
 

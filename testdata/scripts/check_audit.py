@@ -42,7 +42,11 @@ SELF_TESTS = [
     ("fail-deny-reached-terminal.jsonl", DENY, {("A4", "reached-terminal")}),
     ("fail-deny-not-enforced.jsonl", DENY, {("A4", "deny-missing")}),
     ("fail-deny-benign-enforced.jsonl", DENY, {("A3", "action"), ("A4", "pod")}),
-    ("pass-v2-enforce.jsonl", DENY, {("A4", "deny-missing"), ("A4", "reached-terminal"), ("A4", "action")}),
+    (
+        "pass-v2-enforce.jsonl",
+        DENY,
+        {("A4", "deny-missing"), ("A4", "reached-terminal"), ("A4", "action")},
+    ),
 ]
 
 
