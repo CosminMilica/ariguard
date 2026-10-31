@@ -61,8 +61,16 @@ Optional on `v*` tags: `helm package` + `helm push` the chart as an **OCI artifa
 - **Keep CI green**: `release.yml` is separate from `ci.yml`; it does not gate PRs (runs on main/tags).
 - **Local dev unchanged**: `make image` / kind-load / kustomize still work for the VM loop.
 
+## CI tests (simple, not heavy gates)
+Add to `ci.yml`:
+- **console** job: `cd console/backend && go build ./... && go test ./...` (includes the ingest/scrape→API integration test) and `cd console/frontend && npm ci && npm run build` (vue-tsc type-check). The console is a separate module, so the root gates don't see it today.
+- **helm** job (once the chart exists): `helm lint deploy/helm/ariguard` + `helm template … | kubeconform -strict`. Validation only, no cluster install.
+
+Both are lightweight and run alongside the existing gates; they are not kernel/e2e-heavy.
+
 ## Implementation waves
 1. Helm chart (templates + values) from the current manifests; `make helm-install`.
-2. `release.yml`: multi-arch build + push of the 3 images to public GHCR.
-3. (optional) Helm chart as OCI on tags.
-4. Point `values.yaml` image tags at GHCR; verify `helm install` pulls public images into kind.
+2. CI: add the `console` + `helm` test jobs above.
+3. `release.yml`: multi-arch build + push of the 3 images to public GHCR.
+4. (optional) Helm chart as OCI on tags.
+5. Point `values.yaml` image tags at GHCR; verify `helm install` pulls public images into kind, then test end-to-end (deploy via Helm → run attacks → console shows real incidents).

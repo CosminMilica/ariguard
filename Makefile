@@ -136,6 +136,12 @@ ci-security: ## G6: vulnerability, license and secret scans
 	pip-audit --progress-spinner off ./compiler
 	gitleaks git --redact --no-banner .
 
+ci-console: ## G7: console backend tests + frontend build + image builds (separate module)
+	cd console/backend && go build ./... && go test ./...
+	cd console/frontend && npm ci && npm run build
+	docker build -t ariguard-console-backend:ci console/backend
+	docker build -t ariguard-console-frontend:ci console/frontend
+
 fmt: ## Format all code
 	cd bpf && cargo fmt
 	go fmt ./...

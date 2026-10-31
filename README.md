@@ -143,6 +143,59 @@ them, and collects audit telemetry — the inverse of the Falco model.
 
 ---
 
+## Deployment
+
+The eBPF object and the compiled rules are **baked into the agent image** — there is
+no separate "BPF deployment". The agent runs as a privileged **DaemonSet** (one pod
+per node) and, at startup, loads the object and attaches the programs into that node's
+kernel, covering every pod on the node. One `helm install` brings up the agent and the
+monitoring console; images are public on GHCR.
+
+```mermaid
+flowchart TB
+  subgraph build["Build &amp; release — CI → GHCR (public)"]
+    direction LR
+    rs["Rust eBPF<br/>bpf/"] -->|cargo| obj["ariguard.bpf.o"]
+    yaml["YAML rules<br/>compiler/rules"] -->|compiler| pol["policy.bin"]
+    go["Go agent<br/>agent/"] --> aimg["ariguard-agent image<br/>(bpf.o + policy.bin baked in)"]
+    obj --> aimg
+    pol --> aimg
+    cbe["console backend"] --> cbimg["console-backend image"]
+    cfe["console frontend"] --> cfimg["console-frontend image"]
+  end
+
+  aimg --> ghcr[("ghcr.io/cosminmilica")]
+  cbimg --> ghcr
+  cfimg --> ghcr
+  ghcr -->|helm install| K
+
+  subgraph K["Kubernetes cluster"]
+    direction TB
+    subgraph nd["every node — DaemonSet"]
+      ag["ariguard-agent<br/>(privileged)"]
+      kn["Linux kernel<br/>FSM engine + AG_* maps<br/>tracepoints"]
+      wl["workload pods"]
+      ag -->|load + attach| kn
+      wl -. syscalls .-> kn
+      kn -. audit ringbuf .-> ag
+      ag ==>|SIGKILL on terminal step| wl
+    end
+    subgraph co["console — Deployment"]
+      cb["backend + SQLite (PVC)"]
+      cf["frontend (nginx)"]
+    end
+    ag -->|push register + audit| cb
+    cb -->|scrape /metrics| ag
+    cf -->|/api proxy| cb
+  end
+
+  usr(["browser"]) --> cf
+```
+
+**Modes** are a kustomize overlay / Helm value: `detect` (observe only), `enforce`
+(kill at the terminal step), and the console sink (`--sink-url`). The policy bundle can
+be hot-swapped in place (SIGHUP) without reloading the programs.
+
 ## Zero-allocation design
 
 The defining systems property. On the data path there is **no `malloc`, no GC, no
