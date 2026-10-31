@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.jpeg" alt="Statewall" width="440">
+</p>
+
 # Statewall
 
 > **In-kernel, zero-allocation threat mitigation.**
