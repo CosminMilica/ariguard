@@ -19,9 +19,9 @@ func Stream(ctx context.Context, m *ebpf.Map, w io.Writer, log *slog.Logger) err
 	if err != nil {
 		return fmt.Errorf("open audit ring buffer: %w", err)
 	}
-	stop := context.AfterFunc(ctx, func() { rd.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = rd.Close() })
 	defer stop()
-	defer rd.Close()
+	defer func() { _ = rd.Close() }()
 
 	for {
 		rec, err := rd.Read()

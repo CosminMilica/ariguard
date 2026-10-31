@@ -35,9 +35,7 @@ def emit_bundle(fsm: Fsm, max_entries: int = DEFAULT_MAX_ENTRIES) -> bytes:
     num_events = fsm.num_events
     total = num_states * num_events
     if total > max_entries:
-        raise ValueError(
-            f"transition table has {total} entries, exceeds max of {max_entries}"
-        )
+        raise ValueError(f"transition table has {total} entries, exceeds max of {max_entries}")
 
     out = bytearray()
     out += HEADER.pack(MAGIC, VERSION, num_states, num_events, len(fsm.bindings), 0, fsm.window_ns)

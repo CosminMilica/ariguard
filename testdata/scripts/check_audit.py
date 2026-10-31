@@ -2,6 +2,7 @@
 """Assert the Phase 1 exit criteria on a Statewall JSONL audit stream."""
 
 import argparse
+import itertools
 import json
 import sys
 from collections import defaultdict
@@ -9,7 +10,7 @@ from pathlib import Path
 
 STATES = ["normal", "suspicious", "escalating", "breakout_imminent", "compromised"]
 RANK = {s: i for i, s in enumerate(STATES)}
-CHAIN = list(zip(STATES, STATES[1:]))
+CHAIN = list(itertools.pairwise(STATES))
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 SELF_TESTS = [
@@ -79,15 +80,23 @@ def has_chain(recs):
 
 def check(records):
     groups = by_cgroup(records)
-    compromised = sorted(cg for cg, recs in groups.items() if any(r["to"] == "compromised" for r in recs))
+    compromised = sorted(
+        cg for cg, recs in groups.items() if any(r["to"] == "compromised" for r in recs)
+    )
     if len(compromised) != 1:
-        raise CheckFailure(1, f"expected exactly one cgroup to reach compromised, got {len(compromised)}: {compromised}")
+        raise CheckFailure(
+            1,
+            f"expected exactly one cgroup to reach compromised, got {len(compromised)}: {compromised}",
+        )
     attack = compromised[0]
     if not has_chain(groups[attack]):
         path = " -> ".join(STATES)
-        raise CheckFailure(2, f"cgroup {attack} reached compromised without the ordered chain {path}")
+        raise CheckFailure(
+            2, f"cgroup {attack} reached compromised without the ordered chain {path}"
+        )
     leaked = sorted(
-        cg for cg, recs in groups.items()
+        cg
+        for cg, recs in groups.items()
         if cg != attack and RANK.get(max_state(recs), -1) >= RANK["escalating"]
     )
     if leaked:

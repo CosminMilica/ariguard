@@ -117,5 +117,5 @@ func openOutput(path string) (io.Writer, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open audit output: %w", err)
 	}
-	return f, func() { f.Close() }, nil
+	return f, func() { _ = f.Close() }, nil
 }

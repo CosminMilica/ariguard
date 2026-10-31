@@ -4,6 +4,10 @@ modules:
 lint:
   use:
     - STANDARD
+  # Until PROTO-3.1 finalizes the service and message names.
+  except:
+    - SERVICE_SUFFIX
+    - RPC_RESPONSE_STANDARD_NAME
 breaking:
   use:
     - FILE

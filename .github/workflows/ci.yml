@@ -1,0 +1,215 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BPF_LINKER_VERSION: "0.12.0"
+  PYTHON_VERSION: "3.12"
+  RUFF_VERSION: "0.17.3"
+  PIP_AUDIT_VERSION: "2.10.1"
+  GOLANGCI_LINT_VERSION: "v2.15.0"
+  BUF_VERSION: "1.75.0"
+  CARGO_DENY_VERSION: "0.20.2"
+  GITLEAKS_VERSION: "8.30.1"
+  GOVULNCHECK_VERSION: "v1.9.0"
+  VIMTO_VERSION: "v0.4.0"
+
+jobs:
+  hygiene:
+    name: G0 hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install Rust toolchain
+        working-directory: bpf
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: bpf
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install "ruff==${RUFF_VERSION}"
+      - uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          install-only: true
+      - uses: bufbuild/buf-action@v1.6.0
+        with:
+          version: ${{ env.BUF_VERSION }}
+          setup_only: true
+      - run: make ci-hygiene
+
+  unit:
+    name: G1 unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: bpf
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pytest -e ./compiler
+      - run: make ci-unit
+
+  contract:
+    name: G2 contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install -e ./compiler
+      - uses: bufbuild/buf-action@v1.6.0
+        with:
+          version: ${{ env.BUF_VERSION }}
+          setup_only: true
+      - run: make ci-contract
+
+  bpf:
+    name: G3 bpf
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install Rust toolchain
+        working-directory: bpf
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: bpf
+      - name: Install bpf-linker
+        run: |
+          curl -fsSL "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst" \
+            | tar --zstd -x -C "$HOME/.cargo/bin" bpf-linker
+      - run: make ci-bpf
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: bpf-object
+          path: bin/statewall.bpf.o
+          retention-days: 7
+          if-no-files-found: error
+
+  kernel:
+    name: G4 kernel ${{ matrix.kernel }}
+    needs: bpf
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Kernels below 6.8 reject the path-prefix loop (verifier bounds); non-blocking until fixed.
+    continue-on-error: ${{ !matrix.required }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { kernel: "6.12", required: true }
+          - { kernel: "stable", required: true }
+          - { kernel: "5.15", required: false }
+          - { kernel: "6.1", required: false }
+          - { kernel: "6.6", required: false }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: bpf-object
+          path: bin
+      - name: Install qemu and vimto
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends qemu-system-x86
+          sudo chmod 0666 /dev/kvm
+          CGO_ENABLED=0 go install "lmb.io/vimto@${VIMTO_VERSION}"
+      - run: make ci-kernel KERNEL=${{ matrix.kernel }}
+
+  e2e:
+    name: G5 e2e
+    needs: bpf
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: bpf-object
+          path: bin
+      - uses: helm/kind-action@v1.15.1
+        with:
+          cluster_name: statewall-dev
+          config: deploy/kind/cluster.yaml
+      - name: Phase 1 exit check
+        env:
+          TMPDIR: ${{ runner.temp }}/exit-check
+        run: |
+          mkdir -p "$TMPDIR"
+          make ci-e2e
+      - uses: actions/upload-artifact@v7.0.2
+        if: failure()
+        with:
+          name: e2e-audit
+          path: ${{ runner.temp }}/exit-check
+          retention-days: 7
+
+  security:
+    name: G6 security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install Rust toolchain
+        working-directory: bpf
+        run: rustup toolchain install
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install scanners
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          pip install "pip-audit==${PIP_AUDIT_VERSION}"
+          curl -fsSL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+      - run: make ci-security

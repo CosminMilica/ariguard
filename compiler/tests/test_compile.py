@@ -44,8 +44,8 @@ def test_header_bytes():
         "00000000"  # reserved
         "00ac23fc06000000"  # window_ns 30e9
     )
-    magic, version, num_states, num_events, num_bindings, reserved, window_ns = (
-        HEADER.unpack_from(bundle, 0)
+    magic, version, num_states, num_events, num_bindings, reserved, window_ns = HEADER.unpack_from(
+        bundle, 0
     )
     assert (magic, version, reserved) == (MAGIC, VERSION, 0)
     assert window_ns == 30 * 1_000_000_000

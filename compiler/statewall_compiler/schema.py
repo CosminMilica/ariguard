@@ -153,7 +153,10 @@ def parse_rule(data: dict) -> Fsm:
     event_index = {ev: idx for idx, ev in enumerate(events)}
 
     raw_transitions = data.get("transitions")
-    _require(isinstance(raw_transitions, list) and raw_transitions, "transitions must be a non-empty list")
+    _require(
+        isinstance(raw_transitions, list) and raw_transitions,
+        "transitions must be a non-empty list",
+    )
 
     transitions: dict[tuple[int, int], tuple[int, int]] = {}
     for t in raw_transitions:
