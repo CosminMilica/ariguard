@@ -10,18 +10,18 @@ use aya_ebpf::{
     btf_maps::{Array, LruHashMap, PerCpuArray, RingBuf},
     helpers::{
         bpf_get_current_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid,
-        bpf_ktime_get_ns, bpf_probe_read_user_str_bytes,
+        bpf_ktime_get_ns, bpf_probe_read_user_str_bytes, bpf_send_signal,
     },
     macros::{btf_map, tracepoint},
     programs::TracePointContext,
 };
 use statewall_common::{
-    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_OBSERVE, ARG_ANY,
-    ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3,
-    HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT, HOOK_INIT_MODULE,
-    HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE, HOOK_SETNS,
-    HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRANSITIONS, PATH_ANY, PATH_PREFIX,
-    PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS, STATE_INITIAL,
+    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_KILL,
+    ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT,
+    HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT,
+    HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE,
+    HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRANSITIONS, PATH_ANY,
+    PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS, STATE_INITIAL,
 };
 
 #[unsafe(no_mangle)]
@@ -40,6 +40,15 @@ const BPF_NOEXIST: u64 = 1;
 const ARG_BASE: usize = 16;
 // sockaddr_un.sun_path starts here in the pointed-to struct.
 const SUN_PATH_OFF: u64 = 2;
+
+// SIGKILL, delivered by bpf_send_signal to the current task (F1, F5).
+const SIGKILL: u32 = 9;
+
+// SW_METRICS per-CPU counters; indices mirror pkg/fsm (events, kills, audit_dropped).
+const NUM_METRICS: usize = 3;
+const METRIC_EVENTS: u32 = 0;
+const METRIC_KILLS: u32 = 1;
+const METRIC_AUDIT_DROPPED: u32 = 2;
 
 #[btf_map]
 static SW_POLICY: Array<Policy, 1> = Array::new();
@@ -65,6 +74,15 @@ static SW_AUDIT: RingBuf<AuditRecord, AUDIT_RING_BYTES> = RingBuf::new();
 
 #[btf_map]
 static SW_SCRATCH: PerCpuArray<[u8; PATTERN_LEN], 1> = PerCpuArray::new();
+
+// Pod cgroup ids that are mitigation candidates (F2); the agent populates it from
+// podmeta. A KILL fires only for a cgroup present here.
+#[btf_map]
+static SW_PODS: LruHashMap<u64, u8, 16384> = LruHashMap::new();
+
+// Per-CPU counters read by the agent (F7). Indices: events, kills, audit_dropped.
+#[btf_map]
+static SW_METRICS: PerCpuArray<u64, NUM_METRICS> = PerCpuArray::new();
 
 #[tracepoint(category = "syscalls", name = "sys_enter_openat")]
 pub fn sw_openat(ctx: TracePointContext) -> u32 {
@@ -209,9 +227,30 @@ fn arg_matches(ctx: &TracePointContext, op: u32, index: u32, value: u64) -> bool
     }
 }
 
-// Applies one transition of `rule` on `event` to the workload's state.
+// Increments a per-CPU counter (F7). Per-CPU, so a plain read-modify-write is race-free.
 #[inline(always)]
-fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32) {
+fn bump_metric(index: u32) {
+    if let Some(p) = SW_METRICS.get_ptr_mut(index) {
+        unsafe { *p += 1 };
+    }
+}
+
+// Reports whether the workload's committed state is `state` (re-read from the map). Used
+// to gate enforcement so a kill fires only on the last-writer-wins commit (see advance).
+#[inline(always)]
+fn state_is(key: &FsmKey, state: u32) -> bool {
+    match SW_STATE.get_ptr(key) {
+        Some(p) => unsafe { (*p).state == state },
+        None => false,
+    }
+}
+
+// Applies one transition of `rule` on `event` to the workload's state. `can_kill` is
+// (policy.enforce == 1 && cgroup in SW_PODS); when the committed transition's action is
+// KILL and can_kill holds, the current task is SIGKILLed and the audit record is marked
+// enforced (F5). Detection, state and audit are identical to Phase 1.5 otherwise.
+#[inline(always)]
+fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill: bool) {
     let Some(rp) = SW_RULES.get_ptr(rule) else {
         return;
     };
@@ -261,6 +300,9 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32) {
 
     // State write (E9): first entry is created with BPF_NOEXIST; an advance updates in
     // place; returning to the initial state deletes the entry so only live chains are held.
+    // The BPF target has atomic-cas: false, so a true compare-and-swap on FsmState.state
+    // (the F4 intent) cannot be expressed; the write stays last-writer-wins. See the
+    // residual-race note in bpf/TASKS.md.
     if next_state == STATE_INITIAL {
         if tracked {
             let _ = SW_STATE.remove(&key);
@@ -275,6 +317,13 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32) {
         let _ = SW_STATE.insert(&key, &value, flags);
     }
 
+    // Enforcement (F5): kill only when the committed action is KILL, can_kill holds, and the
+    // workload's current committed state is the one this transition produced. Re-reading the
+    // state closes the last-writer-wins gap at the enforcement layer: if a concurrent syscall
+    // clobbered this step, the re-read no longer matches and no kill fires on a stale decision.
+    let enforced =
+        can_kill && action == ACTION_KILL && (next_state == state || state_is(&key, next_state));
+
     if next_state != state || action != ACTION_OBSERVE {
         if let Some(mut entry) = SW_AUDIT.reserve(0) {
             let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
@@ -288,11 +337,20 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32) {
                 from_state: state,
                 to_state: next_state,
                 action,
-                _pad: 0,
+                enforced: enforced as u32,
                 comm,
             });
             entry.submit(0);
+        } else {
+            bump_metric(METRIC_AUDIT_DROPPED);
         }
+    }
+
+    if enforced {
+        unsafe {
+            bpf_send_signal(SIGKILL);
+        }
+        bump_metric(METRIC_KILLS);
     }
 }
 
@@ -301,7 +359,8 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
     let Some(pp) = SW_POLICY.get_ptr(0) else {
         return 0;
     };
-    if unsafe { (*pp).num_rules } == 0 {
+    let (num_rules, enforce) = unsafe { ((*pp).num_rules, (*pp).enforce) };
+    if num_rules == 0 {
         return 0;
     }
 
@@ -310,6 +369,10 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
         return 0;
     }
     let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+
+    // Per-pod enforcement gate (F2, F3): a KILL fires only when enforcement is on and the
+    // cgroup is a tracked pod. Short-circuit keeps the detect-only path free of the lookup.
+    let can_kill = enforce == 1 && SW_PODS.get_ptr(&cgroup_id).is_some();
 
     let Some(hb) = SW_BINDINGS.get_ptr(hook) else {
         return 0;
@@ -350,7 +413,8 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
             continue;
         }
 
-        advance(rule, b.event, hook, cgroup_id, tgid);
+        bump_metric(METRIC_EVENTS);
+        advance(rule, b.event, hook, cgroup_id, tgid, can_kill);
         done |= 1 << rule;
     }
     0

@@ -133,11 +133,12 @@ pub struct Rule {
 }
 
 /// SW_POLICY[0]. `num_rules` = 0 means no policy (programs return at once).
+/// `enforce` = 1 applies mitigations; 0 is detect-only (dry run).
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Policy {
     pub num_rules: u32,
-    pub _pad: u32,
+    pub enforce: u32,
 }
 
 /// Emitted to SW_AUDIT when a state changes or the action is not observe.
@@ -153,6 +154,6 @@ pub struct AuditRecord {
     pub from_state: u32,
     pub to_state: u32,
     pub action: u32,
-    pub _pad: u32,
+    pub enforced: u32,
     pub comm: [u8; COMM_LEN],
 }

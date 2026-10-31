@@ -76,6 +76,14 @@ const (
 	MaxTrackedWorkloads uint32 = 16384
 )
 
+// SW_METRICS per-CPU counter indices.
+const (
+	MetricEvents       uint32 = 0
+	MetricKills        uint32 = 1
+	MetricAuditDropped uint32 = 2
+	NumMetrics         uint32 = 3
+)
+
 // FsmKey keys SW_STATE; ID is the cgroup id or the tgid per the rule's scope. 16 bytes.
 type FsmKey struct {
 	ID   uint64
@@ -129,10 +137,11 @@ type Rule struct {
 	WindowNs     uint64
 }
 
-// Policy is SW_POLICY[0]; NumRules = 0 disables evaluation. 8 bytes.
+// Policy is SW_POLICY[0]; NumRules = 0 disables evaluation. Enforce = 1 applies
+// mitigations, 0 is detect-only (dry run). 8 bytes.
 type Policy struct {
 	NumRules uint32
-	_        uint32
+	Enforce  uint32
 }
 
 // AuditRecord is emitted to SW_AUDIT on a state change or a non-observe action. 64 bytes.
@@ -146,6 +155,6 @@ type AuditRecord struct {
 	FromState uint32
 	ToState   uint32
 	Action    uint32
-	_         uint32
+	Enforced  uint32
 	Comm      [CommLen]byte
 }

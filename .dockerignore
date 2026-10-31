@@ -1,0 +1,4 @@
+*
+!bin/statewall-agent
+!bin/statewall.bpf.o
+!testdata/golden/policy.bin

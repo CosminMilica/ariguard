@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Exit check (EVAL-1.3, EVAL-1.5.4): run benign (incl. twins) + attack workloads under the agent, assert on the audit stream.
+# Exit check (EVAL-1.3, EVAL-1.5.4, EVAL-2.3): run benign (incl. twins) + attack workloads under the agent, assert on the audit stream.
+# STATEWALL_ENFORCE=1: agent runs with --enforce; attackers must be killed, benign pods untouched.
 # Runs inside the Lima VM against the kind cluster; needs passwordless sudo.
 set -euo pipefail
 
@@ -18,6 +19,13 @@ NAMESPACE="statewall-eval"
 BENIGN_SECONDS="${BENIGN_SECONDS:-30}"
 ATTACK_SECONDS="${ATTACK_SECONDS:-15}"
 READY_TIMEOUT="${READY_TIMEOUT:-300s}"
+STATEWALL_ENFORCE="${STATEWALL_ENFORCE:-0}"
+AGENT_MODE_ARGS=()
+CHECKER_MODE_ARGS=()
+if [[ "$STATEWALL_ENFORCE" == "1" ]]; then
+    AGENT_MODE_ARGS=(--enforce)
+    CHECKER_MODE_ARGS=(--enforce)
+fi
 
 WORKLOADS="$REPO_ROOT/testdata/workloads"
 CHECKER="$REPO_ROOT/testdata/scripts/check_audit.py"
@@ -48,6 +56,7 @@ stop_agent() {
     AGENT_PID=""
 }
 
+# shellcheck disable=SC2329  # invoked indirectly via the EXIT trap
 cleanup() {
     stop_agent
     kc delete namespace "$NAMESPACE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
@@ -61,11 +70,11 @@ for f in "$STATEWALL_AGENT" "$STATEWALL_OBJECT" "$STATEWALL_BUNDLE" "$STATEWALL_
 done
 kc get nodes >/dev/null
 
-log "starting agent (audit: $AUDIT)"
+log "starting agent (enforce=$STATEWALL_ENFORCE, audit: $AUDIT)"
 # shellcheck disable=SC2016,SC2024
 sudo -n sh -c 'echo $$ > "$1"; shift; exec "$@"' sh "$AGENT_PIDFILE" \
     "$STATEWALL_AGENT" --object "$STATEWALL_OBJECT" --bundle "$STATEWALL_BUNDLE" \
-    --kubeconfig "$STATEWALL_KUBECONFIG" >"$AUDIT" 2>"$AGENT_LOG" &
+    --kubeconfig "$STATEWALL_KUBECONFIG" "${AGENT_MODE_ARGS[@]}" >"$AUDIT" 2>"$AGENT_LOG" &
 sleep 3
 AGENT_PID="$(cat "$AGENT_PIDFILE" 2>/dev/null || true)"
 if ! agent_alive; then
@@ -113,7 +122,49 @@ for a in "${ATTACKS[@]}"; do
     kc -n "$NAMESPACE" logs "pod/$a" >&2 || true
 done
 
+BENIGN_PODS="$(kc -n "$NAMESPACE" get pod -o name | sed 's|^pod/||' | grep -vxF -f <(printf '%s\n' "${ATTACKS[@]}") || true)"
+POD_FAILURES=0
+if [[ "$STATEWALL_ENFORCE" == "1" ]]; then
+    log "asserting attackers killed and benign pods untouched"
+    for a in "${ATTACKS[@]}"; do
+        deadline=$((SECONDS + 30))
+        phase=""
+        while ((SECONDS <= deadline)); do
+            phase="$(kc -n "$NAMESPACE" get pod "$a" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+            [[ "$phase" == "Failed" ]] && break
+            sleep 2
+        done
+        if [[ "$phase" == "Failed" ]]; then
+            log "ok: attacker $a phase Failed"
+        else
+            log "FAIL: attacker $a phase ${phase:-unknown}, expected Failed"
+            kc -n "$NAMESPACE" describe pod "$a" >&2 || true
+            POD_FAILURES=$((POD_FAILURES + 1))
+        fi
+    done
+fi
+for b in $BENIGN_PODS; do
+    phase="$(kc -n "$NAMESPACE" get pod "$b" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    restarts="$(kc -n "$NAMESPACE" get pod "$b" -o jsonpath='{range .status.containerStatuses[*]}{.restartCount}{"\n"}{end}' 2>/dev/null | awk '{s+=$1} END {print s+0}')"
+    if [[ "$phase" == "Failed" || "$restarts" != "0" ]]; then
+        log "FAIL: benign pod $b disturbed (phase ${phase:-unknown}, restarts $restarts)"
+        kc -n "$NAMESPACE" describe pod "$b" >&2 || true
+        POD_FAILURES=$((POD_FAILURES + 1))
+    fi
+done
+if ! agent_alive; then
+    log "FAIL: agent died during the run"
+    POD_FAILURES=$((POD_FAILURES + 1))
+fi
+kc get nodes --no-headers >&2 || POD_FAILURES=$((POD_FAILURES + 1))
+
 log "stopping agent"
 stop_agent
 
-python3 "$CHECKER" --expectations "$REPO_ROOT/testdata/expectations.json" "$AUDIT"
+rc=0
+python3 "$CHECKER" --expectations "$REPO_ROOT/testdata/expectations.json" "${CHECKER_MODE_ARGS[@]}" "$AUDIT" || rc=$?
+if ((POD_FAILURES > 0)); then
+    log "$POD_FAILURES pod/agent assertion(s) failed"
+    exit 1
+fi
+exit "$rc"

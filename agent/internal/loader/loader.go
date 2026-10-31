@@ -10,10 +10,12 @@ const (
 	MapPolicy      = "SW_POLICY"
 	MapAudit       = "SW_AUDIT"
 	MapScratch     = "SW_SCRATCH"
+	MapPods        = "SW_PODS"
+	MapMetrics     = "SW_METRICS"
 )
 
 // MapNames lists every contract map.
-var MapNames = []string{MapState, MapTransitions, MapBindings, MapRules, MapPolicy, MapAudit, MapScratch}
+var MapNames = []string{MapState, MapTransitions, MapBindings, MapRules, MapPolicy, MapAudit, MapScratch, MapPods, MapMetrics}
 
 // ProgramPrefix marks the statewall tracepoint programs.
 const ProgramPrefix = "sw_"

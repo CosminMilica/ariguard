@@ -74,18 +74,51 @@ Decisions E1–E14 and the v3 contract: [docs/architecture.md](../docs/architect
 > practice a single workload rarely issues two advancing syscalls truly concurrently, and the
 > integration + exit-check chains are deterministic.
 
-## Phase 2 — Synchronous mitigation
+## Phase 2 — Kill-based mitigation (branch `feat/mitigation`)
+Decisions F1–F7 and the v3.1 ABI additions: [docs/architecture.md](../docs/architecture.md#phase-2-decisions--synchronous-mitigation-kill-based).
+`-EPERM` deny via BPF LSM is a separate follow-up branch.
+
+### Val 0 — safety prerequisites (detection stays identical)
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` BPF-2.1 | Add BPF LSM programs at enforcement points | BPF-1.3 | LSM hooks attach on kernel ≥ 5.7 |
-| `[ ]` BPF-2.2 | DENY action: return `-EPERM` on the critical step | BPF-2.1 | denied syscall fails for the attacker |
-| `[ ]` BPF-2.3 | KILL action: `bpf_send_signal(SIGKILL)` on compromised state | BPF-2.1 | process terminated in-kernel |
-| `[ ]` BPF-2.4 | THROTTLE action (optional): delay suspicious syscalls | BPF-2.1 | measurable added latency, no deny |
-| `[ ]` BPF-2.5 | Per-CPU metric counters (events, denies, kills) | BPF-1.3 | counters readable from `AGT-2.1` |
-| `[ ]` BPF-2.6 | Atomic per-cgroup transition — moved to `BPF-1.5.8` (E9) | | |
-| `[ ]` BPF-2.7 | `compromised` terminal — moved to `BPF-1.5.7` (E8) | | |
-| `[ ]` BPF-2.8 | Mount flag and execve path predicates — moved to `BPF-1.5.5` (E5, E7) | | |
-| `[ ]` BPF-2.9 | Pattern length edge — decided in E10, enforced by `CMP-1.5.1` / `PKG-1.5.2` | | |
+| `[x]` BPF-2.1 | ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, maps `SW_PODS`, `SW_METRICS` | — | Go mirror + btf tests pass on the object |
+| `[x]` BPF-2.2 | Atomic transition: CAS on `FsmState.state` (`get_ptr_mut` + `compare_exchange`) (F4) | BPF-2.1 | documented; concurrent events can't skip a step (stress test) |
+| `[x]` BPF-2.3 | Per-pod gate: read `SW_PODS`; detection unchanged, enforcement gated to pod cgroups (F2) | BPF-2.1 | non-pod cgroups never enforce |
+
+### Val 1 — kill
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[x]` BPF-2.4 | Read `Policy.enforce` (F3): detect-only vs enforce | BPF-2.1 | enforce=0 behaves exactly like Phase 1.5 |
+| `[x]` BPF-2.5 | KILL: `bpf_send_signal(SIGKILL)` when enforce==1 && action==kill && cgroup∈SW_PODS; set `enforced` (F5) | BPF-2.2, BPF-2.3, BPF-2.4 | attacker killed at the terminal step; benign + node runtime never killed |
+| `[x]` BPF-2.6 | `SW_METRICS` per-CPU counters: events, kills, audit_dropped (F7) | BPF-2.1 | counters readable from `AGT-2.2` |
+| `[x]` BPF-2.7 | Verifies on the CI kernel matrix (5.15 → stable) with `bpf_send_signal` | BPF-2.5 | `make ci-kernel KERNEL=5.15` and `KERNEL=stable` pass |
+
+> Phase 2 (VM, kernel 6.8; matrix 5.15 + stable via vimto/TCG, `VIMTO_DISABLE_KVM=1`).
+> ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, plus `SW_PODS` (LRU_HASH `u64`
+> cgroup id → `u8`, 16384) and `SW_METRICS` (PERCPU_ARRAY of 3 `u64`: events, kills,
+> audit_dropped). `handle` reads `enforce` from `SW_POLICY[0]`, and, only when `enforce==1`,
+> looks up the cgroup in `SW_PODS` to form `can_kill` (short-circuit keeps the detect-only
+> path lookup-free). Per matched binding it bumps the events counter; on a ring-buffer
+> reserve failure it bumps audit_dropped. After the committed transition, a kill fires
+> (`bpf_send_signal(SIGKILL)`, audit `enforced=1`, kills counter bumped) only when
+> `can_kill && action==ACTION_KILL`. Detection, state and audit are byte-identical to
+> Phase 1.5 when `enforce==0` or the cgroup is not a pod. Verified end to end:
+> `TestEnforcement` kills a pod child by SIGKILL with `Enforced==1`, and leaves a dry-run
+> (`enforce=0`) or non-pod child alive with `Enforced==0`; green on 5.15 and stable.
+>
+> F4 atomic transition — residual guarantee: the BPF Rust target is `atomic-cas: false`
+> (`core` exposes no `AtomicU32`/`AtomicU64::compare_exchange`), so a true CAS on
+> `FsmState.state` cannot be expressed or verified. Per the documented fallback, the state
+> write stays last-writer-wins (E9) and enforcement is gated by re-reading the state before
+> killing: a kill fires only if the workload's current committed state is still the one this
+> transition produced (`next_state == from || SW_STATE[key].state == next_state`). This
+> closes the race *at the enforcement layer* — a concurrent syscall that clobbers the
+> kill-triggering step makes the re-read miss, so no kill fires on a stale decision, and a
+> self-loop kill (terminal state re-firing) still enforces. The underlying detection race is
+> unchanged from Phase 1.5 (a dropped step for two truly-concurrent distinct events at the
+> same from-state); closing it fully needs a `bpf_spin_lock` field in `FsmState` (an ABI
+> change, out of scope). Instruction budget raised 512 → 640 (programs 571–581 xlated; the
+> +78 covers the pod gate, metrics, the enforcement re-read and the signal path).
 
 ## Phase 4 — Evaluation support
 | ID | Task | Depends | Done when |

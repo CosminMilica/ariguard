@@ -1,6 +1,6 @@
 //go:build linux
 
-package policy
+package kmap
 
 import (
 	"github.com/cilium/ebpf"
@@ -8,7 +8,7 @@ import (
 	"github.com/CosminMilica/statewall/pkg/fsm"
 )
 
-// KernelMaps implements Maps over the loaded BPF maps.
+// KernelMaps implements policy.Maps over the loaded BPF maps.
 type KernelMaps struct {
 	Policy      *ebpf.Map
 	Rules       *ebpf.Map

@@ -1,4 +1,4 @@
-.PHONY: help dev-up kubeconfig vm-sync dev-down build build-bpf build-agent build-go build-compiler proto golden deploy load-policy demo-escape test fmt clean \
+.PHONY: image kind-load help dev-up kubeconfig dev-down build build-bpf build-agent build-go build-compiler proto golden deploy load-policy demo-escape test fmt clean \
 	cover ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-kernel-host ci-e2e ci-security
 
 help: ## Show this help
@@ -16,13 +16,6 @@ kubeconfig: ## Export the kind kubeconfig to ~/.kube/statewall-dev.yaml (for kub
 	limactl shell statewall -- kind get kubeconfig --name statewall-dev > $(HOME)/.kube/statewall-dev.yaml
 	@chmod 600 $(HOME)/.kube/statewall-dev.yaml
 	@echo "Use: KUBECONFIG=$(HOME)/.kube/statewall-dev.yaml kubectl get nodes  (or add the file in Lens)"
-
-# Checkouts outside the VM's mount (~/work/statewall) are copied to the VM's own disk.
-VM_DIR ?= /home/$(USER).guest/$(notdir $(CURDIR))
-
-vm-sync: ## Copy this checkout into the VM ($(VM_DIR)); then: limactl shell --workdir $(VM_DIR) statewall
-	rsync -a --delete --exclude bin/ --exclude bpf/target/ --exclude compiler/.venv/ \
-		-e "ssh -F $(HOME)/.lima/statewall/ssh.config" ./ lima-statewall:$(VM_DIR)/
 
 dev-down: ## Tear down the local dev environment
 	-limactl shell statewall -- kind delete cluster --name statewall-dev
@@ -54,14 +47,23 @@ proto: ## Generate Go + gRPC from proto/ (needs: buf, protoc-gen-go, protoc-gen-
 golden: ## Regenerate the cross-language golden transition table
 	cd compiler && python -m statewall_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
 
-deploy: ## Deploy the DaemonSet + operator to the kind cluster
-	@echo "TODO(phase-1): kubectl apply -k deploy/k8s"
+IMAGE ?= statewall-agent:dev
+IMAGE_PLATFORM ?= linux/arm64
+
+image: ## Package the agent image (run make build-agent build-bpf golden first; in the VM)
+	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/Dockerfile -t $(IMAGE) .
+
+kind-load: ## Load the agent image into the kind cluster (in the VM)
+	kind load docker-image $(IMAGE) --name statewall-dev
+
+deploy: ## Deploy the DaemonSet (detect overlay) to the kind cluster (in the VM)
+	kubectl apply -k deploy/k8s/overlays/detect
 
 load-policy: ## Load a threat policy (POLICY=container-escape)
 	@echo "TODO(phase-3): compile + push policy $(POLICY)"
 
-demo-escape: ## Run the container-escape demo (train, then block)
-	@echo "TODO(phase-2): run demo"
+demo-escape: ## Run the container-escape demo: detect-only, then --enforce (in the VM; needs `make image kind-load`)
+	limactl shell statewall -- bash -lc 'cd $(CURDIR) && deploy/demo-escape.sh'
 
 test: ## Run all tests
 	cargo test --manifest-path bpf/Cargo.toml -p statewall-common   # from the root: skips the BPF target in bpf/.cargo
@@ -87,7 +89,9 @@ ci-hygiene: ## G0: format + lint
 PYTHON ?= python
 COVER_MIN := 80.0
 # Linux-only kernel glue, covered by ci-kernel; "[no statements]" packages are skipped too.
-COVER_EXCLUDE := agent/cmd/statewall-agent agent/internal/loader
+COVER_EXCLUDE := agent/cmd/statewall-agent agent/internal/loader \
+	agent/internal/audit/ringbuf agent/internal/policy/kmap \
+	agent/internal/metrics/metricmap agent/internal/podsync/podmap
 COVER_DIR := bin/cover
 
 cover: ## Per-package coverage gate: Go + Python >= $(COVER_MIN)%
@@ -106,6 +110,7 @@ cover: ## Per-package coverage gate: Go + Python >= $(COVER_MIN)%
 	exit $$fail
 
 ci-unit: test cover ## G1: unit tests + coverage gate
+	$(PYTHON) -m pytest tests/meta
 	python3 testdata/scripts/check_audit.py --self-test
 
 ci-contract: golden ## G2: generated artifacts fresh, contracts unbroken
@@ -122,8 +127,8 @@ ci-kernel: ## G4: load + chain tests on KERNEL in a VM (vimto; needs bin/statewa
 ci-kernel-host: ## G4: load + chain tests on the running kernel (sudo; needs bin/statewall.bpf.o)
 	$(OBJECT_ENV) go test -exec 'sudo -E' -tags integration -count=1 -v ./agent/internal/integration
 
-ci-e2e: build-agent ## G5: Phase 1 exit check on the kind cluster (needs bin/statewall.bpf.o)
-	STATEWALL_OBJECT=$(CURDIR)/$(BPF_OBJECT) testdata/scripts/phase1-exit-check.sh
+ci-e2e: build-bpf build-agent golden ## G5: detect + enforce end-to-end on the kind cluster (in the VM; needs a kill-capable BPF object)
+	STATEWALL_REQUIRE_E2E=1 go test -tags e2e -count=1 -v -timeout 40m ./test/e2e
 
 ci-security: ## G6: vulnerability, license and secret scans
 	govulncheck ./...

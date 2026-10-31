@@ -6,6 +6,9 @@
 #   limactl shell statewall
 
 vmType: "vz"
+# Nested virtualization lets the ci-kernel gate boot guest kernels under vimto
+# (needs /dev/kvm in the VM). Requires an Apple M3+ host and Lima >= 1.0.
+nestedVirtualization: true
 
 images:
   - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"

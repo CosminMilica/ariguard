@@ -14,7 +14,9 @@ import (
 
 // maxInstructions caps each program's pre-verifier size. Raise it deliberately
 // when a change needs more; an unexpected jump usually means unrolling or inlining.
-const maxInstructions = 512
+// Phase 2 raised it from 512: the per-pod gate, SW_METRICS counters, enforcement
+// re-read and bpf_send_signal path add ~78 inlined insns (programs are 571-581).
+const maxInstructions = 640
 
 func loadSpec(t *testing.T) *ebpf.CollectionSpec {
 	t.Helper()

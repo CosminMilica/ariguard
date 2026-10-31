@@ -50,7 +50,33 @@ make dev-down            # delete kind cluster, stop & delete the VM
 |---|---|
 | `lima/statewall.yaml` | VM definition + toolchain provisioning (Go, Rust+bpf-linker, buf, kind, kubectl, docker, bpftool) |
 | `kind/cluster.yaml` | single-node kind cluster config |
-| `k8s/` | DaemonSet + operator manifests (phase 1 / 3) |
+| `docker/Dockerfile` | agent image: binary + BPF object + policy bundle |
+| `k8s/base/` | namespace, RBAC, agent DaemonSet (detect-only) |
+| `k8s/overlays/detect`, `k8s/overlays/enforce` | enforce overlay appends `--enforce` to the agent args |
+| `demo-escape.sh` | container-escape demo: detect-only, then enforce |
 
 The VM mounts `~/work/statewall` writable; edit on the host, build in the VM. Adjust the
 mount in `lima/statewall.yaml` if your checkout lives elsewhere.
+
+## Agent image and DaemonSet
+
+```sh
+# in the VM
+make build-agent build-bpf golden
+make image kind-load                 # statewall-agent:dev, linux/arm64 (IMAGE_PLATFORM to override)
+kubectl apply -k deploy/k8s/overlays/detect    # or overlays/enforce
+make demo-escape                     # detect-only run, flip --enforce, run again
+```
+
+Base image: `ubuntu:24.04`. The agent loads the object with cilium/ebpf (no libbpf, no
+runtime dependencies), so `scratch` would work, but ubuntu matches the VM build's glibc
+if the binary is dynamically linked, and gives a shell for `kubectl exec` debugging.
+Revisit (distroless/scratch) once the image is hardened.
+
+The pod is `privileged: true` with `hostPID: true`, and also lists
+`BPF, PERFMON, SYS_ADMIN, SYS_RESOURCE, KILL` explicitly (documentation of what is needed;
+`KILL` backs `bpf_send_signal`, `SYS_RESOURCE` the memlock rlimit). Host mounts:
+`/sys/fs/cgroup` (ro, pod cgroup ids), `/sys/fs/bpf`, `/sys/kernel/tracing` and
+`/sys/kernel/debug` (ro, tracepoint ids). The `statewall-system` namespace is labelled
+Pod Security `privileged`. RBAC: ClusterRole `statewall-agent` with `list`/`watch` on
+`pods`. Metrics: `--metrics-addr=:9102`, port `metrics`, Prometheus scrape annotations.

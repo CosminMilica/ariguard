@@ -65,8 +65,8 @@ workloads never go past `suspicious`.
 **Status: done.** The exit check passed twice on kind: only the attack cgroup produced
 records (normal → suspicious → escalating → breakout_imminent → compromised), the benign
 workloads and kind system components produced none. False-positive risks found on the
-way are listed in [docs/threat-model.md](docs/threat-model.md) and tracked as
-`BPF-2.6`–`BPF-2.9`.
+way are listed in [docs/threat-model.md](docs/threat-model.md); they were folded into the
+Phase 1.5 decisions (E8–E10) and the Phase 2 atomic transition (`BPF-2.2`).
 - Maps: per-cgroup state HASH, transition-table ARRAY, audit RINGBUF (`BPF-1.1`, `BPF-1.2`, `BPF-1.6`).
 - Zero-allocation FSM engine; syscall→event mapping; cgroup filter (`BPF-1.3`, `BPF-1.5`, `BPF-1.7`).
 - Hooks for the chosen kill chain (`BPF-1.4`).
@@ -98,11 +98,24 @@ and no other pod or host process gets an action other than `observe`.
 End-to-end runs share the VM's kernel and kind cluster with the CI work: run them one at a
 time, or each checker also sees the other's attacks.
 
-### Phase 2 — Synchronous mitigation
-- BPF LSM enforcement: deny `-EPERM`, kill, throttle, per-CPU metrics (`BPF-2.*`).
-- Agent surfaces mitigations + metrics; graceful detach (`AGT-2.*`).
-- Privileged DaemonSet manifest (`DEP-1.1`).
-- **Demo:** `make demo-escape` — train benign, then block a live escape.
+### Phase 2 — Kill-based mitigation (branch `feat/mitigation`)
+Make detection act: kill the attacker at the terminal step, from the existing tracepoint
+engine, with the safety machinery that makes enforcement safe. `-EPERM` deny via BPF LSM is
+a separate follow-up (the ABI already carries `ACTION_DENY`). Decisions F1–F7 and the v3.1
+ABI additions are in [docs/architecture.md](docs/architecture.md#phase-2-decisions--synchronous-mitigation-kill-based).
+
+| Wave | Where | Tasks | Output |
+|---|---|---|---|
+| 0 | contract + parallel | `PKG-2.1` + `BPF-2.1` (ABI v3.1, me) · `BPF-2.2`, `BPF-2.3` (engine, VM) · `AGT-2.1` (agent, Mac) | per-pod gating + atomic transition; detection identical to Phase 1.5 |
+| 1 | VM | `BPF-2.4`, `BPF-2.5`, `BPF-2.6`, `BPF-2.7` | KILL fires on the terminal step for pod cgroups only; kernel matrix green |
+| 3 | parallel | `AGT-2.2`, `AGT-2.3` (agent) · `DEP-0.3`, `DEP-1.1` (deploy) · eval: enforce-mode exit check | DaemonSet + metrics; `make demo-escape` kills a live escape |
+
+Exit check (enforce on): each attacker is killed at its terminal step; benign twins and the
+node's own runtime are never killed; the detection table is otherwise unchanged. Work is
+parallelized into small agents (sonnet for well-defined work, opus 4.8 for the kernel).
+
+Deferred to a later branch — **Phase 2b, LSM deny:** `lsm/*` programs returning `-EPERM`
+on `action == deny`, reading the same FSM state.
 
 ### Phase 3 — Rule compiler + fleet management
 The AI bridge and the cluster story.
@@ -116,6 +129,10 @@ The evidence that earns the grade.
 - Efficacy: detection + false-positive rates (`EVAL-4.3`).
 - Comparison vs Falco/Tetragon (`EVAL-4.4`, `DEP-4.1`).
 - Results tables & plots; thesis write-up mapping (`EVAL-4.5`, `DOC-3`).
+- **Reporting UI (deferred, Vue):** custom web dashboard — live FSM state per pod
+  (normal → … → compromised), attack chain stepping through, kill moments, metrics.
+  Reads the agent's Prometheus `/metrics` + JSON audit stream (both already emitted).
+  Demo/presentation artifact; not core to the thesis contribution.
 
 ## Critical path
 

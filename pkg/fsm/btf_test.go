@@ -106,6 +106,8 @@ func TestMapCapacitiesMatchObject(t *testing.T) {
 		{"SW_RULES", ebpf.Array, MaxRules, 4, 32},
 		{"SW_POLICY", ebpf.Array, 1, 4, 8},
 		{"SW_SCRATCH", ebpf.PerCPUArray, 1, 4, PatternLen},
+		{"SW_PODS", ebpf.LRUHash, MaxTrackedWorkloads, 8, 1},
+		{"SW_METRICS", ebpf.PerCPUArray, NumMetrics, 4, 8},
 	}
 	for _, c := range cases {
 		m, ok := spec.Maps[c.name]

@@ -147,3 +147,25 @@ func TestApplyInvalidBundleWritesNothing(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyEnforce(t *testing.T) {
+	b := testBundle()
+	skipIfStub(t, b)
+	for _, enforce := range []bool{false, true} {
+		r := &recorder{}
+		if err := Apply(r, b, WithEnforce(enforce)); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		if r.policies[0] != (fsm.Policy{}) {
+			t.Errorf("enforce=%v: first write = %+v, want zero", enforce, r.policies[0])
+		}
+		last := r.policies[len(r.policies)-1]
+		want := b.Policy()
+		if enforce {
+			want.Enforce = 1
+		}
+		if last != want {
+			t.Errorf("enforce=%v: published %+v, want %+v", enforce, last, want)
+		}
+	}
+}

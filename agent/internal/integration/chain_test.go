@@ -28,6 +28,7 @@ import (
 	"github.com/CosminMilica/statewall/agent/internal/loader"
 	"github.com/CosminMilica/statewall/agent/internal/podmeta"
 	"github.com/CosminMilica/statewall/agent/internal/policy"
+	"github.com/CosminMilica/statewall/agent/internal/policy/kmap"
 	"github.com/CosminMilica/statewall/pkg/fsm"
 )
 
@@ -186,7 +187,7 @@ func testBundle(window time.Duration) *fsm.Bundle {
 
 type harness struct {
 	obj  *loader.Object
-	maps policy.KernelMaps
+	maps kmap.KernelMaps
 	rd   *ringbuf.Reader
 	meta fsm.Meta
 }
@@ -207,7 +208,7 @@ func setup(t *testing.T) *harness {
 	}
 	t.Cleanup(func() { _ = obj.Close() })
 
-	h := &harness{obj: obj, maps: policy.KernelMaps{
+	h := &harness{obj: obj, maps: kmap.KernelMaps{
 		Policy:      obj.Maps.Policy,
 		Rules:       obj.Maps.Rules,
 		Transitions: obj.Maps.Transitions,
@@ -370,6 +371,132 @@ func TestChain(t *testing.T) {
 		if !reached(escape, got, "compromised") {
 			logRunCounts(t)
 			t.Fatalf("states = %v, want compromised after re-apply", got)
+		}
+	})
+}
+
+// setEnforce flips Policy.enforce in the live SW_POLICY, keeping NumRules.
+func (h *harness) setEnforce(t *testing.T, on uint32) {
+	t.Helper()
+	var p fsm.Policy
+	if err := h.obj.Maps.Policy.Lookup(uint32(0), &p); err != nil {
+		t.Fatalf("policy lookup: %v", err)
+	}
+	p.Enforce = on
+	if err := h.obj.Maps.Policy.Put(uint32(0), p); err != nil {
+		t.Fatalf("policy put: %v", err)
+	}
+}
+
+// runEnforce runs steps in a fresh cgroup, registering it in SW_PODS when pod is true.
+// It reports whether the child died from SIGKILL and the raw audit records for the cgroup.
+func (h *harness) runEnforce(t *testing.T, pod bool, steps ...string) (bool, []fsm.AuditRecord) {
+	t.Helper()
+	cgID, cgFD := newCgroup(t)
+	if pod {
+		if err := h.obj.Maps.Pods.Put(cgID, uint8(1)); err != nil {
+			t.Fatalf("SW_PODS put: %v", err)
+		}
+		t.Cleanup(func() { _ = h.obj.Maps.Pods.Delete(cgID) })
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), stepsEnv+"="+strings.Join(steps, ","))
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: cgFD}
+
+	killed := false
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("child: %v", err)
+		}
+		ws, ok := exitErr.Sys().(syscall.WaitStatus)
+		if ok && ws.Signaled() && ws.Signal() == syscall.SIGKILL {
+			killed = true
+		} else if !ok || exitErr.ExitCode() == 2 {
+			t.Fatalf("child: %v", err)
+		}
+	}
+
+	var records []fsm.AuditRecord
+	h.rd.SetDeadline(time.Now().Add(time.Second))
+	for {
+		rec, err := h.rd.Read()
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return killed, records
+		}
+		if err != nil {
+			t.Fatalf("read ring buffer: %v", err)
+		}
+		r, err := audit.Decode(rec.RawSample)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if r.CgroupID == cgID {
+			records = append(records, r)
+		}
+	}
+}
+
+// killRecord returns the first audit record whose action is kill.
+func killRecord(records []fsm.AuditRecord) (fsm.AuditRecord, bool) {
+	for _, r := range records {
+		if r.Action == fsm.ActionKill {
+			return r, true
+		}
+	}
+	return fsm.AuditRecord{}, false
+}
+
+// TestEnforcement covers the Phase 2 kill path: the escape chain's terminal transition
+// carries action=kill, so a pod cgroup under enforcement is SIGKILLed at the execve step,
+// while a dry run (enforce=0) or a non-pod cgroup is only audited.
+func TestEnforcement(t *testing.T) {
+	h := setup(t)
+	chain := []string{"socket", "setns", "mount", "execve"}
+
+	t.Run("enforce and pod: child killed, Enforced=1", func(t *testing.T) {
+		h.setEnforce(t, 1)
+		killed, records := h.runEnforce(t, true, chain...)
+		if !killed {
+			t.Fatalf("child was not killed by SIGKILL; records=%+v", records)
+		}
+		r, ok := killRecord(records)
+		if !ok {
+			t.Fatalf("no kill-action audit record; records=%+v", records)
+		}
+		if r.Enforced != 1 {
+			t.Errorf("terminal record Enforced=%d, want 1 (%+v)", r.Enforced, r)
+		}
+	})
+
+	t.Run("dry run (enforce=0): not killed, Enforced=0", func(t *testing.T) {
+		h.setEnforce(t, 0)
+		killed, records := h.runEnforce(t, true, chain...)
+		if killed {
+			t.Fatal("child killed with enforce=0")
+		}
+		r, ok := killRecord(records)
+		if !ok {
+			t.Fatalf("no kill-action audit record; records=%+v", records)
+		}
+		if r.Enforced != 0 {
+			t.Errorf("terminal record Enforced=%d, want 0 (%+v)", r.Enforced, r)
+		}
+	})
+
+	t.Run("non-pod cgroup: not killed, Enforced=0", func(t *testing.T) {
+		h.setEnforce(t, 1)
+		killed, records := h.runEnforce(t, false, chain...)
+		if killed {
+			t.Fatal("non-pod child killed")
+		}
+		r, ok := killRecord(records)
+		if !ok {
+			t.Fatalf("no kill-action audit record; records=%+v", records)
+		}
+		if r.Enforced != 0 {
+			t.Errorf("terminal record Enforced=%d, want 0 (%+v)", r.Enforced, r)
 		}
 	})
 }

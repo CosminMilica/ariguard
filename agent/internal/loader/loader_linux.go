@@ -30,6 +30,8 @@ type Maps struct {
 	Policy      *ebpf.Map
 	Audit       *ebpf.Map
 	Scratch     *ebpf.Map
+	Pods        *ebpf.Map
+	Metrics     *ebpf.Map
 }
 
 // Object is a loaded statewall collection and its attached links.
@@ -76,6 +78,8 @@ func Load(path string, log *slog.Logger) (*Object, error) {
 		{MapPolicy, &o.Maps.Policy},
 		{MapAudit, &o.Maps.Audit},
 		{MapScratch, &o.Maps.Scratch},
+		{MapPods, &o.Maps.Pods},
+		{MapMetrics, &o.Maps.Metrics},
 	}
 	for _, r := range refs {
 		m, ok := coll.Maps[r.name]

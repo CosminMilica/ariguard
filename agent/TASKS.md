@@ -42,11 +42,14 @@ AGT-1.5.1–1.5.5: runtime-verified in the VM (Wave C/D). Pod resolution (AGT-1.
 workload's cgroup to be registered before its chain fires and to persist until the record is
 drained — short-lived emitters must warm up and stay alive (see testdata attack manifests).
 
-## Phase 2 — Mitigation surface
+## Phase 2 — Mitigation surface (branch `feat/mitigation`)
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` AGT-2.1 | Surface mitigations + expose Prometheus metrics | BPF-2.5 | denies/kills visible as metrics |
-| `[ ]` AGT-2.2 | Health/readiness probes; graceful detach on shutdown | AGT-1.1 | clean teardown, no leaked programs |
+| `[x]` AGT-2.1 | Populate `SW_PODS` from `podmeta` (add pod cgroups, prune on deletion) | BPF-2.1 | only pod cgroups are enforcement candidates; verified by ci-e2e (attackers killed, non-pod runtime not) |
+| `[x]` AGT-2.2 | Read `SW_METRICS`, expose Prometheus (events, kills, audit_dropped) | BPF-2.6 | metrics scrapeable on an HTTP endpoint; verified by ci-e2e (`statewall_kills_total` 0 in detect, +4 in enforce) |
+| `[x]` AGT-2.3 | `--enforce` flag → `Policy.enforce`; health/readiness; graceful detach | BPF-2.4 | dry-run vs enforce switch; verified by ci-e2e/ci-kernel (`SW_POLICY.enforce` flips, clean teardown, no leaked sw_ programs) |
+
+Note: AGT-2.1/2.2/2.3 code complete (podsync, metrics, `--enforce`, `--metrics-addr`); runtime verification in the VM.
 
 ## Phase 3 — Fleet
 | ID | Task | Depends | Done when |

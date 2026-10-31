@@ -15,11 +15,23 @@ type Maps interface {
 	PutBindings(hook uint32, hb fsm.HookBindings) error
 }
 
-// Apply loads b into the kernel maps without reloading programs.
+// Option tunes Apply.
+type Option func(*fsm.Policy)
+
+// WithEnforce sets Policy.Enforce: true kills on matching actions, false only records them (F3).
+func WithEnforce(enforce bool) Option {
+	return func(p *fsm.Policy) {
+		if enforce {
+			p.Enforce = 1
+		}
+	}
+}
+
+// Apply loads b into the kernel maps without reloading programs; enforcement is off unless WithEnforce(true).
 //
 // Hot-swap protocol: zero SW_POLICY first (programs stop evaluating), rewrite rules,
 // table and bindings, then publish the new SW_POLICY last.
-func Apply(m Maps, b *fsm.Bundle) error {
+func Apply(m Maps, b *fsm.Bundle, opts ...Option) error {
 	if err := b.Validate(); err != nil {
 		return fmt.Errorf("validate bundle: %w", err)
 	}
@@ -45,7 +57,11 @@ func Apply(m Maps, b *fsm.Bundle) error {
 			return fmt.Errorf("write SW_BINDINGS[%d]: %w", h, err)
 		}
 	}
-	if err := m.PutPolicy(b.Policy()); err != nil {
+	pol := b.Policy()
+	for _, o := range opts {
+		o(&pol)
+	}
+	if err := m.PutPolicy(pol); err != nil {
 		return fmt.Errorf("publish SW_POLICY: %w", err)
 	}
 	return nil

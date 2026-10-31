@@ -32,8 +32,7 @@ spec:
           try: subprocess.run(["nsenter","--target","1","--mount","--","true"])  # setns
           except Exception: pass
           subprocess.run(["mount","-t","tmpfs","tmpfs","/mnt"])  # container-local tmpfs
-          subprocess.run(["/bin/true"])                           # execve
-          import time; time.sleep(3600)
+          os.execv("/bin/true", ["true"])                         # execve in the main process so a kill fails the pod
       volumeMounts:
         - name: containerd-sock
           mountPath: /run/containerd/containerd.sock

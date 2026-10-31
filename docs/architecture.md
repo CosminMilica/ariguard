@@ -179,3 +179,38 @@ The compiler knows each hook's path argument (`openat` 1, `execve` 0, `execveat`
 `mount` 1, `memfd_create` 0, `connect` 1 for `sun_path_prefix`); a path predicate on a
 hook without one is an error. `arg` takes exactly one of `eq`, `le`, `mask_any`,
 `mask_none`.
+
+## Phase 2 decisions — synchronous mitigation (kill-based)
+
+Phase 1.5 detects; Phase 2 acts. This branch (`feat/mitigation`) adds **kill-based
+enforcement** from the existing tracepoint engine plus the safety machinery it requires.
+`-EPERM` deny via BPF LSM is a separate, additive follow-up (the ABI already carries
+`ACTION_DENY`; nothing here blocks it).
+
+| # | Decision | Why |
+|---|---|---|
+| F1 | Enforce by `bpf_send_signal(SIGKILL)` from the tracepoint engine | a tracepoint cannot deny a syscall, but it can kill the current task; highest-value, lowest-risk enforcement, no new attach surface |
+| F2 | Only pod cgroups are mitigation candidates | detection runs for every cgroup, but a KILL only fires when the workload's cgroup is in `SW_PODS`, so the node's own runtime/systemd cgroups can never be killed (closes the Phase 1.5 host false-positive at the enforcement layer) |
+| F3 | Global enforce switch in `Policy.enforce` (0 = detect-only, 1 = enforce) | run dry (actions recorded, nothing applied), then flip to enforcing; the demo shows both. Default 0 (safe) |
+| F4 | Atomic transition before enforcing: CAS on `FsmState.state` | replaces last-writer-wins (E9); only the committed winner enforces, so a concurrent syscall can't skip the step that triggers the kill |
+| F5 | KILL fires only when `enforce==1` AND the committed transition's action is `kill` AND the cgroup ∈ `SW_PODS` | `throttle`/`deny` stay audit-only on this branch; `deny` becomes real with the LSM follow-up |
+| F6 | `dup2` has no tracepoint on arm64 | glibc maps `dup2`→`dup3` there (already covered); LSM coverage is a follow-up |
+| F7 | Per-CPU metrics map `SW_METRICS` | events / kills / dropped-audit counters, read by the agent and exposed as Prometheus metrics |
+
+### ABI additions (v3.1, additive — no existing field moves)
+
+- `Policy._pad` → `enforce: u32` (same 8-byte layout).
+- `AuditRecord._pad` → `enforced: u32` (1 when a mitigation was applied; same 64-byte layout).
+- New map `SW_PODS`: `LRU_HASH`, key `u64` cgroup id → `u8` present; the agent populates it
+  from `podmeta` (every tracked pod cgroup) and prunes on pod deletion.
+- New map `SW_METRICS`: `PERCPU_ARRAY` of `u64` counters (indices: events, kills, audit_dropped).
+
+Mirrored in `pkg/fsm`; the `btf_test.go` size/offset checks extend to the new fields and maps.
+
+### Enforcement path (kernel)
+
+After the committed transition (F4): if `policy.enforce == 1`, `action == ACTION_KILL`, and
+`SW_PODS` contains the cgroup id, call `bpf_send_signal(SIGKILL)` and set `enforced = 1` on
+the audit record; bump the `SW_METRICS` kill counter. Everything else is unchanged from
+Phase 1.5 — detection, audit and the dry-run path are identical whether or not enforcement
+is on.
