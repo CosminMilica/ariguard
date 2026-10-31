@@ -7,6 +7,7 @@ dev-up: ## Provision the Linux dev VM (Lima) + kind cluster
 	limactl start --name=statewall --tty=false --timeout=20m deploy/lima/statewall.yaml
 	limactl stop statewall && limactl start statewall --tty=false --timeout=20m   # apply BPF LSM cmdline + docker group
 	limactl shell statewall -- bash -lc 'cd $(CURDIR) && kind create cluster --name statewall-dev --config deploy/kind/cluster.yaml'
+	$(MAKE) kubeconfig
 	@echo "Dev VM ready. Enter with: limactl shell statewall"
 
 kubeconfig: ## Export the kind kubeconfig to ~/.kube/statewall-dev.yaml (for kubectl/Lens on the host)

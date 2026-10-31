@@ -6,9 +6,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 ## Phase 1 — Workloads
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[~]` EVAL-1.1 | Synthetic benign workload scripts (training/FP baseline) — authored and statically checked, run in the VM | — | reproducible benign syscall traffic |
-| `[~]` EVAL-1.2 | Container-escape attack script (the demo chain) — authored and statically checked, run in the VM | — | triggers the FSM to compromised state |
-| `[~]` EVAL-1.3 | Phase 1 exit check: run benign + attack, assert on the audit stream — authored and statically checked, run in the VM | EVAL-1.1, EVAL-1.2, AGT-1.6 | attack reaches `compromised`; benign never passes `suspicious` |
+| `[x]` EVAL-1.1 | Synthetic benign workload scripts (training/FP baseline) | — | reproducible benign syscall traffic |
+| `[x]` EVAL-1.2 | Container-escape attack script (the demo chain) | — | triggers the FSM to compromised state |
+| `[x]` EVAL-1.3 | Phase 1 exit check: run benign + attack, assert on the audit stream | EVAL-1.1, EVAL-1.2, AGT-1.6 | attack reaches `compromised`; benign never passes `suspicious` |
 
 ## Phase 4 — Benchmarks & results
 | ID | Task | Depends | Done when |

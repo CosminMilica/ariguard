@@ -60,6 +60,12 @@ Execution order:
 
 Exit check (`EVAL-1.3`): the attack pod drives its cgroup to `compromised`; the benign
 workloads never go past `suspicious`.
+
+**Status: done.** The exit check passed twice on kind: only the attack cgroup produced
+records (normal → suspicious → escalating → breakout_imminent → compromised), the benign
+workloads and kind system components produced none. False-positive risks found on the
+way are listed in [docs/threat-model.md](docs/threat-model.md) and tracked as
+`BPF-2.6`–`BPF-2.9`.
 - Maps: per-cgroup state HASH, transition-table ARRAY, audit RINGBUF (`BPF-1.1`, `BPF-1.2`, `BPF-1.6`).
 - Zero-allocation FSM engine; syscall→event mapping; cgroup filter (`BPF-1.3`, `BPF-1.5`, `BPF-1.7`).
 - Hooks for the chosen kill chain (`BPF-1.4`).

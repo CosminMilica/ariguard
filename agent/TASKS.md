@@ -18,14 +18,14 @@ cilium/ebpf checks every Put against the map's value size, and the BTF maps carr
 ## Phase 1 — Load, maps, telemetry
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[~]` AGT-1.1 | Load all programs + maps, attach per the active policy | AGT-0.3, BPF-1.4 | all hooks attached at startup |
-| `[~]` AGT-1.2 | Ring buffer reader → structured audit events | BPF-1.6 | events parsed into Go structs |
-| `[~]` AGT-1.3 | Populate `SW_TRANSITIONS`, `SW_BINDINGS`, `SW_DIMS` from a policy bundle v2 | PKG-1.4, BPF-1.2 | policy active in the kernel |
-| `[~]` AGT-1.4 | Hot-swap the policy without reloading programs (write `SW_DIMS` last) | AGT-1.3 | new policy active, no detach |
+| `[x]` AGT-1.1 | Load all programs + maps, attach per the active policy | AGT-0.3, BPF-1.4 | all hooks attached at startup |
+| `[x]` AGT-1.2 | Ring buffer reader → structured audit events | BPF-1.6 | events parsed into Go structs |
+| `[x]` AGT-1.3 | Populate `SW_TRANSITIONS`, `SW_BINDINGS`, `SW_DIMS` from a policy bundle v2 | PKG-1.4, BPF-1.2 | policy active in the kernel |
+| `[x]` AGT-1.4 | Hot-swap the policy without reloading programs (write `SW_DIMS` last) | AGT-1.3 | new policy active, no detach |
 | `[ ]` AGT-1.5 | Resolve `cgroup_id` → pod metadata (CRI / cgroupfs) | AGT-1.2 | audit events carry pod name/ns |
-| `[~]` AGT-1.6 | Dev mode: plain binary on the VM, `--object`, `--bundle`, JSON audit to stdout (D7) | AGT-1.1 | `sudo statewall-agent --bundle …` streams audit |
+| `[x]` AGT-1.6 | Dev mode: plain binary on the VM, `--object`, `--bundle`, JSON audit to stdout (D7) | AGT-1.1 | `sudo statewall-agent --bundle …` streams audit |
 
-`[~]` AGT-1.1–1.4, AGT-1.6: code complete, runtime verification in the VM (wave C).
+AGT-1.1–1.4, AGT-1.6: verified in the VM; all six hooks attach, SIGHUP hot swap keeps detection working, EVAL-1.3 passes. No agent changes needed.
 
 ## Phase 2 — Mitigation surface
 | ID | Task | Depends | Done when |
