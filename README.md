@@ -218,7 +218,7 @@ complete contribution**, Phase 3 is the differentiator.
 
 - Linux kernel **≥ 5.7** with `CONFIG_BPF_LSM=y` (BPF LSM hooks)
 - BTF-enabled kernel (`/sys/kernel/btf/vmlinux`) for CO-RE
-- Rust toolchain + `bpf-linker`; Go ≥ 1.22; Python ≥ 3.11
+- Rust toolchain + `bpf-linker`; Go ≥ 1.25; Python ≥ 3.11
 - For local work on macOS: a Linux VM (Lima / multipass) + kind
 
 ## Quickstart (planned)

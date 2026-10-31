@@ -12,13 +12,19 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 ## Phase 1 — Passive FSM
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` BPF-1.1 | Per-cgroup state map (`HASH`, fixed size), keyed by `cgroup_id` | BPF-0.2 | state persists across syscalls for one workload |
-| `[ ]` BPF-1.2 | Transition-table map (`ARRAY`): (state, event) → (next, action) | PKG-0.1 | table lookup drives state changes |
+| `[~]` BPF-1.0 | ABI v2 types in `statewall-common` (hooks, `Binding`, `HookBindings`, `Dims`, `AuditRecord`, capacities) | — | Go mirror passes; Rust compiles in the VM |
+| `[ ]` BPF-1.1 | `SW_STATE`: preallocated `LRU_HASH` keyed by `cgroup_id` (D5) | BPF-0.2 | state persists across syscalls for one workload |
+| `[ ]` BPF-1.2 | `SW_TRANSITIONS`, `SW_BINDINGS`, `SW_DIMS` maps | BPF-1.0 | agent can populate all three |
 | `[ ]` BPF-1.3 | Zero-allocation FSM engine (lookup, advance, write-back) | BPF-1.1, BPF-1.2 | no heap/stack growth; passes verifier |
-| `[ ]` BPF-1.4 | Attach hooks for the chosen kill chain (open, setns, unshare, mount, execve, ptrace) | BPF-1.3 | each syscall produces an event |
-| `[ ]` BPF-1.5 | Map syscall + args → event id | BPF-1.4 | correct event for each hooked call |
-| `[ ]` BPF-1.6 | Emit audit records to `RINGBUF` on transitions | BPF-1.3 | agent (`AGT-1.2`) receives events |
-| `[ ]` BPF-1.7 | cgroup/namespace filter: only track K8s pod cgroups | BPF-1.1 | host processes ignored |
+| `[ ]` BPF-1.4 | Tracepoint programs `sw_openat` … `sw_ptrace` (D1, D2) | BPF-1.3 | each hook fires on its syscall |
+| `[ ]` BPF-1.5 | Binding evaluation: hook → event, path-prefix match via `SW_SCRATCH` (D3, D6) | BPF-1.4 | only matching paths raise an event |
+| `[ ]` BPF-1.6 | Emit `AuditRecord` to `SW_AUDIT` on every transition | BPF-1.3 | agent (`AGT-1.2`) receives records |
+| `[ ]` BPF-1.7 | Skip the root cgroup; track every other cgroup (D8) | BPF-1.1 | host processes ignored |
+| `[ ]` BPF-1.8 | State expiry: reset to `normal` after `window_ns` without progress (D4) | BPF-1.3 | stale chains do not accumulate |
+| `[ ]` BPF-1.9 | Cover the new mount API (`fsopen`/`fsmount`/`move_mount`) as mount hooks | BPF-1.4 | default util-linux `mount` (no `LIBMOUNT_FORCE_MOUNT2`) raises `host_mount` |
+
+> BPF-1.0: written on the host; the Go mirror (`pkg/fsm`) passes the size/offset test.
+> Flip to `[x]` once `cargo build` succeeds in the VM.
 
 ## Phase 2 — Synchronous mitigation
 | ID | Task | Depends | Done when |

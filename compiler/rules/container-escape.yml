@@ -1,20 +1,18 @@
 # Container-escape kill chain (see README.md).
-# open docker.sock -> setns/unshare -> mount -> execve -> compromised.
+# open runtime socket -> setns/unshare -> mount -> execve -> compromised.
 name: container-escape
-
-states:
-  - normal
-  - suspicious
-  - escalating
-  - breakout_imminent
-  - compromised
-
+window_seconds: 30
+states: [normal, suspicious, escalating, breakout_imminent, compromised]
 events:
-  runtime_socket_open: [open, openat]
-  namespace_manipulation: [setns, unshare]
-  host_mount: [mount]
-  critical_execve: [execve]
-
+  runtime_socket_open:
+    hooks: [openat]
+    path_prefix: [/run/containerd/containerd.sock, /var/run/docker.sock, /run/docker.sock]
+  namespace_manipulation:
+    hooks: [setns, unshare]
+  host_mount:
+    hooks: [mount]
+  critical_execve:
+    hooks: [execve]
 transitions:
   - from: normal
     event: runtime_socket_open

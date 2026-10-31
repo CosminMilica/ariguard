@@ -62,7 +62,7 @@ provision:
       #!/bin/bash
       set -euo pipefail
       ARCH="$(dpkg --print-architecture)"  # arm64 | amd64
-      GO_VERSION=1.23.2
+      GO_VERSION=1.27.3
       curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
       ln -sf /usr/local/go/bin/go /usr/local/bin/go
       ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt

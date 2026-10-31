@@ -1,0 +1,48 @@
+# Attack: container-escape chain, all steps in one container (one cgroup).
+# Expected FSM path:
+#   normal -(openat containerd.sock)-> suspicious -(setns)-> escalating
+#   -(mount)-> breakout_imminent -(execve)-> compromised
+# Harmless: the socket is only opened (ENXIO), nsenter runs `true`, the tmpfs is container-local.
+# LIBMOUNT_FORCE_MOUNT2 makes util-linux use mount(2) instead of the new fsopen/fsmount API.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: container-escape
+  namespace: statewall-eval
+  labels:
+    app: container-escape
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  restartPolicy: Never
+  hostPID: true
+  containers:
+    - name: attacker
+      image: ubuntu:24.04
+      securityContext:
+        privileged: true
+      env:
+        - name: LIBMOUNT_FORCE_MOUNT2
+          value: always
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          echo "step 1: open runtime socket"
+          cat /run/containerd/containerd.sock > /dev/null 2>&1 || true
+          sleep 1
+          echo "step 2: setns"
+          nsenter --target 1 --mount -- true || echo "nsenter failed"
+          sleep 1
+          echo "step 3: mount"
+          mount -t tmpfs tmpfs /mnt || echo "mount failed"
+          echo "step 4: execve"
+          /bin/true
+          echo "chain done"
+          exec sleep infinity
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /run/containerd/containerd.sock
+        type: Socket

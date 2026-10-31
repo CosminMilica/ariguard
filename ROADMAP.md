@@ -46,7 +46,20 @@ De-risk the single biggest unknown first: the Rust-authored eBPF ↔ Go-loader A
   [docs/architecture.md](docs/architecture.md)) before Phase 1.
 
 ### Phase 1 — Passive FSM (detection only)
-The core systems contribution.
+The core systems contribution. Design decisions D1–D8, the kernel object contract and
+the policy bundle v2 format are in [docs/architecture.md](docs/architecture.md#phase-1-decisions).
+
+Execution order:
+
+| Wave | Where | Tasks | Output |
+|---|---|---|---|
+| A | macOS, parallel | `CMP-1.5`, `CMP-1.6`, `PKG-1.4` · `AGT-1.1`, `AGT-1.2`, `AGT-1.6` (code) · `EVAL-1.1`, `EVAL-1.2` | bundle v2 end to end; agent compiles for linux; workloads ready |
+| B | VM | `BPF-0.*`, `AGT-0.*`, `BPF-1.0` | **Phase 0 gate**: Rust object loads from Go, map read works |
+| C | VM | `BPF-1.1`–`BPF-1.8`, `AGT-1.3`, `AGT-1.4` | FSM runs in the kernel, policy loaded from a bundle |
+| D | VM | `EVAL-1.3`, `AGT-1.5` | exit check passes on kind |
+
+Exit check (`EVAL-1.3`): the attack pod drives its cgroup to `compromised`; the benign
+workloads never go past `suspicious`.
 - Maps: per-cgroup state HASH, transition-table ARRAY, audit RINGBUF (`BPF-1.1`, `BPF-1.2`, `BPF-1.6`).
 - Zero-allocation FSM engine; syscall→event mapping; cgroup filter (`BPF-1.3`, `BPF-1.5`, `BPF-1.7`).
 - Hooks for the chosen kill chain (`BPF-1.4`).

@@ -1,0 +1,6 @@
+{"ts_ns": 100000000000, "cgroup_id": 9001, "pid": 4100, "hook": "openat", "event": 0, "from": "normal", "to": "suspicious", "action": "observe"}
+{"ts_ns": 101000000000, "cgroup_id": 9001, "pid": 4105, "hook": "setns", "event": 1, "from": "suspicious", "to": "escalating", "action": "throttle"}
+{"ts_ns": 102000000000, "cgroup_id": 9001, "pid": 4110, "hook": "mount", "event": 2, "from": "escalating", "to": "breakout_imminent", "action": "deny"}
+{"ts_ns": 102005000000, "cgroup_id": 9001, "pid": 4111, "hook": "execve", "event": 3, "from": "breakout_imminent", "to": "compromised", "action": "kill"}
+{"ts_ns": 60000000000, "cgroup_id": 7003, "pid": 3500, "hook": "openat", "event": 0, "from": "normal", "to": "suspicious", "action": "observe"}
+{"ts_ns": 61000000000, "cgroup_id": 7003, "pid": 3501, "hook": "unshare", "event": 1, "from": "suspicious", "to": "escalating", "action": "throttle"}

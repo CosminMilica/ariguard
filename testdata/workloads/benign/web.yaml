@@ -1,0 +1,66 @@
+# Benign: nginx server plus a curl client loop.
+# Exercises network accept/read/write and steady file opens; no chain step fires.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: statewall-eval
+  labels:
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        app.kubernetes.io/part-of: statewall-eval
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: statewall-eval
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-client
+  namespace: statewall-eval
+  labels:
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-client
+  template:
+    metadata:
+      labels:
+        app: web-client
+        app.kubernetes.io/part-of: statewall-eval
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                curl -fsS -o /dev/null http://web.statewall-eval.svc.cluster.local/ || true
+                sleep 0.5
+              done

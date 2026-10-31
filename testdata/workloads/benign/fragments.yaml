@@ -1,0 +1,39 @@
+# Benign: privileged pod running chain steps in isolation or out of order
+# (unshare, setns, mount, execve, ordinary openat) but never the runtime socket open.
+# Must never pass `suspicious`: the FSM fires on the ordered chain, not single syscalls.
+# LIBMOUNT_FORCE_MOUNT2 makes util-linux use mount(2) instead of the new fsopen/fsmount API.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fragments
+  namespace: statewall-eval
+  labels:
+    app: fragments
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  restartPolicy: Always
+  containers:
+    - name: fragments
+      image: ubuntu:24.04
+      securityContext:
+        privileged: true
+      env:
+        - name: LIBMOUNT_FORCE_MOUNT2
+          value: always
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          while true; do
+            unshare -U true || true
+            mount -t tmpfs tmpfs /mnt && umount /mnt
+            cat /etc/hostname > /dev/null
+            /bin/true
+
+            /bin/true
+            mount -t tmpfs tmpfs /mnt && umount /mnt
+            nsenter --target 1 --mount -- true || true
+            unshare -m true || true
+            cat /etc/os-release > /dev/null
+
+            sleep 2
+          done
