@@ -56,7 +56,7 @@ stop_agent() {
     AGENT_PID=""
 }
 
-# shellcheck disable=SC2329  # invoked indirectly via the EXIT trap
+# shellcheck disable=SC2329,SC2317  # cleanup and its body run via the EXIT trap, not a direct call
 cleanup() {
     stop_agent
     kc delete namespace "$NAMESPACE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
