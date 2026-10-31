@@ -10,9 +10,9 @@ import (
 )
 
 type recorder struct {
-	ops    []string
-	dims   []fsm.Dims
-	failAt int
+	ops      []string
+	policies []fsm.Policy
+	failAt   int
 }
 
 func (r *recorder) record(op string) error {
@@ -23,9 +23,13 @@ func (r *recorder) record(op string) error {
 	return nil
 }
 
-func (r *recorder) PutDims(d fsm.Dims) error {
-	r.dims = append(r.dims, d)
-	return r.record("dims")
+func (r *recorder) PutPolicy(p fsm.Policy) error {
+	r.policies = append(r.policies, p)
+	return r.record("policy")
+}
+
+func (r *recorder) PutRule(i uint32, _ fsm.Rule) error {
+	return r.record(fmt.Sprintf("rule/%d", i))
 }
 
 func (r *recorder) PutTransition(i uint32, _ fsm.Transition) error {
@@ -36,19 +40,31 @@ func (r *recorder) PutBindings(h uint32, _ fsm.HookBindings) error {
 	return r.record(fmt.Sprintf("bindings/%d", h))
 }
 
+func anyBinding(hook, rule, event uint32) fsm.Binding {
+	return fsm.Binding{Hook: hook, Rule: rule, Event: event, PathArg: fsm.NoArg, ArgIndex: fsm.NoArg}
+}
+
+// testBundle: rule 0 (cgroup, 2 states x 2 events) and rule 1 (process, 2 states x 1 event).
 func testBundle() *fsm.Bundle {
 	var p [fsm.PatternLen]byte
 	copy(p[:], "/etc/")
+	open := anyBinding(fsm.HookOpenat, 0, 0)
+	open.PathArg, open.PathKind, open.PathLen, open.Pattern = 1, fsm.PathPrefix, 5, p
 	return &fsm.Bundle{
-		Dims: fsm.Dims{NumStates: 2, NumEvents: 2, WindowNs: 1_000_000_000},
+		Rules: []fsm.Rule{
+			{NumStates: 2, NumEvents: 2, TransBase: 0, Scope: fsm.ScopeCgroup, TerminalFrom: 1, WindowNs: 1_000_000_000},
+			{NumStates: 2, NumEvents: 1, TransBase: 4, Scope: fsm.ScopeProcess, TerminalFrom: 2, WindowNs: 1_000_000_000},
+		},
 		Transitions: []fsm.Transition{
-			{NextState: fsm.StateNormal}, {NextState: fsm.StateSuspicious},
-			{NextState: fsm.StateSuspicious}, {NextState: fsm.StateSuspicious, Action: fsm.ActionObserve},
+			{NextState: 1}, {NextState: 0},
+			{NextState: 1}, {NextState: 1, Action: fsm.ActionThrottle},
+			{NextState: 1}, {NextState: 1},
 		},
-		Bindings: []fsm.Binding{
-			{Hook: fsm.HookOpenat, Event: 0, MatchKind: fsm.MatchPathPrefix, PatternLen: 5, Pattern: p},
-			{Hook: fsm.HookExecve, Event: 1, MatchKind: fsm.MatchAny},
-		},
+		Bindings: []fsm.Binding{open, anyBinding(fsm.HookExecve, 0, 1), anyBinding(fsm.HookMemfdCreate, 1, 0)},
+		Meta: fsm.Meta{Rules: []fsm.RuleMeta{
+			{Name: "a", Scope: "cgroup", States: []string{"s0", "s1"}, Events: []string{"e0", "e1"}},
+			{Name: "b", Scope: "process", States: []string{"s0", "s1"}, Events: []string{"e0"}},
+		}},
 	}
 }
 
@@ -59,6 +75,20 @@ func skipIfStub(t *testing.T, b *fsm.Bundle) {
 	}
 }
 
+func wantOps(b *fsm.Bundle) []string {
+	want := []string{"policy"}
+	for i := range b.Rules {
+		want = append(want, fmt.Sprintf("rule/%d", i))
+	}
+	for i := range b.Transitions {
+		want = append(want, fmt.Sprintf("transition/%d", i))
+	}
+	for h := 0; h < int(fsm.NumHooks); h++ {
+		want = append(want, fmt.Sprintf("bindings/%d", h))
+	}
+	return append(want, "policy")
+}
+
 func TestApplyOrdering(t *testing.T) {
 	b := testBundle()
 	skipIfStub(t, b)
@@ -66,42 +96,54 @@ func TestApplyOrdering(t *testing.T) {
 	if err := Apply(r, b); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	want := []string{"dims", "transition/0", "transition/1", "transition/2", "transition/3"}
-	for h := 0; h < int(fsm.NumHooks); h++ {
-		want = append(want, fmt.Sprintf("bindings/%d", h))
-	}
-	want = append(want, "dims")
+	want := wantOps(b)
 	if strings.Join(r.ops, ",") != strings.Join(want, ",") {
 		t.Fatalf("ops = %v\nwant %v", r.ops, want)
 	}
-	if r.dims[0] != (fsm.Dims{}) {
-		t.Errorf("first SW_DIMS write = %+v, want zero", r.dims[0])
+	if r.policies[0] != (fsm.Policy{}) {
+		t.Errorf("first SW_POLICY write = %+v, want zero", r.policies[0])
 	}
-	if r.dims[1] != b.Dims {
-		t.Errorf("last SW_DIMS write = %+v, want %+v", r.dims[1], b.Dims)
+	if last := r.policies[len(r.policies)-1]; last != b.Policy() || last.NumRules != 2 {
+		t.Errorf("last SW_POLICY write = %+v, want %+v", last, b.Policy())
 	}
 }
 
 func TestApplyStopsOnWriteError(t *testing.T) {
 	b := testBundle()
 	skipIfStub(t, b)
-	r := &recorder{failAt: 3}
-	if err := Apply(r, b); err == nil {
-		t.Fatal("Apply succeeded, want error")
-	}
-	if len(r.ops) != 3 || len(r.dims) != 1 {
-		t.Errorf("ops = %v, want stop after 3 writes with dims never published", r.ops)
+	n := len(wantOps(b))
+	for failAt := 1; failAt <= n; failAt++ {
+		r := &recorder{failAt: failAt}
+		if err := Apply(r, b); err == nil {
+			t.Fatalf("failAt %d: Apply succeeded, want error", failAt)
+		}
+		if len(r.ops) != failAt {
+			t.Errorf("failAt %d: ops = %v, want stop at the failing write", failAt, r.ops)
+		}
+		published := failAt == n
+		if !published && len(r.policies) != 1 {
+			t.Errorf("failAt %d: SW_POLICY writes = %+v, want only the disabling one", failAt, r.policies)
+		}
 	}
 }
 
 func TestApplyInvalidBundleWritesNothing(t *testing.T) {
-	b := testBundle()
-	b.Dims.NumStates = fsm.MaxTransitions + 1
-	r := &recorder{}
-	if err := Apply(r, b); err == nil {
-		t.Fatal("Apply succeeded, want validation error")
+	invalid := map[string]func(*fsm.Bundle){
+		"binding rule out of range": func(b *fsm.Bundle) { b.Bindings[0].Rule = 2 },
+		"too many rules":            func(b *fsm.Bundle) { b.Rules = make([]fsm.Rule, fsm.MaxRules+1) },
+		"rule range past the table": func(b *fsm.Bundle) { b.Rules[1].TransBase = 5 },
 	}
-	if len(r.ops) != 0 {
-		t.Errorf("ops = %v, want none", r.ops)
+	for name, mutate := range invalid {
+		t.Run(name, func(t *testing.T) {
+			b := testBundle()
+			mutate(b)
+			r := &recorder{}
+			if err := Apply(r, b); err == nil {
+				t.Fatal("Apply succeeded, want validation error")
+			}
+			if len(r.ops) != 0 {
+				t.Errorf("ops = %v, want none", r.ops)
+			}
+		})
 	}
 }

@@ -57,7 +57,7 @@ jobs:
         with:
           rust: "true"
           python: "true"
-          pip-packages: pytest
+          pip-packages: pytest pytest-cov
       - run: make ci-unit
 
   contract:

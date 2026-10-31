@@ -5,6 +5,9 @@ description = "Compile threat intelligence (ATT&CK / Sigma / syscall traces) int
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
 
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-cov>=5"]
+
 [project.scripts]
 statewall-compile = "statewall_compiler.cli:main"
 

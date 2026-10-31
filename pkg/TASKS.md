@@ -17,6 +17,14 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 | `[x]` PKG-1.3 | Go mirror of ABI v2 (hooks, `Binding`, `HookBindings`, `Dims`, `AuditRecord`) + size/offset tests | BPF-1.0 | `go test ./pkg/...` passes |
 | `[x]` PKG-1.4 | Policy bundle v2 (de)serialization, replacing v1; golden test on v2 | PKG-1.3, CMP-1.6 | Go decodes the v2 golden |
 
+## Phase 1.5 — Generic engine
+Contract: [docs/architecture.md](../docs/architecture.md#phase-15-decisions).
+
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[x]` PKG-1.5.1 | Go mirror of ABI v3 + size/offset tests; `btf_test.go` updated to the v3 types and maps | BPF-1.5.1 | `go test ./pkg/...` passes; BTF test passes once the v3 object exists |
+| `[x]` PKG-1.5.2 | Bundle v3: `Marshal`, `UnmarshalBundle`, `Validate`, `GroupBindings`, metadata; replaces v2; golden test on the v3 policy | PKG-1.5.1, CMP-1.5.2 | Go decodes `testdata/golden/policy.bin` and checks every rule |
+
 ## Phase 3 — Generated proto
 | ID | Task | Depends | Done when |
 |---|---|---|---|

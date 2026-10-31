@@ -3,34 +3,37 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-from .emit import DEFAULT_MAX_ENTRIES, emit_bundle
-from .schema import load_rule
+from .emit import compile_files, rule_files
+from .schema import RuleError
 
 
 def main() -> None:
-    """Compile a YAML rule file into a policy bundle."""
+    """Link YAML rule files into one policy bundle."""
     parser = argparse.ArgumentParser(
         prog="statewall-compile",
-        description="Compile a kill-chain rule file into an FSM policy bundle.",
+        description="Link kill-chain rule files into one FSM policy bundle (v3).",
     )
-    parser.add_argument("--input", required=True, help="path to the YAML rule file")
+    parser.add_argument("--rules-dir", help="directory of *.yml rule files")
+    parser.add_argument("--input", action="append", default=[], help="rule file (repeatable)")
     parser.add_argument("--out", required=True, help="path to write the policy bundle")
-    parser.add_argument(
-        "--max-entries",
-        type=int,
-        default=DEFAULT_MAX_ENTRIES,
-        help=f"reject tables larger than this many entries (default {DEFAULT_MAX_ENTRIES})",
-    )
     args = parser.parse_args()
 
-    fsm = load_rule(args.input)
-    bundle = emit_bundle(fsm, max_entries=args.max_entries)
+    files = rule_files(args.rules_dir, args.input)
+    if not files:
+        parser.error("no rule files: pass --rules-dir and/or --input")
+    try:
+        rules, bundle = compile_files(files)
+    except RuleError as exc:
+        sys.exit(f"statewall-compile: {exc}")
     Path(args.out).write_bytes(bundle)
+    transitions = sum(r.num_states * r.num_events for r in rules)
+    bindings = sum(len(r.bindings) for r in rules)
     print(
-        f"compiled {fsm.name}: {fsm.num_states} states x {fsm.num_events} events, "
-        f"{len(fsm.bindings)} bindings -> {args.out} ({len(bundle)} bytes)"
+        f"compiled {len(rules)} rules ({', '.join(r.name for r in rules)}): "
+        f"{transitions} transitions, {bindings} bindings -> {args.out} ({len(bundle)} bytes)"
     )
 
 

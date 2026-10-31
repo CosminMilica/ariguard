@@ -1,0 +1,18 @@
+# Fileless execution: memfd_create -> exec of the memfd.
+name: fileless-exec
+scope: process
+window_seconds: 30
+states: [normal, memfd_created, compromised]
+terminal: [compromised]
+events:
+  memfd:
+    - hook: memfd_create
+  memfd_exec:
+    # AT_EMPTY_PATH: fexecve(memfd).
+    - hook: execveat
+      arg: {index: 4, mask_any: 0x1000}
+    - hook: execve
+      path_prefix: [/proc/self/fd/, /dev/fd/]
+transitions:
+  - {from: normal, event: memfd, to: memfd_created, action: observe}
+  - {from: memfd_created, event: memfd_exec, to: compromised, action: kill}

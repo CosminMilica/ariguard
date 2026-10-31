@@ -1,25 +1,27 @@
 #![no_std]
 #![no_main]
 
-// Phase 1 passive FSM: one tracepoint per hook, a shared handler that maps the
-// syscall to an event via SW_BINDINGS, advances the per-cgroup state through
-// SW_TRANSITIONS and emits an AuditRecord. Detection only, no enforcement.
+// Phase 1.5 generic FSM engine: one tracepoint per hook, a shared inlined handler
+// that evaluates every binding of the hook, advances each matching rule's per-workload
+// state through its block of SW_TRANSITIONS and emits an AuditRecord. Detection only,
+// no enforcement (that is phase 2, BPF LSM).
 
 use aya_ebpf::{
     btf_maps::{Array, LruHashMap, PerCpuArray, RingBuf},
     helpers::{
-        bpf_get_current_cgroup_id, bpf_get_current_pid_tgid, bpf_ktime_get_ns,
-        bpf_probe_read_user_str_bytes,
+        bpf_get_current_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid,
+        bpf_ktime_get_ns, bpf_probe_read_user_str_bytes,
     },
     macros::{btf_map, tracepoint},
     programs::TracePointContext,
-    EbpfContext,
 };
 use statewall_common::{
-    AuditRecord, Dims, FsmKey, FsmState, HookBindings, Transition, ACTION_OBSERVE, HOOK_EXECVE,
-    HOOK_MOUNT, HOOK_OPENAT, HOOK_PTRACE, HOOK_SETNS, HOOK_UNSHARE, MATCH_ANY, MATCH_PATH_PREFIX,
-    MAX_BINDINGS_PER_HOOK, MAX_TRACKED_WORKLOADS, MAX_TRANSITIONS, NUM_HOOKS, PATTERN_LEN,
-    STATE_NORMAL,
+    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_OBSERVE, ARG_ANY,
+    ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3,
+    HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT, HOOK_INIT_MODULE,
+    HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE, HOOK_SETNS,
+    HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRANSITIONS, PATH_ANY, PATH_PREFIX,
+    PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS, STATE_INITIAL,
 };
 
 #[unsafe(no_mangle)]
@@ -28,21 +30,35 @@ pub static LICENSE: [u8; 4] = *b"GPL\0";
 
 const AUDIT_RING_BYTES: usize = 256 * 1024;
 
-// cgroup v2 root (kernfs inode 1); host processes outside any cgroup are ignored (D8).
+// cgroup v2 root (kernfs inode 1); host processes outside any cgroup are ignored.
 const ROOT_CGROUP_ID: u64 = 1;
 
+// Map update flags.
+const BPF_NOEXIST: u64 = 1;
+
+// First syscall argument is at this record offset; argument i is at BASE + 8*i.
+const ARG_BASE: usize = 16;
+// sockaddr_un.sun_path starts here in the pointed-to struct.
+const SUN_PATH_OFF: u64 = 2;
+
 #[btf_map]
-static SW_STATE: LruHashMap<FsmKey, FsmState, { MAX_TRACKED_WORKLOADS as usize }> =
-    LruHashMap::new();
+static SW_POLICY: Array<Policy, 1> = Array::new();
+
+#[btf_map]
+static SW_RULES: Array<Rule, { MAX_RULES as usize }> = Array::new();
 
 #[btf_map]
 static SW_TRANSITIONS: Array<Transition, { MAX_TRANSITIONS as usize }> = Array::new();
 
 #[btf_map]
-static SW_BINDINGS: Array<HookBindings, { NUM_HOOKS as usize }> = Array::new();
+static SW_BINDINGS: Array<HookBindings, { statewall_common::NUM_HOOKS as usize }> = Array::new();
 
 #[btf_map]
-static SW_DIMS: Array<Dims, 1> = Array::new();
+static SW_STATE: LruHashMap<
+    FsmKey,
+    FsmState,
+    { statewall_common::MAX_TRACKED_WORKLOADS as usize },
+> = LruHashMap::new();
 
 #[btf_map]
 static SW_AUDIT: RingBuf<AuditRecord, AUDIT_RING_BYTES> = RingBuf::new();
@@ -80,48 +96,94 @@ pub fn sw_ptrace(ctx: TracePointContext) -> u32 {
     handle(&ctx, HOOK_PTRACE)
 }
 
-// Offset of the path argument in the sys_enter_<hook> record
-// (/sys/kernel/tracing/events/syscalls/sys_enter_*/format, kernel 6.8).
-#[inline(always)]
-fn path_offset(hook: u32) -> Option<usize> {
-    match hook {
-        HOOK_OPENAT => Some(24), // filename
-        HOOK_EXECVE => Some(16), // filename
-        HOOK_MOUNT => Some(24),  // dir_name
-        _ => None,
-    }
+#[tracepoint(category = "syscalls", name = "sys_enter_connect")]
+pub fn sw_connect(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_CONNECT)
 }
 
-// Reads the hook's path argument into SW_SCRATCH; returns the buffer and the
-// string length without NUL.
+#[tracepoint(category = "syscalls", name = "sys_enter_dup2")]
+pub fn sw_dup2(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_DUP2)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_dup3")]
+pub fn sw_dup3(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_DUP3)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_memfd_create")]
+pub fn sw_memfd_create(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_MEMFD_CREATE)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_execveat")]
+pub fn sw_execveat(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_EXECVEAT)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_fsmount")]
+pub fn sw_fsmount(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_FSMOUNT)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_move_mount")]
+pub fn sw_move_mount(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_MOVE_MOUNT)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_init_module")]
+pub fn sw_init_module(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_INIT_MODULE)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_finit_module")]
+pub fn sw_finit_module(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_FINIT_MODULE)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_bpf")]
+pub fn sw_bpf(ctx: TracePointContext) -> u32 {
+    handle(&ctx, HOOK_BPF)
+}
+
+// Reads syscall argument i (a u64) from the tracepoint record.
 #[inline(always)]
-fn read_path(ctx: &TracePointContext, hook: u32) -> Option<(*const [u8; PATTERN_LEN], usize)> {
-    let off = path_offset(hook)?;
-    let ptr = unsafe { *(ctx.as_ptr().cast::<u8>().add(off).cast::<u64>()) };
+fn read_arg(ctx: &TracePointContext, i: u32) -> Option<u64> {
+    unsafe { ctx.read_at::<u64>(ARG_BASE + 8 * i as usize) }.ok()
+}
+
+// Reads the hook's path argument into SW_SCRATCH; returns the string length (no NUL).
+// PATH_SUN_PREFIX reads sockaddr_un.sun_path at offset 2 of the pointed-to struct.
+#[inline(always)]
+fn read_path(ctx: &TracePointContext, path_arg: u32, path_kind: u32) -> Option<usize> {
+    let ptr = read_arg(ctx, path_arg)?;
     if ptr == 0 {
         return None;
     }
+    let addr = if path_kind == PATH_SUN_PREFIX {
+        ptr + SUN_PATH_OFF
+    } else {
+        ptr
+    };
     let buf = SW_SCRATCH.get_ptr_mut(0)?;
-    let len = unsafe { bpf_probe_read_user_str_bytes(ptr as *const u8, &mut *buf) }
+    let len = unsafe { bpf_probe_read_user_str_bytes(addr as *const u8, &mut *buf) }
         .ok()?
         .len();
-    Some((buf.cast_const(), len))
+    Some(len)
 }
 
+// Prefix match against the current SW_SCRATCH contents. The loop never breaks on a
+// variable bound: a pre-6.8 verifier cannot bound an early exit on `plen`.
 #[inline(always)]
-fn prefix_matches(
-    buf: *const [u8; PATTERN_LEN],
-    len: usize,
-    pattern: &[u8; PATTERN_LEN],
-    plen: u32,
-) -> bool {
+fn prefix_matches(len: usize, pattern: &[u8; PATTERN_LEN], plen: u32) -> bool {
     let plen = plen as usize;
     if plen == 0 || plen > len {
         return false;
     }
+    let Some(buf) = SW_SCRATCH.get_ptr(0) else {
+        return false;
+    };
     let buf = unsafe { &*buf };
-    // No early exit on plen: LLVM turns it into `j == min(plen, 64)`, which
-    // pre-6.8 verifiers cannot use to bound j.
     for j in 0..PATTERN_LEN {
         if j < plen && buf[j] != pattern[j] {
             return false;
@@ -130,81 +192,76 @@ fn prefix_matches(
     true
 }
 
-// Returns the event raised by this hook firing, first matching binding wins.
 #[inline(always)]
-fn match_event(ctx: &TracePointContext, hook: u32) -> Option<u32> {
-    let hb: *const HookBindings = SW_BINDINGS.get_ptr(hook)?;
-    let count = unsafe { (*hb).count } as usize;
-    // Path is read at most once: None = not read yet, Some(None) = unreadable.
-    let mut path = None;
-    for i in 0..MAX_BINDINGS_PER_HOOK {
-        if i >= count {
-            break;
-        }
-        let b = unsafe { &(*hb).entries[i] };
-        match b.match_kind {
-            MATCH_ANY => return Some(b.event),
-            MATCH_PATH_PREFIX => {
-                if let Some((buf, len)) = *path.get_or_insert_with(|| read_path(ctx, hook)) {
-                    if prefix_matches(buf, len, &b.pattern, b.pattern_len) {
-                        return Some(b.event);
-                    }
-                }
-            }
-            _ => {}
-        }
+fn arg_matches(ctx: &TracePointContext, op: u32, index: u32, value: u64) -> bool {
+    if op == ARG_ANY {
+        return true;
     }
-    None
+    let Some(v) = read_arg(ctx, index) else {
+        return false;
+    };
+    match op {
+        ARG_EQ => v == value,
+        ARG_LE => v <= value,
+        ARG_MASK_ANY => (v & value) != 0,
+        ARG_MASK_NONE => (v & value) == 0,
+        _ => false,
+    }
 }
 
+// Applies one transition of `rule` on `event` to the workload's state.
 #[inline(always)]
-fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
-    let Some(dims) = SW_DIMS.get_ptr(0) else {
-        return 0;
+fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32) {
+    let Some(rp) = SW_RULES.get_ptr(rule) else {
+        return;
     };
-    let (num_states, num_events, window_ns) =
-        unsafe { ((*dims).num_states, (*dims).num_events, (*dims).window_ns) };
-    if num_states == 0 || num_events == 0 {
-        return 0;
+    let (num_states, num_events, trans_base, scope, terminal_from, window_ns) = unsafe {
+        (
+            (*rp).num_states,
+            (*rp).num_events,
+            (*rp).trans_base,
+            (*rp).scope,
+            (*rp).terminal_from,
+            (*rp).window_ns,
+        )
+    };
+    if num_states == 0 || num_events == 0 || event >= num_events {
+        return;
     }
 
-    let cgroup_id = unsafe { bpf_get_current_cgroup_id() };
-    if cgroup_id == ROOT_CGROUP_ID {
-        return 0;
-    }
-
-    let Some(event) = match_event(ctx, hook) else {
-        return 0;
+    let id = if scope == SCOPE_PROCESS {
+        tgid as u64
+    } else {
+        cgroup_id
     };
-    if event >= num_events {
-        return 0;
-    }
+    let key = FsmKey { id, rule, _pad: 0 };
 
     let now = unsafe { bpf_ktime_get_ns() };
-    let key = FsmKey { cgroup_id };
     let (tracked, mut state, updated_ns) = match SW_STATE.get_ptr(&key) {
         Some(p) => unsafe { (true, (*p).state, (*p).updated_ns) },
-        None => (false, STATE_NORMAL, 0),
+        None => (false, STATE_INITIAL, 0),
     };
-    if window_ns > 0 && state != STATE_NORMAL && now.wrapping_sub(updated_ns) > window_ns {
-        state = STATE_NORMAL;
+    // Terminal states (index >= terminal_from) never expire (E8).
+    if window_ns > 0 && state < terminal_from && now.wrapping_sub(updated_ns) > window_ns {
+        state = STATE_INITIAL;
     }
     if state >= num_states {
-        return 0;
+        return;
     }
 
-    let index = state * num_events + event;
-    if index >= num_states * num_events || index >= MAX_TRANSITIONS {
-        return 0;
+    let rel = state * num_events + event;
+    let index = trans_base + rel;
+    if rel >= num_states * num_events || index >= MAX_TRANSITIONS {
+        return;
     }
-    let Some(t) = SW_TRANSITIONS.get_ptr(index) else {
-        return 0;
+    let Some(tp) = SW_TRANSITIONS.get_ptr(index) else {
+        return;
     };
-    let (next_state, action) = unsafe { ((*t).next_state, (*t).action) };
+    let (next_state, action) = unsafe { ((*tp).next_state, (*tp).action) };
 
-    // Only non-normal workloads hold an entry; a tracked workload that is back
-    // in normal (expired or by transition) has its entry removed.
-    if next_state == STATE_NORMAL {
+    // State write (E9): first entry is created with BPF_NOEXIST; an advance updates in
+    // place; returning to the initial state deletes the entry so only live chains are held.
+    if next_state == STATE_INITIAL {
         if tracked {
             let _ = SW_STATE.remove(&key);
         }
@@ -214,23 +271,87 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
             last_event: event,
             updated_ns: now,
         };
-        let _ = SW_STATE.insert(&key, &value, 0);
+        let flags = if tracked { 0 } else { BPF_NOEXIST };
+        let _ = SW_STATE.insert(&key, &value, flags);
     }
 
     if next_state != state || action != ACTION_OBSERVE {
         if let Some(mut entry) = SW_AUDIT.reserve(0) {
+            let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
             entry.write(AuditRecord {
                 cgroup_id,
                 ts_ns: now,
-                pid: (bpf_get_current_pid_tgid() >> 32) as u32,
+                pid: tgid,
                 hook,
+                rule,
                 event,
                 from_state: state,
                 to_state: next_state,
                 action,
+                _pad: 0,
+                comm,
             });
             entry.submit(0);
         }
+    }
+}
+
+#[inline(always)]
+fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
+    let Some(pp) = SW_POLICY.get_ptr(0) else {
+        return 0;
+    };
+    if unsafe { (*pp).num_rules } == 0 {
+        return 0;
+    }
+
+    let cgroup_id = unsafe { bpf_get_current_cgroup_id() };
+    if cgroup_id == ROOT_CGROUP_ID {
+        return 0;
+    }
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+
+    let Some(hb) = SW_BINDINGS.get_ptr(hook) else {
+        return 0;
+    };
+    let count = unsafe { (*hb).count } as usize;
+
+    // One transition per rule per syscall: first matching binding wins (E4).
+    let mut done: u32 = 0;
+    // Path is read at most once per invocation; cached across the hook's bindings.
+    let mut path_read = false;
+    let mut path_len: usize = 0;
+
+    for i in 0..MAX_BINDINGS_PER_HOOK {
+        if i >= count {
+            break;
+        }
+        let b = unsafe { &(*hb).entries[i] };
+        let rule = b.rule;
+        if rule >= MAX_RULES || (done & (1 << rule)) != 0 {
+            continue;
+        }
+
+        let path_ok = match b.path_kind {
+            PATH_ANY => true,
+            PATH_PREFIX | PATH_SUN_PREFIX => {
+                if !path_read {
+                    path_len = read_path(ctx, b.path_arg, b.path_kind).unwrap_or(0);
+                    path_read = true;
+                }
+                path_len != 0 && prefix_matches(path_len, &b.pattern, b.path_len)
+            }
+            _ => false,
+        };
+        if !path_ok {
+            continue;
+        }
+        if !arg_matches(ctx, b.arg_op, b.arg_index, b.arg_value) {
+            continue;
+        }
+
+        advance(rule, b.event, hook, cgroup_id, tgid);
+        done |= 1 << rule;
     }
     0
 }

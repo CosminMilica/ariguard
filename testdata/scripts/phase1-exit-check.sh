@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Phase 1 exit check (EVAL-1.3): run benign + attack workloads under the agent, assert on the audit stream.
+# Exit check (EVAL-1.3, EVAL-1.5.4): run benign (incl. twins) + attack workloads under the agent, assert on the audit stream.
 # Runs inside the Lima VM against the kind cluster; needs passwordless sudo.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATEWALL_AGENT="${STATEWALL_AGENT:-$REPO_ROOT/bin/statewall-agent}"
 STATEWALL_OBJECT="${STATEWALL_OBJECT:-$REPO_ROOT/bpf/target/bpfel-unknown-none/release/statewall}"
-STATEWALL_BUNDLE="${STATEWALL_BUNDLE:-$REPO_ROOT/testdata/golden/container-escape.bin}"
+STATEWALL_BUNDLE="${STATEWALL_BUNDLE:-$REPO_ROOT/testdata/golden/policy.bin}"
+if [[ -n "${SUDO_USER:-}" ]]; then
+    INVOKER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+else
+    INVOKER_HOME="$HOME"
+fi
+STATEWALL_KUBECONFIG="${STATEWALL_KUBECONFIG:-$INVOKER_HOME/.kube/config}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-statewall-dev}"
 NAMESPACE="statewall-eval"
 BENIGN_SECONDS="${BENIGN_SECONDS:-30}"
@@ -21,7 +27,9 @@ AGENT_LOG="$WORKDIR/agent.log"
 AGENT_PIDFILE="$WORKDIR/agent.pid"
 AGENT_PID=""
 
-kc() { kubectl --context "$KUBE_CONTEXT" "$@"; }
+ATTACKS=(container-escape container-escape-connect reverse-seq fileless-seq)
+
+kc() { kubectl --kubeconfig "$STATEWALL_KUBECONFIG" --context "$KUBE_CONTEXT" "$@"; }
 log() { echo "[exit-check] $*" >&2; }
 
 agent_alive() { [[ -n "$AGENT_PID" ]] && ps -p "$AGENT_PID" >/dev/null 2>&1; }
@@ -48,7 +56,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-for f in "$STATEWALL_AGENT" "$STATEWALL_OBJECT" "$STATEWALL_BUNDLE"; do
+for f in "$STATEWALL_AGENT" "$STATEWALL_OBJECT" "$STATEWALL_BUNDLE" "$STATEWALL_KUBECONFIG"; do
     [[ -f "$f" ]] || { log "missing: $f"; exit 2; }
 done
 kc get nodes >/dev/null
@@ -56,7 +64,8 @@ kc get nodes >/dev/null
 log "starting agent (audit: $AUDIT)"
 # shellcheck disable=SC2016,SC2024
 sudo -n sh -c 'echo $$ > "$1"; shift; exec "$@"' sh "$AGENT_PIDFILE" \
-    "$STATEWALL_AGENT" --object "$STATEWALL_OBJECT" --bundle "$STATEWALL_BUNDLE" >"$AUDIT" 2>"$AGENT_LOG" &
+    "$STATEWALL_AGENT" --object "$STATEWALL_OBJECT" --bundle "$STATEWALL_BUNDLE" \
+    --kubeconfig "$STATEWALL_KUBECONFIG" >"$AUDIT" 2>"$AGENT_LOG" &
 sleep 3
 AGENT_PID="$(cat "$AGENT_PIDFILE" 2>/dev/null || true)"
 if ! agent_alive; then
@@ -66,19 +75,45 @@ if ! agent_alive; then
 fi
 
 log "applying benign workloads"
+# Wait out a namespace still terminating from a previous run so this run can create it.
+deadline=$((SECONDS + ${READY_TIMEOUT%s}))
+while kc get namespace "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; do
+    if ((SECONDS > deadline)); then
+        log "namespace $NAMESPACE still terminating"
+        exit 1
+    fi
+    sleep 2
+done
 kc create namespace "$NAMESPACE" --dry-run=client -o yaml | kc apply -f - >/dev/null
 kc apply -f "$WORKLOADS/benign/"
 kc -n "$NAMESPACE" wait --for=condition=Ready pod --all --timeout="$READY_TIMEOUT"
 log "benign baseline for ${BENIGN_SECONDS}s"
 sleep "$BENIGN_SECONDS"
 
-log "applying attack"
-kc apply -f "$WORKLOADS/attack/container-escape.yaml"
-kc -n "$NAMESPACE" wait --for=condition=Ready pod/container-escape --timeout="$READY_TIMEOUT"
+log "applying attacks"
+for a in "${ATTACKS[@]}"; do
+    kc apply -f "$WORKLOADS/attack/$a.yaml"
+done
+deadline=$((SECONDS + ${READY_TIMEOUT%s}))
+for a in "${ATTACKS[@]}"; do
+    while true; do
+        phase="$(kc -n "$NAMESPACE" get pod "$a" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+        case "$phase" in Succeeded | Running | Failed) break ;; esac
+        if ((SECONDS > deadline)); then
+            log "attack pod $a not started (phase: ${phase:-unknown})"
+            kc -n "$NAMESPACE" describe pod "$a" >&2 || true
+            exit 1
+        fi
+        sleep 2
+    done
+    log "attack pod $a: $phase"
+done
 sleep "$ATTACK_SECONDS"
-kc -n "$NAMESPACE" logs pod/container-escape >&2 || true
+for a in "${ATTACKS[@]}"; do
+    kc -n "$NAMESPACE" logs "pod/$a" >&2 || true
+done
 
 log "stopping agent"
 stop_agent
 
-python3 "$CHECKER" "$AUDIT"
+python3 "$CHECKER" --expectations "$REPO_ROOT/testdata/expectations.json" "$AUDIT"

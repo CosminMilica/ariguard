@@ -1,0 +1,30 @@
+# Benign syscall-sequence emitter (not a functional attack): benign twin of rule reverse-shell.
+# Syscalls: connect (closed local port) -> dup2(newfd=5) -> execve(/bin/true).
+# Must stay at connected: newfd > 2 is not a stdio redirect and /bin/true is not a shell.
+# The shell wrapper keeps the pod Running after the emitter finishes.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reverse-twin
+  namespace: statewall-eval
+  labels:
+    app: reverse-twin
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  restartPolicy: Never
+  containers:
+    - name: twin
+      image: python:3.12-slim
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          python3 - <<'PY'
+          import os, socket
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          try: s.connect(("127.0.0.1", 1))
+          except OSError: pass
+          fd = os.open("/dev/null", os.O_WRONLY)
+          os.dup2(fd, 5)                         # newfd 5 (>2): not a stdio redirect
+          os.execv("/bin/true", ["true"])
+          PY
+          exec sleep infinity

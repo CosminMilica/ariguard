@@ -10,6 +10,22 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 | `[x]` EVAL-1.2 | Container-escape attack script (the demo chain) | — | triggers the FSM to compromised state |
 | `[x]` EVAL-1.3 | Phase 1 exit check: run benign + attack, assert on the audit stream | EVAL-1.1, EVAL-1.2, AGT-1.6 | attack reaches `compromised`; benign never passes `suspicious` |
 
+## Phase 1.5 — Generic engine
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[x]` EVAL-1.5.1 | Attacks: `reverse-shell` and `fileless-exec`; a `container-escape` variant that uses `connect` on the socket | CMP-1.5.3 | each drives its rule to `compromised` under its own pod name on kind |
+| `[x]` EVAL-1.5.2 | Benign twins: a process that connects then redirects stdio without a shell; a process that creates a memfd then execs a normal binary | CMP-1.5.3 | twins reach at most observe-only states (`connected` / `memfd_created`) |
+| `[x]` EVAL-1.5.3 | Expectations file + checker v2: per rule, the expected attacker pod reaches the terminal state through the chain in order; only expected attackers get a non-observe action | AGT-1.5.4 | self-test green; drives the real stream |
+| `[x]` EVAL-1.5.4 | Exit check v2: all benign and attack pods at once on kind | EVAL-1.5.1 … 1.5.3 | PASS on kind twice in a row |
+
+EVAL-1.5.1 – 1.5.4: verified on kind (Wave D). No listener: `reverse-seq` connects to a closed
+local port. Two manifest changes were needed for correct pod attribution: attack emitters warm
+up (`sleep 8`) so the agent resolves their cgroup before the chain fires, and `reverse-seq` /
+`fileless-seq` fork so a parent keeps the cgroup alive until the records are drained. One real
+rule finding: the container runtime (containerd/shim/CNI, a host cgroup) walked the escape chain
+during pod setup — fixed by scoping `namespace_manipulation` to mount/pid/user namespaces
+(setns/unshare `mask_any 0x30020000`), which excludes the runtime's network/cgroup/uts work.
+
 ## Phase 4 — Benchmarks & results
 | ID | Task | Depends | Done when |
 |---|---|---|---|

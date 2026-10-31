@@ -1,0 +1,30 @@
+# Benign syscall-sequence emitter (not a functional attack): exercises rule reverse-shell.
+# Syscalls: connect (closed local port) -> dup2(newfd=1, /dev/null) -> execve(/bin/sh -c ':').
+# No listener, no socket wired to the shell.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reverse-seq
+  namespace: statewall-eval
+  labels:
+    app: reverse-seq
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  restartPolicy: Never
+  containers:
+    - name: attacker
+      image: python:3.12-slim
+      command: ["python3", "-c"]
+      args:
+        - |
+          import os, socket, time
+          time.sleep(8)  # let the agent resolve this pod's cgroup before the chain
+          if os.fork() == 0:                      # child runs the chain in one tgid (process scope)
+              s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              try: s.connect(("127.0.0.1", 1))    # closed port, fails; sys_enter_connect fires
+              except OSError: pass
+              fd = os.open("/dev/null", os.O_WRONLY)
+              os.dup2(fd, 1)                       # newfd 1 (<=2), onto /dev/null, not the socket
+              os.execv("/bin/sh", ["sh", "-c", ":"])  # emits execve of /bin/sh; ":" is a no-op, then exits
+          os.wait()
+          time.sleep(3600)                        # keep the cgroup alive so the agent resolves the records

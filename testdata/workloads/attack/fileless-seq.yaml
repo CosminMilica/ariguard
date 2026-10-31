@@ -1,0 +1,27 @@
+# Benign syscall-sequence emitter (not a functional attack): exercises rule fileless-exec.
+# Syscalls: memfd_create -> execve(/proc/self/fd/<n>) running /bin/true from an anonymous fd.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fileless-seq
+  namespace: statewall-eval
+  labels:
+    app: fileless-seq
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  restartPolicy: Never
+  containers:
+    - name: attacker
+      image: python:3.12-slim
+      command: ["python3", "-c"]
+      args:
+        - |
+          import os, time
+          time.sleep(8)                         # let the agent resolve this pod's cgroup before the chain
+          if os.fork() == 0:                    # child runs the chain in one tgid (process scope)
+              fd = os.memfd_create("x")         # sys_enter_memfd_create
+              data = open("/bin/true","rb").read()
+              os.write(fd, data)
+              os.execve("/proc/self/fd/%d" % fd, ["true"], {})  # execve of /proc/self/fd/<n>
+          os.wait()
+          time.sleep(3600)                      # keep the cgroup alive so the agent resolves the records

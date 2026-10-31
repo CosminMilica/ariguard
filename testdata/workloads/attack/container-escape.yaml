@@ -26,6 +26,8 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
+          echo "warmup: let the agent resolve this pod's cgroup before the chain"
+          sleep 8
           echo "step 1: open runtime socket"
           cat /run/containerd/containerd.sock > /dev/null 2>&1 || true
           sleep 1

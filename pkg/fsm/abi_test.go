@@ -12,13 +12,14 @@ func TestStructSizes(t *testing.T) {
 		got  uintptr
 		want uintptr
 	}{
-		{"FsmKey", unsafe.Sizeof(FsmKey{}), 8},
+		{"FsmKey", unsafe.Sizeof(FsmKey{}), 16},
 		{"FsmState", unsafe.Sizeof(FsmState{}), 16},
 		{"Transition", unsafe.Sizeof(Transition{}), 8},
-		{"Binding", unsafe.Sizeof(Binding{}), 80},
-		{"HookBindings", unsafe.Sizeof(HookBindings{}), 328},
-		{"Dims", unsafe.Sizeof(Dims{}), 16},
-		{"AuditRecord", unsafe.Sizeof(AuditRecord{}), 40},
+		{"Binding", unsafe.Sizeof(Binding{}), 104},
+		{"HookBindings", unsafe.Sizeof(HookBindings{}), 840},
+		{"Rule", unsafe.Sizeof(Rule{}), 32},
+		{"Policy", unsafe.Sizeof(Policy{}), 8},
+		{"AuditRecord", unsafe.Sizeof(AuditRecord{}), 64},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
@@ -28,42 +29,29 @@ func TestStructSizes(t *testing.T) {
 }
 
 func TestFieldOffsets(t *testing.T) {
-	var s FsmState
-	if off := unsafe.Offsetof(s.State); off != 0 {
-		t.Errorf("FsmState.State offset = %d, want 0", off)
+	cases := []struct {
+		name string
+		got  uintptr
+		want uintptr
+	}{
+		{"FsmKey.Rule", unsafe.Offsetof(FsmKey{}.Rule), 8},
+		{"FsmState.UpdatedNs", unsafe.Offsetof(FsmState{}.UpdatedNs), 8},
+		{"Transition.Action", unsafe.Offsetof(Transition{}.Action), 4},
+		{"Binding.PathArg", unsafe.Offsetof(Binding{}.PathArg), 12},
+		{"Binding.ArgOp", unsafe.Offsetof(Binding{}.ArgOp), 28},
+		{"Binding.ArgValue", unsafe.Offsetof(Binding{}.ArgValue), 32},
+		{"Binding.Pattern", unsafe.Offsetof(Binding{}.Pattern), 40},
+		{"HookBindings.Entries", unsafe.Offsetof(HookBindings{}.Entries), 8},
+		{"Rule.TerminalFrom", unsafe.Offsetof(Rule{}.TerminalFrom), 16},
+		{"Rule.WindowNs", unsafe.Offsetof(Rule{}.WindowNs), 24},
+		{"AuditRecord.Pid", unsafe.Offsetof(AuditRecord{}.Pid), 16},
+		{"AuditRecord.Rule", unsafe.Offsetof(AuditRecord{}.Rule), 24},
+		{"AuditRecord.Action", unsafe.Offsetof(AuditRecord{}.Action), 40},
+		{"AuditRecord.Comm", unsafe.Offsetof(AuditRecord{}.Comm), 48},
 	}
-	if off := unsafe.Offsetof(s.LastEvent); off != 4 {
-		t.Errorf("FsmState.LastEvent offset = %d, want 4", off)
-	}
-	if off := unsafe.Offsetof(s.UpdatedNs); off != 8 {
-		t.Errorf("FsmState.UpdatedNs offset = %d, want 8", off)
-	}
-
-	var tr Transition
-	if off := unsafe.Offsetof(tr.Action); off != 4 {
-		t.Errorf("Transition.Action offset = %d, want 4", off)
-	}
-
-	var b Binding
-	if off := unsafe.Offsetof(b.Pattern); off != 16 {
-		t.Errorf("Binding.Pattern offset = %d, want 16", off)
-	}
-
-	var hb HookBindings
-	if off := unsafe.Offsetof(hb.Entries); off != 8 {
-		t.Errorf("HookBindings.Entries offset = %d, want 8", off)
-	}
-
-	var d Dims
-	if off := unsafe.Offsetof(d.WindowNs); off != 8 {
-		t.Errorf("Dims.WindowNs offset = %d, want 8", off)
-	}
-
-	var a AuditRecord
-	if off := unsafe.Offsetof(a.Pid); off != 16 {
-		t.Errorf("AuditRecord.Pid offset = %d, want 16", off)
-	}
-	if off := unsafe.Offsetof(a.Action); off != 36 {
-		t.Errorf("AuditRecord.Action offset = %d, want 36", off)
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Errorf("offsetof(%s) = %d, want %d", c.name, c.got, c.want)
+		}
 	}
 }

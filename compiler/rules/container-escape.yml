@@ -1,35 +1,34 @@
 # Container-escape kill chain (see README.md).
-# open runtime socket -> setns/unshare -> mount -> execve -> compromised.
+# runtime socket -> setns/unshare -> mount -> execve -> compromised.
 name: container-escape
+scope: cgroup
 window_seconds: 30
 states: [normal, suspicious, escalating, breakout_imminent, compromised]
+terminal: [compromised]
 events:
   runtime_socket_open:
-    hooks: [openat]
-    path_prefix: [/run/containerd/containerd.sock, /var/run/docker.sock, /run/docker.sock]
+    - hook: openat
+      path_prefix: [/run/containerd/containerd.sock, /var/run/docker.sock, /run/docker.sock]
+    - hook: connect
+      sun_path_prefix: [/run/containerd/containerd.sock, /var/run/docker.sock, /run/docker.sock]
   namespace_manipulation:
-    hooks: [setns, unshare]
+    # Joining/creating a mount/pid/user namespace (escape); excludes the runtime's and
+    # CNI's network/cgroup/uts namespace work. CLONE_NEWNS|CLONE_NEWPID|CLONE_NEWUSER.
+    - hook: setns
+      arg: {index: 1, mask_any: 0x30020000}
+    - hook: unshare
+      arg: {index: 0, mask_any: 0x30020000}
   host_mount:
-    hooks: [mount]
+    # Not propagation-only: MS_UNBINDABLE|MS_PRIVATE|MS_SLAVE|MS_SHARED.
+    - hook: mount
+      arg: {index: 3, mask_none: 0x1E0000}
+    - hook: fsmount
+    - hook: move_mount
   critical_execve:
-    hooks: [execve]
+    - hook: execve
+    - hook: execveat
 transitions:
-  - from: normal
-    event: runtime_socket_open
-    to: suspicious
-    action: observe
-
-  - from: suspicious
-    event: namespace_manipulation
-    to: escalating
-    action: throttle
-
-  - from: escalating
-    event: host_mount
-    to: breakout_imminent
-    action: deny
-
-  - from: breakout_imminent
-    event: critical_execve
-    to: compromised
-    action: kill
+  - {from: normal, event: runtime_socket_open, to: suspicious, action: observe}
+  - {from: suspicious, event: namespace_manipulation, to: escalating, action: throttle}
+  - {from: escalating, event: host_mount, to: breakout_imminent, action: deny}
+  - {from: breakout_imminent, event: critical_execve, to: compromised, action: kill}

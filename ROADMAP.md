@@ -29,6 +29,7 @@ Status legend (used in every TASKS file): `[ ]` todo · `[~]` in progress · `[x
 |---|---|---|---|
 | **0** | Spike & dev env | Rust-built BPF loads via Go loader; map read works; `make dev-up` gives a kind cluster | `DEP-0.*`, `AGT-0.*`, `BPF-0.*`, `PKG-0.*`, `PROTO-0.1` |
 | **1** | Passive FSM | Multi-stage chain detected in-kernel, audit events reach user space (no enforcement) | `BPF-1.*`, `AGT-1.*`, `CMP-1.*`, `EVAL-1.*` |
+| **1.5** | Generic engine | Three different attack chains detected at once, by pod name; benign twins only ever observed; verifies on kernels 5.15 → stable | `BPF-1.5.*`, `AGT-1.5.*`, `PKG-1.5.*`, `CMP-1.5.*`, `EVAL-1.5.*` |
 | **2** | Synchronous mitigation | Critical step denied / killed in-kernel; demo blocks a container escape | `BPF-2.*`, `AGT-2.*`, `DEP-1.1` |
 | **3** | Rule compiler + fleet | Threat intel (ML/LLM) → tables; CRD-driven distribution to agents | `CMP-3.*`, `CP-3.*`, `AGT-3.1`, `PROTO-3.1` |
 | **4** | Evaluation | Efficacy, latency, flat memory curve, comparison vs Falco — tables & plots | `EVAL-4.*`, `BPF-4.1`, `DOC-3` |
@@ -72,6 +73,30 @@ way are listed in [docs/threat-model.md](docs/threat-model.md) and tracked as
 - Agent: load+attach, ringbuf reader, table population, hot swap, cgroup→pod resolution (`AGT-1.*`).
 - Compiler: rule schema + emit + CLI so a hand-written chain compiles to a table (`CMP-1.*`).
 - Synthetic benign + attack workloads (`EVAL-1.*`).
+
+### Phase 1.5 — Generic engine
+Phase 1 proved the idea on one hard-wired chain. Phase 1.5 makes the engine generic before
+anything is enforced: several rules at once, per-container or per-process state,
+predicates on any syscall argument, more hooks, atomic transitions. It also closes the
+false-positive risks phase 1 found, which phase 2 must not turn into killed processes.
+Decisions E1–E14, the v3 kernel contract, bundle v3 and rule schema v3 are in
+[docs/architecture.md](docs/architecture.md#phase-15-decisions).
+
+Work happens on branch `feat/phase-1.5`, in a separate checkout from the CI work.
+
+| Wave | Where | Tasks | Output |
+|---|---|---|---|
+| A | macOS | `BPF-1.5.1`, `PKG-1.5.1` | **done**: ABI v3 in Rust and Go, contract documented |
+| B | macOS, parallel | `CMP-1.5.*`, `PKG-1.5.2` · `AGT-1.5.1`–`AGT-1.5.5` (code) · `EVAL-1.5.1`–`EVAL-1.5.3` | **done**: three rules compile into one bundle; agent v3 builds; workloads and checker v2 ready |
+| C | VM | `BPF-1.5.2`–`BPF-1.5.10`, runtime check of `AGT-1.5.*` | **done**: engine v3 verifies in the kernel; integration chains + kernel matrix 5.15 → stable pass |
+| D | VM, kind | `EVAL-1.5.4` | **done**: exit check v2 passes twice in a row |
+
+Exit check (`EVAL-1.5.4`): with every benign and attack pod running at once, each attack
+pod reaches its rule's terminal state through the declared chain, identified by pod name,
+and no other pod or host process gets an action other than `observe`.
+
+End-to-end runs share the VM's kernel and kind cluster with the CI work: run them one at a
+time, or each checker also sees the other's attacks.
 
 ### Phase 2 — Synchronous mitigation
 - BPF LSM enforcement: deny `-EPERM`, kill, throttle, per-CPU metrics (`BPF-2.*`).

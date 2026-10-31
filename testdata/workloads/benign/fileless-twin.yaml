@@ -1,0 +1,27 @@
+# Benign syscall-sequence emitter (not a functional attack): benign twin of rule fileless-exec.
+# Syscalls: memfd_create -> execve(/bin/true) by normal path.
+# Must stay at memfd_created: not execveat AT_EMPTY_PATH and not /proc/self/fd.
+# The shell wrapper keeps the pod Running after the emitter finishes.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fileless-twin
+  namespace: statewall-eval
+  labels:
+    app: fileless-twin
+    app.kubernetes.io/part-of: statewall-eval
+spec:
+  restartPolicy: Never
+  containers:
+    - name: twin
+      image: python:3.12-slim
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          python3 - <<'PY'
+          import os
+          fd = os.memfd_create("x")
+          os.write(fd, b"\x7fELF")
+          os.execv("/bin/true", ["true"])       # normal path, not /proc/self/fd and not execveat
+          PY
+          exec sleep infinity
