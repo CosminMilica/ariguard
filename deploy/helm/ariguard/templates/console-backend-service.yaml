@@ -1,0 +1,16 @@
+{{- if .Values.console.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: ariguard-console-backend
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ariguard.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: ariguard-console-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- end }}

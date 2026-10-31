@@ -50,6 +50,13 @@ golden: ## Regenerate the cross-language golden transition table
 IMAGE ?= ariguard-agent:dev
 IMAGE_PLATFORM ?= linux/$(shell go env GOARCH)
 
+# Release / Helm
+REGISTRY ?= ghcr.io/cosminmilica
+VERSION ?= 0.2.0
+HELM_CHART ?= deploy/helm/ariguard
+HELM_RELEASE ?= ariguard
+HELM_NS ?= ariguard-system
+
 image: ## Package the agent image (run make build-agent build-bpf golden first; in the VM)
 	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/Dockerfile -t $(IMAGE) .
 
@@ -142,6 +149,11 @@ ci-console: ## G7: console backend tests + frontend build + image builds (separa
 	docker build -t ariguard-console-backend:ci console/backend
 	docker build -t ariguard-console-frontend:ci console/frontend
 
+ci-helm: ## G8: Helm chart lint + rendered-manifest schema validation
+	helm lint $(HELM_CHART)
+	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS) | kubeconform -strict -summary -ignore-missing-schemas -
+	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS) --set console.enabled=false >/dev/null
+
 fmt: ## Format all code
 	cd bpf && cargo fmt
 	go fmt ./...
@@ -158,6 +170,34 @@ console-backend: ## Run the console backend locally on :8080 (serves ./public if
 
 console-frontend: ## Run the console frontend dev server (Vite)
 	cd console/frontend && npm install && npm run dev
+
+## --- Helm ---
+helm-lint: ## Lint the umbrella chart
+	helm lint $(HELM_CHART)
+
+helm-template: ## Render the chart to stdout
+	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS)
+
+helm-package: ## Package the chart into dist/
+	helm package $(HELM_CHART) -d dist/
+
+helm-install: ## Install/upgrade the release (images from $(REGISTRY))
+	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS)
+
+helm-uninstall: ## Remove the release
+	helm uninstall $(HELM_RELEASE) -n $(HELM_NS)
+
+## --- Images → GHCR (single-arch; run where docker + the toolchain live) ---
+ghcr-login: ## docker login ghcr.io using a gh token with write:packages
+	gh auth token | docker login ghcr.io -u $(shell gh api user -q .login) --password-stdin
+
+images-ghcr: build-bpf build-agent ## Build + push all three images to $(REGISTRY):$(VERSION) (policy.bin is committed)
+	docker build -t $(REGISTRY)/ariguard-agent:$(VERSION) -f deploy/docker/Dockerfile .
+	docker build -t $(REGISTRY)/ariguard-console-backend:$(VERSION) console/backend
+	docker build -t $(REGISTRY)/ariguard-console-frontend:$(VERSION) console/frontend
+	docker push $(REGISTRY)/ariguard-agent:$(VERSION)
+	docker push $(REGISTRY)/ariguard-console-backend:$(VERSION)
+	docker push $(REGISTRY)/ariguard-console-frontend:$(VERSION)
 
 clean: ## Remove build artifacts
 	cd bpf && cargo clean

@@ -1,0 +1,17 @@
+{{- if .Values.console.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ariguard-console-db
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ariguard.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.console.storage.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.console.storage.size }}
+{{- end }}

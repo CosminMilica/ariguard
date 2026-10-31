@@ -1,0 +1,32 @@
+{{- if and .Values.console.enabled (eq .Values.console.expose "ingress") }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ariguard-console
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ariguard.labels" . | nindent 4 }}
+  {{- with .Values.console.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.console.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.console.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.console.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ariguard-console-frontend
+                port:
+                  name: http
+{{- end }}
