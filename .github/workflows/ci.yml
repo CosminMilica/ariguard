@@ -181,6 +181,23 @@ jobs:
         if: matrix.kernel == 'host'
         run: make ci-kernel-host
 
+  rulegen:
+    name: Rule-gen gate
+    needs: bpf
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+        with:
+          python: "true"
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: bpf-object
+          path: bin
+      - name: Behavioral gate on the runner kernel
+        run: make ci-rulegen-host
+
   e2e:
     name: End-to-end
     needs: bpf
@@ -244,7 +261,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [lint, unit, contract, console, compiler, helm, security, bpf, kernel, e2e]
+    needs: [lint, unit, contract, console, compiler, helm, security, bpf, kernel, rulegen, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -259,7 +276,7 @@ jobs:
             echo "|---|---|---|"
             for row in "G0:lint:Lint" "G1:unit:Unit tests" "G2:contract:Contracts" "G3:bpf:Build BPF" \
                        "G4:kernel:Kernel matrix" "G5:e2e:End-to-end" "G6:security:Security" "G7:console:Console" \
-                       "G8:helm:Helm" "G9:compiler:Compiler"; do
+                       "G8:helm:Helm" "G9:compiler:Compiler" "G10:rulegen:Rule-gen gate"; do
               IFS=: read -r gate id label <<<"$row"
               result="$(jq -r --arg id "$id" '.[$id].result' <<<"$RESULTS")"
               case "$result" in

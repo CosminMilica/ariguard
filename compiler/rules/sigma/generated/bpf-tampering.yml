@@ -1,0 +1,30 @@
+# Generated from MITRE ATT&CK T1562.001 (Impair Defenses: Disable or Modify Tools) by the
+# AriGuard co-author (LLM-assisted). Validated by A4 + the behavioral gate before commit.
+# Chain: a workload creates a BPF map then loads a BPF program (the normal eBPF load
+# sequence) — in a workload pod this is tooling-tampering / stealth instrumentation. A lone
+# map create never fires.
+title: bpf map created
+name: bpf_map_create
+tags: [attack.t1562.001]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: bpf, arg0|eq: 0}   # BPF_MAP_CREATE
+  condition: sel
+---
+title: bpf program loaded
+name: bpf_prog_load
+tags: [attack.t1562.001]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: bpf, arg0|eq: 5}   # BPF_PROG_LOAD
+  condition: sel
+---
+title: bpf-based tampering
+name: bpf-tampering
+tags: [attack.t1562.001]
+correlation:
+  type: temporal_ordered
+  rules: [bpf_map_create, bpf_prog_load]
+  timespan: 10s
+  scope: process
+  terminal_action: kill

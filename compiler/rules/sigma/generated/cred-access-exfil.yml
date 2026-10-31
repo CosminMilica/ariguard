@@ -1,0 +1,30 @@
+# Generated from MITRE ATT&CK T1003.008 (OS Credential Dumping: /etc/passwd and
+# /etc/shadow) + T1041 (Exfiltration Over C2 Channel) by the AriGuard co-author
+# (LLM-assisted). Validated by A4 + the behavioral gate before commit. Chain: read the
+# shadow credential store, then open an outbound connection. Reading shadow alone (a local
+# auth check) or connecting alone never fires.
+title: read shadow credential store
+name: read_creds
+tags: [attack.t1003.008]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: openat, path|startswith: [/etc/shadow, /etc/gshadow]}
+  condition: sel
+---
+title: outbound connection
+name: outbound
+tags: [attack.t1041]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: connect}
+  condition: sel
+---
+title: credential access then exfiltration
+name: cred-access-exfil
+tags: [attack.t1003.008, attack.t1041]
+correlation:
+  type: temporal_ordered
+  rules: [read_creds, outbound]
+  timespan: 30s
+  scope: process
+  terminal_action: kill

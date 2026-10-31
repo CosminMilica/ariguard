@@ -1,0 +1,1 @@
+{"rule": "ptrace-injection", "attack": ["ptrace:16", "ptrace:4"], "benign": ["ptrace:16"]}

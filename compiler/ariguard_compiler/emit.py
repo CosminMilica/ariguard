@@ -112,9 +112,19 @@ def rule_files(rules_dir: str | Path | None, inputs: Iterable[str | Path] = ()) 
     return sorted(files, key=lambda p: (p.name, str(p)))
 
 
+def _validate(rules: list[Rule]) -> None:
+    """Reject a rule set that fails deterministic validation (A4)."""
+    from .validate import validate_bundle
+
+    problems = validate_bundle(rules)
+    if problems:
+        raise RuleError("invalid rule bundle:\n  " + "\n  ".join(problems))
+
+
 def compile_files(files: list[Path]) -> tuple[list[Rule], bytes]:
     """Load ``files`` in the given order and link them into a bundle."""
     rules = [load_rule(f) for f in files]
+    _validate(rules)
     return rules, emit_bundle(rules)
 
 
@@ -124,4 +134,5 @@ def compile_sources(yaml_files: list[Path], sigma_files: list[Path]) -> tuple[li
 
     rules = [load_rule(f) for f in yaml_files]
     rules += [sigma.compile_sigma(f) for f in sigma_files]
+    _validate(rules)
     return rules, emit_bundle(rules)

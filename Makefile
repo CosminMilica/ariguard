@@ -1,5 +1,5 @@
 .PHONY: image kind-load help dev-up kubeconfig dev-down build build-bpf build-agent build-go build-compiler proto golden deploy load-policy demo-escape test fmt clean \
-	cover ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-kernel-host ci-e2e ci-security
+	cover ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-kernel-host compile-gen ci-rulegen ci-rulegen-host ci-e2e ci-security
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -46,6 +46,9 @@ proto: ## Generate Go + gRPC from proto/ (needs: buf, protoc-gen-go, protoc-gen-
 
 golden: ## Regenerate the cross-language golden transition table
 	cd compiler && python -m ariguard_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
+
+ingest: ## Fetch MITRE ATT&CK and regenerate the Linux technique catalog
+	cd compiler && $(PYTHON) -m ariguard_compiler.ingest_attack --out ../compiler/techniques/attack-linux.yml
 
 IMAGE ?= ariguard-agent:dev
 IMAGE_PLATFORM ?= linux/$(shell go env GOARCH)
@@ -133,6 +136,26 @@ ci-kernel: ## G4: load + chain tests on KERNEL in a VM (vimto; needs bin/ariguar
 
 ci-kernel-host: ## G4: load + chain tests on the running kernel (sudo; needs bin/ariguard.bpf.o)
 	$(OBJECT_ENV) go test -exec 'sudo -E' -tags integration -count=1 -v ./agent/internal/integration
+
+GEN_SIGMA_DIR := compiler/rules/sigma/generated
+GEN_BUNDLE    := $(CURDIR)/bin/gen.bin
+
+# compile-gen builds GEN_BUNDLE from the generated Sigma rules, skipping when the
+# directory holds none yet (the behavioral gate then no-ops on the missing bundle).
+compile-gen:
+	@mkdir -p $(CURDIR)/bin
+	@if ls $(GEN_SIGMA_DIR)/*.yml $(GEN_SIGMA_DIR)/*.yaml >/dev/null 2>&1; then \
+		cd compiler && $(PYTHON) -m ariguard_compiler.cli --sigma-dir rules/sigma/generated --out $(GEN_BUNDLE); \
+	else \
+		echo "compile-gen: no rules in $(GEN_SIGMA_DIR), skipping bundle compile"; \
+		rm -f $(GEN_BUNDLE); \
+	fi
+
+ci-rulegen: compile-gen ## G10: compile generated Sigma rules, then run the behavioral gate in-kernel (vimto; needs bin/ariguard.bpf.o)
+	$(OBJECT_ENV) ARIGUARD_GEN_BUNDLE=$(GEN_BUNDLE) vimto -kernel :$(KERNEL) -- go test -tags integration -run TestBehavioralGate -count=1 -v ./agent/internal/integration
+
+ci-rulegen-host: compile-gen ## G10: compile generated Sigma rules, then run the behavioral gate on the running kernel (sudo; needs bin/ariguard.bpf.o)
+	$(OBJECT_ENV) ARIGUARD_GEN_BUNDLE=$(GEN_BUNDLE) go test -exec 'sudo -E' -tags integration -run TestBehavioralGate -count=1 -v ./agent/internal/integration
 
 ci-e2e: build-bpf build-agent golden ## G5: detect + enforce end-to-end on the kind cluster (in the VM; needs a kill-capable BPF object)
 	ARIGUARD_REQUIRE_E2E=1 go test -tags e2e -count=1 -v -timeout 40m ./test/e2e

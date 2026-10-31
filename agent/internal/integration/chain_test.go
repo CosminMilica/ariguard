@@ -74,32 +74,62 @@ func pinToCPU(cpu string) {
 	}
 }
 
-// runSteps issues the syscalls the hooks observe. Their results do not matter:
-// sys_enter_* fires before the kernel validates arguments.
+// runSteps issues the syscalls the hooks observe. A step is either a bare name
+// or "name:arg" (split with strings.Cut). Results do not matter: sys_enter_*
+// fires on syscall entry, before the kernel validates arguments, so a step may
+// fail (bad fd, missing path, EPERM, ENOSYS) and still drive its tracepoint.
+// The vocabulary covers all 16 hooks so a driver can express any chain.
 func runSteps(steps []string) {
 	for _, s := range steps {
-		switch s {
-		case "socket":
+		name, arg, _ := strings.Cut(s, ":")
+		switch name {
+		// --- fixed steps (original vocabulary, unchanged) ---
+		case "socket": // openat on the runtime socket -> HookOpenat, path matches
 			_, _ = unix.Open(runtimeSocket, unix.O_RDONLY, 0)
-		case "connect":
-			if fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0); err == nil {
-				_ = unix.Connect(fd, &unix.SockaddrUnix{Name: runtimeSocket})
-				_ = unix.Close(fd)
-			}
-		case "other-open":
+		case "connect": // AF_UNIX connect to the runtime socket -> HookConnect
+			connectUnix(runtimeSocket)
+		case "other-open": // openat on an unrelated path -> HookOpenat, no path match
 			_, _ = unix.Open("/etc/hostname", unix.O_RDONLY, 0)
-		case "setns":
+		case "setns": // -> HookSetns
 			_ = unix.Setns(-1, 0)
-		case "mount":
+		case "mount": // host mount -> HookMount, no propagation flag
 			_ = unix.Mount("none", "/nonexistent-ariguard", "ariguard-none", 0, "")
-		case "private-mount":
+		case "private-mount": // propagation-only mount -> HookMount, MS_PRIVATE set
 			_ = unix.Mount("none", "/nonexistent-ariguard", "", unix.MS_PRIVATE, "")
-		case "memfd":
+		case "memfd": // -> HookMemfdCreate
 			_, _ = unix.MemfdCreate("ariguard", 0)
-		case "execve":
-			_ = unix.Exec("/nonexistent-ariguard", []string{"x"}, nil)
-		case "sleep":
+		case "execve": // -> HookExecve; see execStep for shell/no-arg forms
+			execStep(arg)
+		case "sleep": // let a detection window expire
 			time.Sleep(200 * time.Millisecond)
+
+		// --- parameterized steps (name:arg) ---
+		case "openat": // openat:/some/path -> HookOpenat with that path
+			_, _ = unix.Open(arg, unix.O_RDONLY, 0)
+		case "connect-unix": // connect-unix:/sun/path -> HookConnect to that sun_path
+			connectUnix(arg)
+		case "unshare": // unshare:0x<hex> -> HookUnshare with those clone flags
+			_ = unix.Unshare(int(parseNum(arg)))
+		case "execveat": // -> HookExecveat; best-effort, the call itself may fail
+			_, _, _ = unix.Syscall6(unix.SYS_EXECVEAT, 0, 0, 0, 0, 0, 0)
+		case "ptrace": // ptrace:<req> -> HookPtrace; best-effort
+			_, _, _ = unix.Syscall(unix.SYS_PTRACE, uintptr(parseNum(arg)), 0, 0)
+		case "dup2": // dup2:<fd> -> HookDup2; newfd = arg (use <=2 for le:2 predicates)
+			_ = unix.Dup2(0, int(parseNum(arg)))
+		case "dup3": // dup3:<fd> -> HookDup3; newfd = arg
+			_ = unix.Dup3(0, int(parseNum(arg)), 0)
+		case "fsmount": // -> HookFsmount; best-effort (fd -1, will fail, tracepoint fires)
+			_, _, _ = unix.Syscall(unix.SYS_FSMOUNT, ^uintptr(0), 0, 0)
+		case "move_mount": // -> HookMoveMount; best-effort
+			_, _, _ = unix.Syscall6(unix.SYS_MOVE_MOUNT, 0, 0, 0, 0, 0, 0)
+		case "finit_module": // -> HookFinitModule; best-effort (will fail, tracepoint fires)
+			_, _, _ = unix.Syscall(unix.SYS_FINIT_MODULE, ^uintptr(0), 0, 0)
+		case "init_module": // -> HookInitModule; best-effort (will fail, tracepoint fires)
+			_, _, _ = unix.Syscall(unix.SYS_INIT_MODULE, 0, 0, 0)
+		case "bpf": // bpf:<cmd> -> HookBPF; best-effort
+			_, _, _ = unix.Syscall(unix.SYS_BPF, uintptr(parseNum(arg)), 0, 0)
+
+		// --- host probe (unchanged) ---
 		case "host-mount-probe":
 			dir := os.Getenv(mountDirEnv)
 			err := unix.Mount("tmpfs", dir, "tmpfs", 0, "")
@@ -116,6 +146,54 @@ func runSteps(steps []string) {
 			os.Exit(2)
 		}
 	}
+}
+
+// connectUnix issues an AF_UNIX connect so sys_enter_connect sees a sockaddr_un
+// whose sun_path is path. The connect itself usually fails (no listener).
+func connectUnix(path string) {
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		return
+	}
+	_ = unix.Connect(fd, &unix.SockaddrUnix{Name: path})
+	_ = unix.Close(fd)
+}
+
+// parseNum parses a decimal or 0x-prefixed step argument; an empty or
+// unparseable argument is 0 (the concrete value does not matter to sys_enter).
+func parseNum(s string) uint64 {
+	n, err := strconv.ParseUint(s, 0, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// execStep drives sys_enter_execve with arg as the pathname argument. For a
+// shell it passes "-c :" so the exec'd program exits immediately instead of
+// reading stdin and hanging; the pathname register still holds arg, so a
+// path-prefix predicate (e.g. /bin/sh) matches. With no arg it keeps the
+// original non-existent-path probe. A successful exec replaces this process,
+// so execve is only ever the terminal step of a chain.
+func execStep(path string) {
+	if path == "" {
+		_ = unix.Exec("/nonexistent-ariguard", []string{"x"}, nil)
+		return
+	}
+	base := filepath.Base(path)
+	argv := []string{base}
+	if isShell(base) {
+		argv = []string{base, "-c", ":"}
+	}
+	_ = unix.Exec(path, argv, nil)
+}
+
+func isShell(base string) bool {
+	switch base {
+	case "sh", "bash", "dash", "zsh", "ash", "ksh":
+		return true
+	}
+	return false
 }
 
 // chain is a linear rule: states[i] --events[i]--> states[i+1]; every other cell stays put.
@@ -212,6 +290,13 @@ type harness struct {
 
 func setup(t *testing.T) *harness {
 	t.Helper()
+	return newHarness(t, loadObject(t), testBundle(30*time.Second))
+}
+
+// loadObject skips (or fails under ARIGUARD_REQUIRE_OBJECT) without root, then
+// loads the BPF object. Shared by setup() and the behavioral gate.
+func loadObject(t *testing.T) *loader.Object {
+	t.Helper()
 	if os.Geteuid() != 0 {
 		if os.Getenv("ARIGUARD_REQUIRE_OBJECT") != "" {
 			t.Fatal("integration tests need root")
@@ -225,20 +310,27 @@ func setup(t *testing.T) *harness {
 		t.Fatalf("load: %v", err)
 	}
 	t.Cleanup(func() { _ = obj.Close() })
+	return obj
+}
 
+// newHarness applies b into obj's maps (detect-only), attaches the programs and
+// opens a ring buffer reader. It is the shared tail of setup() and the gate.
+func newHarness(t *testing.T, obj *loader.Object, b *fsm.Bundle) *harness {
+	t.Helper()
 	h := &harness{obj: obj, maps: kmap.KernelMaps{
 		Policy:      obj.Maps.Policy,
 		Rules:       obj.Maps.Rules,
 		Transitions: obj.Maps.Transitions,
 		Bindings:    obj.Maps.Bindings,
 	}}
-	h.apply(t, testBundle(30*time.Second))
+	h.apply(t, b)
 	if err := obj.Attach(); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	if stats, err := ebpf.EnableStats(uint32(unix.BPF_STATS_RUN_TIME)); err == nil {
 		t.Cleanup(func() { _ = stats.Close() })
 	}
+	var err error
 	h.rd, err = ringbuf.NewReader(obj.Maps.Audit)
 	if err != nil {
 		t.Fatalf("ring buffer: %v", err)
