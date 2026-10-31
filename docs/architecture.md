@@ -44,6 +44,7 @@ size/offset tests (bpf2go does not apply to a Rust object). Linker flags `--btf`
 | D6 | Path buffer lives in a per-CPU scratch map, not on the stack | 512 B stack limit; keeps the hot path allocation-free |
 | D7 | In phase 1 the agent runs as a plain binary on the VM, not as a DaemonSet | shortest dev loop; DaemonSet lands with `DEP-1.1` |
 | D8 | Track every non-root cgroup; per-pod selection comes later | kind pods are nested cgroups of the VM kernel; good enough for detection |
+| D9 | The agent opens a bare perf event per online CPU for each attached tracepoint | some kernels (7.0-azure, AKS) run syscall tracepoint programs only on CPUs with a perf event open; `link.Tracepoint` opens one on CPU 0 |
 
 Known limitation (documented for the thesis): tracepoint path matching sees the
 user-supplied string, so relative paths and symlinks bypass it. Phase 2 moves file

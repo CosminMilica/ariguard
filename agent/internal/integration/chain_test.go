@@ -12,12 +12,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
 	"golang.org/x/sys/unix"
 
@@ -28,10 +31,14 @@ import (
 	"github.com/CosminMilica/statewall/pkg/fsm"
 )
 
-const stepsEnv = "STATEWALL_CHAIN_STEPS"
+const (
+	stepsEnv = "STATEWALL_CHAIN_STEPS"
+	cpuEnv   = "STATEWALL_CHAIN_CPU"
+)
 
 func TestMain(m *testing.M) {
 	if steps := os.Getenv(stepsEnv); steps != "" {
+		pinToCPU(os.Getenv(cpuEnv))
 		runSteps(strings.Split(steps, ","))
 		os.Exit(0)
 	}
@@ -39,6 +46,25 @@ func TestMain(m *testing.M) {
 }
 
 const runtimeSocket = "/var/run/docker.sock"
+
+// pinToCPU keeps every step on one thread bound to cpu ("" = no pinning).
+func pinToCPU(cpu string) {
+	if cpu == "" {
+		return
+	}
+	n, err := strconv.Atoi(cpu)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bad %s %q\n", cpuEnv, cpu)
+		os.Exit(2)
+	}
+	runtime.LockOSThread()
+	var set unix.CPUSet
+	set.Set(n)
+	if err := unix.SchedSetaffinity(0, &set); err != nil {
+		fmt.Fprintf(os.Stderr, "pin to cpu %d: %v\n", n, err)
+		os.Exit(2)
+	}
+}
 
 // runSteps issues the syscalls the hooks observe. Their results do not matter:
 // sys_enter_* fires before the kernel validates arguments.
@@ -191,6 +217,9 @@ func setup(t *testing.T) *harness {
 	if err := obj.Attach(); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
+	if stats, err := ebpf.EnableStats(uint32(unix.BPF_STATS_RUN_TIME)); err == nil {
+		t.Cleanup(func() { _ = stats.Close() })
+	}
 	h.rd, err = ringbuf.NewReader(obj.Maps.Audit)
 	if err != nil {
 		t.Fatalf("ring buffer: %v", err)
@@ -262,6 +291,7 @@ func TestChain(t *testing.T) {
 		got := states(events, escapeName)
 		want := []string{"suspicious", "escalating", "breakout_imminent", "compromised"}
 		if !slices.Equal(got, want) {
+			logRunCounts(t)
 			t.Fatalf("states = %v, want %v", got, want)
 		}
 		if comm := events[0].Comm; comm == "" {
@@ -273,6 +303,24 @@ func TestChain(t *testing.T) {
 		got := states(h.run(t, "connect", "setns", "mount", "execve"), escapeName)
 		if !reached(escape, got, "compromised") {
 			t.Fatalf("states = %v, want compromised", got)
+		}
+	})
+
+	t.Run("detected on every CPU", func(t *testing.T) {
+		var set unix.CPUSet
+		if err := unix.SchedGetaffinity(0, &set); err != nil {
+			t.Fatalf("sched_getaffinity: %v", err)
+		}
+		for cpu := 0; cpu < 1024; cpu++ {
+			if !set.IsSet(cpu) {
+				continue
+			}
+			t.Setenv(cpuEnv, strconv.Itoa(cpu))
+			got := states(h.run(t, "socket", "setns", "mount", "execve"), escapeName)
+			if !reached(escape, got, "compromised") {
+				logRunCounts(t)
+				t.Errorf("cpu %d: states = %v, want compromised", cpu, got)
+			}
 		}
 	})
 
@@ -320,9 +368,40 @@ func TestChain(t *testing.T) {
 		h.apply(t, testBundle(30*time.Second))
 		got := states(h.run(t, "socket", "setns", "mount", "execve"), escapeName)
 		if !reached(escape, got, "compromised") {
+			logRunCounts(t)
 			t.Fatalf("states = %v, want compromised after re-apply", got)
 		}
 	})
+}
+
+// logRunCounts reports how often each statewall program ran, to tell a hook
+// that never fires from one that fires without matching.
+func logRunCounts(t *testing.T) {
+	t.Helper()
+	var id ebpf.ProgramID
+	for {
+		next, err := ebpf.ProgramGetNextID(id)
+		if err != nil {
+			return
+		}
+		id = next
+		p, err := ebpf.NewProgramFromID(id)
+		if err != nil {
+			continue
+		}
+		info, err := p.Info()
+		if err != nil || !strings.HasPrefix(info.Name, loader.ProgramPrefix) {
+			_ = p.Close()
+			continue
+		}
+		stats, err := p.Stats()
+		_ = p.Close()
+		if err != nil {
+			t.Logf("program %s (id %d): stats: %v", info.Name, id, err)
+			continue
+		}
+		t.Logf("program %s (id %d): runs=%d recursion_misses=%d", info.Name, id, stats.RunCount, stats.RecursionMisses)
+	}
 }
 
 func newCgroup(t *testing.T) (uint64, int) {
