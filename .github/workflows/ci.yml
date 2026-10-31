@@ -16,8 +16,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  BPF_LINKER_VERSION: "0.12.0"
-  PYTHON_VERSION: "3.12"
   RUFF_VERSION: "0.17.3"
   PIP_AUDIT_VERSION: "2.10.1"
   GOLANGCI_LINT_VERSION: "v2.15.0"
@@ -28,131 +26,151 @@ env:
   VIMTO_VERSION: "v0.4.0"
 
 jobs:
-  verify:
-    name: Verify
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
         with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-
-      - name: Set up Python
-        uses: actions/setup-python@v7.1.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Set up Rust
-        working-directory: bpf
-        run: rustup toolchain install
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2.9.3
-        with:
-          workspaces: bpf
-
-      - name: Set up golangci-lint
-        uses: golangci/golangci-lint-action@v9.3.0
+          rust: "true"
+          python: "true"
+          pip-packages: ruff==${{ env.RUFF_VERSION }}
+      - uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-only: true
-
-      - name: Set up buf
-        uses: bufbuild/buf-action@v1.6.0
+      - uses: bufbuild/buf-action@v1.6.0
         with:
           version: ${{ env.BUF_VERSION }}
           setup_only: true
+      - run: make ci-hygiene
 
-      - name: Install tools
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+        with:
+          rust: "true"
+          python: "true"
+          pip-packages: pytest
+      - run: make ci-unit
+
+  contract:
+    name: Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+        with:
+          python: "true"
+      - uses: bufbuild/buf-action@v1.6.0
+        with:
+          version: ${{ env.BUF_VERSION }}
+          setup_only: true
+      - run: make ci-contract
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+        with:
+          rust: "true"
+          python: "true"
+          pip-packages: pip-audit==${{ env.PIP_AUDIT_VERSION }}
+      - name: Install scanners
         run: |
-          pip install pytest "ruff==${RUFF_VERSION}" "pip-audit==${PIP_AUDIT_VERSION}" -e ./compiler
           go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
-          CGO_ENABLED=0 go install "lmb.io/vimto@${VIMTO_VERSION}"
-          curl -fsSL "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst" \
-            | tar --zstd -x -C "$HOME/.cargo/bin" bpf-linker
           curl -fsSL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
           curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin gitleaks
+      - run: make ci-security
+
+  bpf:
+    name: Build BPF
+    needs: [lint, unit, contract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+        with:
+          bpf-linker: "true"
+      - run: make ci-bpf
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: bpf-object
+          path: bin/statewall.bpf.o
+          retention-days: 7
+          if-no-files-found: error
+
+  kernel:
+    name: Kernel ${{ matrix.kernel }}
+    needs: bpf
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        kernel: ["5.15", "6.1", "6.6", "6.12", "7.0", "stable", "host"]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: bpf-object
+          path: bin
+      - name: Install vimto
+        if: matrix.kernel != 'host'
+        run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends qemu-system-x86
           sudo chmod 0666 /dev/kvm
-
-      - name: Lint
-        id: lint
-        if: ${{ !cancelled() }}
-        run: make ci-hygiene
-
-      - name: Unit tests
-        id: unit
-        if: ${{ !cancelled() }}
-        run: make ci-unit
-
-      - name: Contracts
-        id: contract
-        if: ${{ !cancelled() }}
-        run: make ci-contract
-
-      - name: BPF object
-        id: bpf
-        if: ${{ !cancelled() }}
-        run: make ci-bpf
-
-      - name: Kernel 5.15
-        id: k5_15
-        if: ${{ !cancelled() && steps.bpf.outcome == 'success' }}
-        run: make ci-kernel KERNEL=5.15
-
-      - name: Kernel 6.1
-        id: k6_1
-        if: ${{ !cancelled() && steps.bpf.outcome == 'success' }}
-        run: make ci-kernel KERNEL=6.1
-
-      - name: Kernel 6.6
-        id: k6_6
-        if: ${{ !cancelled() && steps.bpf.outcome == 'success' }}
-        run: make ci-kernel KERNEL=6.6
-
-      - name: Kernel 6.12
-        id: k6_12
-        if: ${{ !cancelled() && steps.bpf.outcome == 'success' }}
-        run: make ci-kernel KERNEL=6.12
-
-      - name: Kernel stable
-        id: kstable
-        if: ${{ !cancelled() && steps.bpf.outcome == 'success' }}
-        run: make ci-kernel KERNEL=stable
-
-      - name: Kernel runner host
-        id: khost
-        if: ${{ !cancelled() && steps.bpf.outcome == 'success' }}
+          CGO_ENABLED=0 go install "lmb.io/vimto@${VIMTO_VERSION}"
+      - name: Integration tests in a VM
+        if: matrix.kernel != 'host'
+        run: make ci-kernel KERNEL=${{ matrix.kernel }}
+      - name: Integration tests on the runner kernel
+        if: matrix.kernel == 'host'
         run: make ci-kernel-host
 
-      - name: Create kind cluster
-        id: kind
-        if: ${{ !cancelled() && steps.bpf.outcome == 'success' }}
-        uses: helm/kind-action@v1.15.1
+  e2e:
+    name: End-to-end
+    needs: bpf
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: bpf-object
+          path: bin
+      - uses: helm/kind-action@v1.15.1
         with:
           cluster_name: statewall-dev
           config: deploy/kind/cluster.yaml
-
-      - name: End-to-end
-        id: e2e
-        if: ${{ !cancelled() && steps.kind.outcome == 'success' }}
+      - name: Phase 1 exit check
         env:
           TMPDIR: ${{ runner.temp }}/exit-check
         run: |
           mkdir -p "$TMPDIR"
           make ci-e2e
-
-      - name: End-to-end diagnostics
-        if: ${{ !cancelled() && steps.e2e.outcome == 'failure' }}
+      - name: Diagnostics
+        if: failure()
         run: |
           uname -a
           stat -fc 'cgroup fs: %T' /sys/fs/cgroup
@@ -161,55 +179,41 @@ jobs:
           docker exec statewall-dev-control-plane cat /proc/1/cgroup
           node_pid="$(docker inspect -f '{{.State.Pid}}' statewall-dev-control-plane)"
           echo "kind node cgroup: $(cat "/proc/${node_pid}/cgroup")"
-
-      - name: Security
-        id: security
-        if: ${{ !cancelled() }}
-        run: make ci-security
-
-      - name: Upload artifacts
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@v7.0.2
+        if: failure()
         with:
-          name: ci-artifacts
-          path: |
-            bin/statewall.bpf.o
-            ${{ runner.temp }}/exit-check
+          name: e2e-audit
+          path: ${{ runner.temp }}/exit-check
           retention-days: 7
-          if-no-files-found: ignore
 
+  ci:
+    name: CI
+    if: always()
+    needs: [lint, unit, contract, security, bpf, kernel, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
       - name: Summary
-        if: ${{ always() }}
         env:
-          LINT: ${{ steps.lint.outcome }}
-          UNIT: ${{ steps.unit.outcome }}
-          CONTRACT: ${{ steps.contract.outcome }}
-          BPF: ${{ steps.bpf.outcome }}
-          K5_15: ${{ steps.k5_15.outcome }}
-          K6_1: ${{ steps.k6_1.outcome }}
-          K6_6: ${{ steps.k6_6.outcome }}
-          K6_12: ${{ steps.k6_12.outcome }}
-          KSTABLE: ${{ steps.kstable.outcome }}
-          KHOST: ${{ steps.khost.outcome }}
-          E2E: ${{ steps.e2e.outcome }}
-          SECURITY: ${{ steps.security.outcome }}
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          icon() { case "$1" in success) echo "✅ pass" ;; failure) echo "❌ fail" ;; skipped) echo "⏭️ skipped" ;; *) echo "➖ ${1:-not run}" ;; esac; }
           {
             echo "## Verification gates"
             echo
-            echo "| Gate | Check | Result |"
+            echo "| Gate | Job | Result |"
             echo "|---|---|---|"
-            echo "| G0 | Lint (Rust, Go, Python, proto, shell) | $(icon "$LINT") |"
-            echo "| G1 | Unit tests | $(icon "$UNIT") |"
-            echo "| G2 | Contracts (golden, go.mod, buf breaking) | $(icon "$CONTRACT") |"
-            echo "| G3 | BPF object, ABI vs BTF, instruction budget | $(icon "$BPF") |"
-            echo "| G4 | Kernel 5.15 | $(icon "$K5_15") |"
-            echo "| G4 | Kernel 6.1 | $(icon "$K6_1") |"
-            echo "| G4 | Kernel 6.6 | $(icon "$K6_6") |"
-            echo "| G4 | Kernel 6.12 | $(icon "$K6_12") |"
-            echo "| G4 | Kernel stable | $(icon "$KSTABLE") |"
-            echo "| G4 | Kernel runner host | $(icon "$KHOST") |"
-            echo "| G5 | End-to-end on kind | $(icon "$E2E") |"
-            echo "| G6 | Security scans | $(icon "$SECURITY") |"
+            for row in "G0:lint:Lint" "G1:unit:Unit tests" "G2:contract:Contracts" "G3:bpf:Build BPF" \
+                       "G4:kernel:Kernel matrix" "G5:e2e:End-to-end" "G6:security:Security"; do
+              IFS=: read -r gate id label <<<"$row"
+              result="$(jq -r --arg id "$id" '.[$id].result' <<<"$RESULTS")"
+              case "$result" in
+                success) icon="✅ pass" ;; failure) icon="❌ fail" ;;
+                cancelled) icon="🚫 cancelled" ;; *) icon="⏭️ $result" ;;
+              esac
+              echo "| $gate | $label | $icon |"
+            done
           } >> "$GITHUB_STEP_SUMMARY"
+          if jq -e 'to_entries | any(.value.result != "success")' <<<"$RESULTS" >/dev/null; then
+            echo "::error::One or more gates did not pass"
+            exit 1
+          fi

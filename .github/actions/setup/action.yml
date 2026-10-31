@@ -1,0 +1,58 @@
+name: Setup
+description: Go (always), plus optional Rust toolchain from bpf/rust-toolchain.toml and Python with the compiler installed.
+
+inputs:
+  rust:
+    description: Install the pinned Rust toolchain and cache bpf/
+    default: "false"
+  bpf-linker:
+    description: Also install bpf-linker (implies rust)
+    default: "false"
+  python:
+    description: Install Python and the compiler package (editable)
+    default: "false"
+  pip-packages:
+    description: Extra pip packages
+    default: ""
+  python-version:
+    default: "3.12"
+  bpf-linker-version:
+    default: "0.12.0"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7.0.0
+      with:
+        go-version-file: go.mod
+
+    - if: inputs.rust == 'true' || inputs.bpf-linker == 'true'
+      shell: bash
+      working-directory: bpf
+      run: rustup toolchain install
+
+    - if: inputs.rust == 'true' || inputs.bpf-linker == 'true'
+      uses: Swatinem/rust-cache@v2.9.3
+      with:
+        workspaces: bpf
+
+    - if: inputs.bpf-linker == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.bpf-linker-version }}
+      run: |
+        curl -fsSL "https://github.com/aya-rs/bpf-linker/releases/download/v${VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst" \
+          | tar --zstd -x -C "$HOME/.cargo/bin" bpf-linker
+
+    - if: inputs.python == 'true'
+      uses: actions/setup-python@v7.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - if: inputs.python == 'true'
+      shell: bash
+      env:
+        EXTRA: ${{ inputs.pip-packages }}
+      run: |
+        # shellcheck disable=SC2086
+        pip install -e ./compiler $EXTRA

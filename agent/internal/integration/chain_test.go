@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
 	"golang.org/x/sys/unix"
 
@@ -92,6 +93,9 @@ func setup(t *testing.T) *harness {
 	if err := obj.Attach(); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
+	if stats, err := ebpf.EnableStats(uint32(unix.BPF_STATS_RUN_TIME)); err == nil {
+		t.Cleanup(func() { _ = stats.Close() })
+	}
 	h.rd, err = ringbuf.NewReader(obj.Maps.Audit)
 	if err != nil {
 		t.Fatalf("ring buffer: %v", err)
@@ -149,6 +153,7 @@ func TestChain(t *testing.T) {
 		got := h.run(t, "socket", "setns", "mount", "execve")
 		want := []string{"suspicious", "escalating", "breakout_imminent", "compromised"}
 		if !slices.Equal(got, want) {
+			logRunCounts(t)
 			t.Fatalf("states = %v, want %v", got, want)
 		}
 	})
@@ -181,9 +186,40 @@ func TestChain(t *testing.T) {
 		h.apply(t, golden(t, repoRoot(t)))
 		got := h.run(t, "socket", "setns", "mount", "execve")
 		if !reached(got, "compromised") {
+			logRunCounts(t)
 			t.Fatalf("states = %v, want compromised after re-apply", got)
 		}
 	})
+}
+
+// logRunCounts reports how often each statewall program ran, to tell a hook
+// that never fires from one that fires without matching.
+func logRunCounts(t *testing.T) {
+	t.Helper()
+	var id ebpf.ProgramID
+	for {
+		next, err := ebpf.ProgramGetNextID(id)
+		if err != nil {
+			return
+		}
+		id = next
+		p, err := ebpf.NewProgramFromID(id)
+		if err != nil {
+			continue
+		}
+		info, err := p.Info()
+		if err != nil || !strings.HasPrefix(info.Name, loader.ProgramPrefix) {
+			_ = p.Close()
+			continue
+		}
+		stats, err := p.Stats()
+		_ = p.Close()
+		if err != nil {
+			t.Logf("program %s (id %d): stats: %v", info.Name, id, err)
+			continue
+		}
+		t.Logf("program %s (id %d): runs=%d recursion_misses=%d", info.Name, id, stats.RunCount, stats.RecursionMisses)
+	}
 }
 
 func newCgroup(t *testing.T) (uint64, int) {
