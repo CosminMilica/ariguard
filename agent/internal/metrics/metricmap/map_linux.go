@@ -40,6 +40,7 @@ func (r Reader) Read() (metrics.Counters, error) {
 	return metrics.Counters{
 		Events:       out[fsm.MetricEvents],
 		Kills:        out[fsm.MetricKills],
+		Denies:       out[fsm.MetricDenies],
 		AuditDropped: out[fsm.MetricAuditDropped],
 	}, nil
 }

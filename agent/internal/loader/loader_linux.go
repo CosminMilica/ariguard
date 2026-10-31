@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 	"golang.org/x/sys/unix"
@@ -36,15 +37,19 @@ type Maps struct {
 
 // Object is a loaded ariguard collection and its attached links.
 type Object struct {
-	Maps  Maps
-	coll  *ebpf.Collection
-	links []link.Link
-	fds   []int
-	log   *slog.Logger
+	Maps        Maps
+	coll        *ebpf.Collection
+	links       []link.Link
+	fds         []int
+	lsmPrograms []string
+	log         *slog.Logger
 }
 
-// Load loads the object at path into the kernel without attaching it.
-func Load(path string, log *slog.Logger) (*Object, error) {
+// Load loads the object at path into the kernel without attaching it. deny requests
+// the BPF LSM -EPERM programs; they are kept only when deny is set and the kernel has
+// BPF LSM active with the hook's BTF present, otherwise they are dropped and the
+// enforcement falls back to the kill transition (phase 2b).
+func Load(path string, deny bool, log *slog.Logger) (*Object, error) {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return nil, fmt.Errorf("remove memlock rlimit: %w", err)
 	}
@@ -52,9 +57,37 @@ func Load(path string, log *slog.Logger) (*Object, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse object %s: %w", path, err)
 	}
+	var lsmNames []string
 	for name, p := range spec.Programs {
 		if strings.HasPrefix(name, ProgramPrefix) {
 			p.Type = ebpf.TracePoint
+		}
+		if strings.HasPrefix(name, LSMProgramPrefix) {
+			lsmNames = append(lsmNames, name)
+		}
+	}
+	if len(lsmNames) > 0 {
+		switch {
+		case !deny:
+			log.Info("deny not requested, -EPERM LSM programs not loaded (kill-only enforcement)")
+			for _, name := range lsmNames {
+				delete(spec.Programs, name)
+			}
+		case !bpfLSMActive():
+			log.Warn("BPF LSM not active, -EPERM deny disabled; falling back to kill")
+			for _, name := range lsmNames {
+				delete(spec.Programs, name)
+			}
+		default:
+			kspec, kerr := btf.LoadKernelSpec()
+			for _, name := range lsmNames {
+				p := spec.Programs[name]
+				var fn *btf.Func
+				if kerr != nil || kspec.TypeByName("bpf_lsm_"+p.AttachTo, &fn) != nil {
+					log.Warn("LSM hook unavailable on this kernel, deny for it disabled", "hook", p.AttachTo)
+					delete(spec.Programs, name)
+				}
+			}
 		}
 	}
 	coll, err := ebpf.NewCollection(spec)
@@ -67,6 +100,11 @@ func Load(path string, log *slog.Logger) (*Object, error) {
 	}
 
 	o := &Object{coll: coll, log: log}
+	for _, name := range lsmNames {
+		if _, ok := coll.Programs[name]; ok {
+			o.lsmPrograms = append(o.lsmPrograms, name)
+		}
+	}
 	refs := []struct {
 		name string
 		dst  **ebpf.Map
@@ -116,6 +154,20 @@ func (o *Object) Attach() error {
 		}
 		o.log.Info("attached", "program", name, "tracepoint", "syscalls/"+hooks.Tracepoint(h))
 	}
+	for _, name := range o.lsmPrograms {
+		prog := o.coll.Programs[name]
+		if prog == nil {
+			continue
+		}
+		hook := strings.TrimPrefix(name, LSMProgramPrefix)
+		l, err := link.AttachLSM(link.LSMOptions{Program: prog})
+		if err != nil {
+			o.log.Warn("attach lsm failed, deny for it disabled", "program", name, "hook", hook, "err", err)
+			continue
+		}
+		o.links = append(o.links, l)
+		o.log.Info("attached lsm", "program", name, "hook", hook)
+	}
 	return nil
 }
 
@@ -162,6 +214,25 @@ func (o *Object) armAllCPUs(tracepoint string) error {
 		o.fds = append(o.fds, fd)
 	}
 	return nil
+}
+
+// bpfLSMActive reports whether BPF LSM looks usable. It returns false only when the
+// active LSM list is readable and explicitly lacks "bpf" (a clear negative). securityfs
+// is often not mounted inside containers (e.g. kind nodes), so an unreadable list is
+// treated as "unknown" and the attach is attempted — a per-hook BTF check still drops
+// hooks the kernel lacks, and AttachLSM fails gracefully to the kill fallback if BPF LSM
+// is actually off.
+func bpfLSMActive() bool {
+	data, err := os.ReadFile("/sys/kernel/security/lsm")
+	if err != nil {
+		return true
+	}
+	for _, tok := range strings.Split(string(data), ",") {
+		if strings.TrimSpace(tok) == "bpf" {
+			return true
+		}
+	}
+	return false
 }
 
 func tracepointID(group, name string) (uint64, error) {

@@ -37,6 +37,9 @@ spec:
             {{- if .Values.agent.enforce }}
             - --enforce
             {{- end }}
+            {{- if .Values.agent.deny }}
+            - --deny
+            {{- end }}
             {{- with include "ariguard.sinkUrl" . }}
             - --sink-url={{ . }}
             {{- end }}

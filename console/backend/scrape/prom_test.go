@@ -16,11 +16,15 @@ ariguard_workload_state{pod="db}",namespace="p"} 0
 garbage line
 bad_value 12abc
 ariguard_inf +Inf
+ariguard_denies_total 2
 unterminated{a="b 1
 `
 	got := ParseProm(strings.NewReader(in))
-	if len(got) != 5 {
-		t.Fatalf("got %d samples, want 5: %+v", len(got), got)
+	if len(got) != 6 {
+		t.Fatalf("got %d samples, want 6: %+v", len(got), got)
+	}
+	if got[5].Name != "ariguard_denies_total" || got[5].Value != 2 {
+		t.Errorf("bad denies counter: %+v", got[5])
 	}
 	if got[0].Name != "ariguard_events_total" || got[0].Value != 12345 {
 		t.Errorf("bad counter: %+v", got[0])

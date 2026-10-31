@@ -31,7 +31,10 @@ spec:
           except OSError: pass
           try: subprocess.run(["nsenter","--target","1","--mount","--","true"])  # setns
           except Exception: pass
-          subprocess.run(["mount","-t","tmpfs","tmpfs","/mnt"])  # container-local tmpfs
+          mp = subprocess.run(["mount","-t","tmpfs","tmpfs","/mnt"])  # container-local tmpfs
+          if mp.returncode != 0:  # refused with -EPERM: stop here, do not execve (that would be the kill terminal)
+              print("mount denied (-EPERM): host mount refused, escape blocked at breakout_imminent", flush=True)
+              os._exit(7)
           os.execv("/bin/true", ["true"])                         # execve in the main process so a kill fails the pod
       volumeMounts:
         - name: containerd-sock

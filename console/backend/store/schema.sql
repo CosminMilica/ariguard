@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS metric_samples (
   node TEXT NOT NULL,
   events INTEGER NOT NULL DEFAULT 0,
   kills INTEGER NOT NULL DEFAULT 0,
+  denies INTEGER NOT NULL DEFAULT 0,
   audit_dropped INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_samples_node_ts ON metric_samples(node, ts);

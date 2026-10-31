@@ -5,7 +5,9 @@
 > **In-kernel, zero-allocation threat mitigation.**
 > AriGuard recognizes *multi-stage* attacks as they unfold inside the Linux kernel and blocks the critical step **synchronously** — before the payload completes.
 
+[![CI](https://github.com/CosminMilica/ariguard/actions/workflows/ci.yml/badge.svg)](https://github.com/CosminMilica/ariguard/actions/workflows/ci.yml)
 [![status](https://img.shields.io/badge/status-active-brightgreen)](#status)
+[![mitigation](https://img.shields.io/badge/mitigation-kill%20%2B%20eBPF%20LSM%20deny-ff6b35)](docs/how-it-works.md#2-dynamic-escalating-mitigation)
 [![data plane](https://img.shields.io/badge/data%20plane-Rust%20%2B%20Aya-dea584)](docs/deployment.md#technology-stack)
 [![agent](https://img.shields.io/badge/agent-Go%20%2B%20cilium%2Febpf-00add8)](docs/deployment.md#technology-stack)
 [![kernel](https://img.shields.io/badge/kernel-eBPF%20%E2%89%A5%205.7-1793d1)](docs/deployment.md#requirements)
@@ -21,7 +23,8 @@ single step looks benign; the *chain* is the attack.
 
 AriGuard runs a **finite state machine entirely in the kernel**: syscalls are transitions,
 each container/process carries a state, and when a sequence reaches a compromised state
-AriGuard mitigates **synchronously** (kill today; `-EPERM` deny via LSM next). All state
+AriGuard mitigates **synchronously** — `-EPERM` deny via a BPF LSM hook where one exists, kill
+everywhere else. All state
 lives in **pre-allocated eBPF maps** — no allocation on the data path, so memory is flat and
 latency is bounded regardless of load. High-level threat intel (ATT&CK / Sigma / labeled
 traces) is compiled into the compact in-kernel tables offline (ML / LLM assisted).
@@ -57,7 +60,8 @@ contract, console, helm, security, bpf, the kernel matrix 5.15→stable, and the
   (`bpf_send_signal`), gated per pod; benign workloads and the node runtime are untouched.
 - [x] **Console** — a live web console (agent → sink → SQLite → Vue) showing workloads, FSM
   state, attack chains, mitigations and incidents.
-- [ ] **Phase 2b** — LSM `-EPERM` deny (prevent, not just kill).
+- [x] **Phase 2b** — LSM `-EPERM` deny: the host mount is refused via a BPF LSM hook
+  (`sb_mount`/`move_mount`), with a `kill` fallback where no LSM hook exists.
 - [ ] **Phase 3** — rule compiler (ML, then LLM) + cluster distribution.
 - [ ] **Phase 4** — evaluation: efficacy, latency, the flat memory curve vs. Falco.
 

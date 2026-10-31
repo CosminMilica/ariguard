@@ -19,10 +19,11 @@ type fakeReader struct {
 func (f fakeReader) Read() (Counters, error) { return f.c, f.err }
 
 func TestFormat(t *testing.T) {
-	got := Format(Counters{Events: 7, Kills: 2, AuditDropped: 1})
+	got := Format(Counters{Events: 7, Kills: 2, Denies: 4, AuditDropped: 1})
 	for _, want := range []string{
 		"# TYPE ariguard_events_total counter\nariguard_events_total 7\n",
 		"# TYPE ariguard_kills_total counter\nariguard_kills_total 2\n",
+		"# TYPE ariguard_denies_total counter\nariguard_denies_total 4\n",
 		"# TYPE ariguard_audit_dropped_total counter\nariguard_audit_dropped_total 1\n",
 	} {
 		if !strings.Contains(got, want) {

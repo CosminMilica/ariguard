@@ -49,12 +49,16 @@ func run(log *slog.Logger) error {
 	auditOut := flag.String("audit-out", "-", `audit JSON lines output file, "-" for stdout`)
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig for pod names (empty: in-cluster config)")
 	enforce := flag.Bool("enforce", false, "kill on matching kill actions in pod cgroups (default: detect only)")
+	deny := flag.Bool("deny", false, "refuse deny-action syscalls with -EPERM via BPF LSM where a hook exists (needs --enforce and a kernel with BPF LSM; falls back to kill otherwise)")
 	metricsAddr := flag.String("metrics-addr", "", `Prometheus listen address such as ":9102" (empty: disabled)`)
 	sinkURL := flag.String("sink-url", "", `console base URL such as "http://console:8080" (empty: disabled)`)
 	flag.Parse()
 	if *objectPath == "" || *bundlePath == "" {
 		flag.Usage()
 		return errors.New("--object and --bundle are required")
+	}
+	if *deny && !*enforce {
+		log.Warn("--deny has no effect without --enforce; deny tokens are only armed under enforcement")
 	}
 
 	out, closeOut, err := openOutput(*auditOut)
@@ -63,7 +67,7 @@ func run(log *slog.Logger) error {
 	}
 	defer closeOut()
 
-	obj, err := loader.Load(*objectPath, log)
+	obj, err := loader.Load(*objectPath, *deny, log)
 	if err != nil {
 		return err
 	}

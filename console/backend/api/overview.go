@@ -25,7 +25,7 @@ func (a *API) overview(w http.ResponseWriter, r *http.Request) {
 	var killsTotal, dropped int64
 	for _, s := range stats {
 		eps += s.eventsPerSec
-		killsTotal += s.kills
+		killsTotal += s.kills + s.denies
 		dropped += s.dropped
 	}
 
@@ -62,7 +62,7 @@ func (a *API) overview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var kills int64
-	if err := a.DB.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE enforced != 0 AND action = 'kill' AND ts_ns >= ? AND ts_ns <= ?`,
+	if err := a.DB.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE enforced != 0 AND action IN ('kill','deny') AND ts_ns >= ? AND ts_ns <= ?`,
 		win.fromNS(), win.toNS()).Scan(&kills); err != nil {
 		fail(w, err)
 		return
@@ -91,8 +91,8 @@ func (a *API) overview(w http.ResponseWriter, r *http.Request) {
 }
 
 // series buckets the window into seriesBuckets slots. Events are a per-second rate
-// derived from per-node counter deltas; kills are the enforced kill audit events
-// per bucket.
+// derived from per-node counter deltas; kills are the enforced mitigation audit
+// events (kill and deny) per bucket.
 func (a *API) series(win window) (ev, kills []point, err error) {
 	span := win.To - win.From
 	width := span / seriesBuckets
@@ -146,7 +146,7 @@ func (a *API) series(win window) (ev, kills []point, err error) {
 		ev[i].V /= float64(width) / 1000
 	}
 
-	kr, err := a.DB.Query(`SELECT ts_ns FROM audit_events WHERE enforced != 0 AND action = 'kill' AND ts_ns >= ? AND ts_ns <= ?`,
+	kr, err := a.DB.Query(`SELECT ts_ns FROM audit_events WHERE enforced != 0 AND action IN ('kill','deny') AND ts_ns >= ? AND ts_ns <= ?`,
 		win.fromNS(), win.toNS())
 	if err != nil {
 		return nil, nil, err

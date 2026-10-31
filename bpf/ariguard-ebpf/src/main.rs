@@ -7,12 +7,13 @@
 // no enforcement (that is phase 2, BPF LSM).
 
 use ariguard_common::{
-    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_KILL,
-    ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT,
-    HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT,
-    HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE,
-    HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRANSITIONS, PATH_ANY,
-    PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS, STATE_INITIAL,
+    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_DENY,
+    ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF,
+    HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE,
+    HOOK_FSMOUNT, HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT,
+    HOOK_PTRACE, HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRACKED_WORKLOADS,
+    MAX_TRANSITIONS, PATH_ANY, PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS,
+    STATE_INITIAL,
 };
 use aya_ebpf::{
     btf_maps::{Array, LruHashMap, PerCpuArray, RingBuf},
@@ -20,8 +21,8 @@ use aya_ebpf::{
         bpf_get_current_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid,
         bpf_ktime_get_ns, bpf_probe_read_user_str_bytes, bpf_send_signal,
     },
-    macros::{btf_map, tracepoint},
-    programs::TracePointContext,
+    macros::{btf_map, lsm, tracepoint},
+    programs::{LsmContext, TracePointContext},
 };
 
 #[unsafe(no_mangle)]
@@ -44,11 +45,20 @@ const SUN_PATH_OFF: u64 = 2;
 // SIGKILL, delivered by bpf_send_signal to the current task (F1, F5).
 const SIGKILL: u32 = 9;
 
-// AG_METRICS per-CPU counters; indices mirror pkg/fsm (events, kills, audit_dropped).
-const NUM_METRICS: usize = 3;
+// Negated and returned from an LSM hook to refuse the operation (phase 2b).
+const EPERM: i32 = 1;
+
+// How long a deny token stays valid between the sys_enter tracepoint and the LSM
+// hook of the same syscall (1s); a stale token is ignored so a later benign call
+// on a reused tid is never refused on an old decision.
+const DENY_TOKEN_TTL_NS: u64 = 1_000_000_000;
+
+// AG_METRICS per-CPU counters; indices mirror pkg/fsm (events, kills, audit_dropped, denies).
+const NUM_METRICS: usize = 4;
 const METRIC_EVENTS: u32 = 0;
 const METRIC_KILLS: u32 = 1;
 const METRIC_AUDIT_DROPPED: u32 = 2;
+const METRIC_DENIES: u32 = 3;
 
 #[btf_map]
 static AG_POLICY: Array<Policy, 1> = Array::new();
@@ -77,9 +87,29 @@ static AG_SCRATCH: PerCpuArray<[u8; PATTERN_LEN], 1> = PerCpuArray::new();
 #[btf_map]
 static AG_PODS: LruHashMap<u64, u8, 16384> = LruHashMap::new();
 
-// Per-CPU counters read by the agent (F7). Indices: events, kills, audit_dropped.
+// Per-CPU counters read by the agent (F7). Indices: events, kills, audit_dropped, denies.
 #[btf_map]
 static AG_METRICS: PerCpuArray<u64, NUM_METRICS> = PerCpuArray::new();
+
+// A pending -EPERM verdict for a syscall (phase 2b). The sys_enter_* tracepoint, the
+// single FSM writer, records one keyed by the full pid_tgid when a committed transition's
+// action is DENY under enforcement; the LSM hook for that same syscall consumes it and
+// returns -EPERM. Internal to the data plane: the agent never reads it, so it has no Go
+// mirror. hook distinguishes which LSM hook may honor the token.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct DenyToken {
+    hook: u32,
+    rule: u32,
+    event: u32,
+    from_state: u32,
+    to_state: u32,
+    _pad: u32,
+    ts_ns: u64,
+}
+
+#[btf_map]
+static AG_DENY: LruHashMap<u64, DenyToken, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
 
 #[tracepoint(category = "syscalls", name = "sys_enter_openat")]
 pub fn sw_openat(ctx: TracePointContext) -> u32 {
@@ -318,8 +348,28 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
     // workload's current committed state is the one this transition produced. Re-reading the
     // state closes the last-writer-wins gap at the enforcement layer: if a concurrent syscall
     // clobbered this step, the re-read no longer matches and no kill fires on a stale decision.
-    let enforced =
-        can_kill && action == ACTION_KILL && (next_state == state || state_is(&key, next_state));
+    let committed = next_state == state || state_is(&key, next_state);
+    let enforced = can_kill && action == ACTION_KILL && committed;
+
+    // Deny (phase 2b): when the committed action is DENY under enforcement, arm a token for
+    // this task. The LSM hook of this same syscall consumes it and returns -EPERM, refusing
+    // the operation before it runs. The tracepoint stays the single state writer and does not
+    // mark this record enforced: the mitigation is applied (and audited enforced) by the LSM
+    // hook only if it actually fires, so a kernel without BPF LSM leaves the token inert and
+    // falls back to the kill transition further along the chain.
+    if can_kill && action == ACTION_DENY && committed {
+        let pid_tgid = bpf_get_current_pid_tgid();
+        let token = DenyToken {
+            hook,
+            rule,
+            event,
+            from_state: state,
+            to_state: next_state,
+            _pad: 0,
+            ts_ns: now,
+        };
+        let _ = AG_DENY.insert(&pid_tgid, &token, 0);
+    }
 
     if next_state != state || action != ACTION_OBSERVE {
         if let Some(mut entry) = AG_AUDIT.reserve(0) {
@@ -349,6 +399,64 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
         }
         bump_metric(METRIC_KILLS);
     }
+}
+
+// Consumes a deny token armed by the tracepoint for the current task (phase 2b). Returns
+// -EPERM when a fresh token for this hook is pending, refusing the syscall before it runs,
+// and audits the refusal as an enforced DENY. Returns 0 (allow) otherwise. The token is
+// removed on consumption; a stale one (TTL elapsed, or for another hook) is ignored.
+#[inline(always)]
+fn lsm_verdict(hook: u32) -> i32 {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let token = match AG_DENY.get_ptr(&pid_tgid) {
+        Some(p) => unsafe { *p },
+        None => return 0,
+    };
+    let _ = AG_DENY.remove(&pid_tgid);
+    if token.hook != hook {
+        return 0;
+    }
+    let now = unsafe { bpf_ktime_get_ns() };
+    if now.wrapping_sub(token.ts_ns) > DENY_TOKEN_TTL_NS {
+        return 0;
+    }
+
+    let cgroup_id = unsafe { bpf_get_current_cgroup_id() };
+    if let Some(mut entry) = AG_AUDIT.reserve(0) {
+        let comm = bpf_get_current_comm().unwrap_or([0u8; 16]);
+        entry.write(AuditRecord {
+            cgroup_id,
+            ts_ns: now,
+            pid: (pid_tgid >> 32) as u32,
+            hook: token.hook,
+            rule: token.rule,
+            event: token.event,
+            from_state: token.from_state,
+            to_state: token.to_state,
+            action: ACTION_DENY,
+            enforced: 1,
+            comm,
+        });
+        entry.submit(0);
+    } else {
+        bump_metric(METRIC_AUDIT_DROPPED);
+    }
+    bump_metric(METRIC_DENIES);
+    -EPERM
+}
+
+// LSM hooks that honor a deny token. sb_mount backs the mount syscall (HOOK_MOUNT) and
+// move_mount backs move_mount (HOOK_MOVE_MOUNT) — the host_mount step of container-escape.
+// Both run inside their syscall, after the matching sys_enter tracepoint, so the token is
+// already armed. Kernels without BPF LSM (or lacking a hook's BTF) skip these at load time.
+#[lsm(hook = "sb_mount")]
+pub fn lsm_sb_mount(_ctx: LsmContext) -> i32 {
+    lsm_verdict(HOOK_MOUNT)
+}
+
+#[lsm(hook = "move_mount")]
+pub fn lsm_move_mount(_ctx: LsmContext) -> i32 {
+    lsm_verdict(HOOK_MOVE_MOUNT)
 }
 
 #[inline(always)]

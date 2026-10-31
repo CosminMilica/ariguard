@@ -119,6 +119,7 @@
   .st.compromised::before { background:var(--crit); }
   .act { font-size:12px; color:var(--faint); }
   .act.kill { color:var(--crit); font-weight:600; }
+  .act.deny { color:var(--orange); font-weight:600; }
 
   /* breakdown */
   .brk { display:flex; flex-direction:column; gap:10px; }

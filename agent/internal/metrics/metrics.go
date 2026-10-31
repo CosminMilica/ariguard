@@ -15,6 +15,7 @@ import (
 type Counters struct {
 	Events       uint64
 	Kills        uint64
+	Denies       uint64
 	AuditDropped uint64
 }
 
@@ -68,6 +69,7 @@ func Format(c Counters) string {
 	}{
 		{"ariguard_events_total", "Syscall events that matched a policy binding.", c.Events},
 		{"ariguard_kills_total", "Processes killed by enforcement.", c.Kills},
+		{"ariguard_denies_total", "Operations denied (-EPERM) by enforcement.", c.Denies},
 		{"ariguard_audit_dropped_total", "Audit records dropped because the ring buffer was full.", c.AuditDropped},
 	} {
 		s += fmt.Sprintf("# HELP %s %s\n# TYPE %s counter\n%s %d\n", m.name, m.help, m.name, m.name, m.v)

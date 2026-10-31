@@ -58,7 +58,10 @@ func fail(w http.ResponseWriter, err error) {
 type window struct{ From, To int64 }
 
 func (w window) fromNS() int64 { return w.From * 1_000_000 }
-func (w window) toNS() int64   { return w.To * 1_000_000 }
+
+// toNS covers the whole `to` millisecond (+999_999ns) so ns-precision events recorded
+// within the same millisecond as `to` (e.g. just-ingested events at ~now) are included.
+func (w window) toNS() int64 { return w.To*1_000_000 + 999_999 }
 
 // windowOf resolves the query window: an explicit ?from=&to= (unix millis, from < to)
 // wins; otherwise ?range=15m|1h|24h (default 15m) ending now.
@@ -95,12 +98,13 @@ var stateSeverity = map[string]string{
 type nodeStats struct {
 	eventsPerSec float64
 	kills        int64
+	denies       int64
 	dropped      int64
 }
 
 // latestStats returns per-node stats derived from the two newest metric samples.
 func (a *API) latestStats() (map[string]nodeStats, error) {
-	rows, err := a.DB.Query(`SELECT node, ts, events, kills, audit_dropped FROM (
+	rows, err := a.DB.Query(`SELECT node, ts, events, kills, denies, audit_dropped FROM (
 		SELECT *, ROW_NUMBER() OVER (PARTITION BY node ORDER BY ts DESC) rn FROM metric_samples
 	) WHERE rn <= 2 ORDER BY node, ts DESC`)
 	if err != nil {
@@ -111,13 +115,13 @@ func (a *API) latestStats() (map[string]nodeStats, error) {
 	prev := map[string]struct{ ts, events int64 }{}
 	for rows.Next() {
 		var node string
-		var ts, ev, k, d int64
-		if err := rows.Scan(&node, &ts, &ev, &k, &d); err != nil {
+		var ts, ev, k, dn, d int64
+		if err := rows.Scan(&node, &ts, &ev, &k, &dn, &d); err != nil {
 			return nil, err
 		}
 		st, seen := out[node]
 		if !seen {
-			out[node] = nodeStats{kills: k, dropped: d}
+			out[node] = nodeStats{kills: k, denies: dn, dropped: d}
 			prev[node] = struct{ ts, events int64 }{ts, ev}
 			continue
 		}

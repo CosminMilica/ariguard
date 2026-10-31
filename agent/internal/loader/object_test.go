@@ -15,8 +15,10 @@ import (
 // maxInstructions caps each program's pre-verifier size. Raise it deliberately
 // when a change needs more; an unexpected jump usually means unrolling or inlining.
 // Phase 2 raised it from 512: the per-pod gate, AG_METRICS counters, enforcement
-// re-read and bpf_send_signal path add ~78 inlined insns (programs are 571-581).
-const maxInstructions = 640
+// re-read and bpf_send_signal path add ~78 inlined insns. Phase 2b added the
+// deny-token arm (bpf_get_current_pid_tgid + AG_DENY insert) inline into every sw_
+// program (+~40, now 621); the lsm_* deny programs are ~164.
+const maxInstructions = 680
 
 func loadSpec(t *testing.T) *ebpf.CollectionSpec {
 	t.Helper()
@@ -55,12 +57,22 @@ func TestObjectContract(t *testing.T) {
 			t.Errorf("map %s missing", name)
 		}
 	}
+	for name, section := range map[string]string{"lsm_sb_mount": "lsm/sb_mount", "lsm_move_mount": "lsm/move_mount"} {
+		p, ok := spec.Programs[name]
+		if !ok {
+			t.Errorf("program %s missing", name)
+			continue
+		}
+		if p.SectionName != section {
+			t.Errorf("%s: section %s, want %s", name, p.SectionName, section)
+		}
+	}
 }
 
 func TestInstructionBudget(t *testing.T) {
 	spec := loadSpec(t)
 	for name, p := range spec.Programs {
-		if !strings.HasPrefix(name, ProgramPrefix) {
+		if !strings.HasPrefix(name, ProgramPrefix) && !strings.HasPrefix(name, LSMProgramPrefix) {
 			continue
 		}
 		n := len(p.Instructions)

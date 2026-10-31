@@ -100,8 +100,8 @@ time, or each checker also sees the other's attacks.
 
 ### Phase 2 — Kill-based mitigation (branch `feat/mitigation`)
 Make detection act: kill the attacker at the terminal step, from the existing tracepoint
-engine, with the safety machinery that makes enforcement safe. `-EPERM` deny via BPF LSM is
-a separate follow-up (the ABI already carries `ACTION_DENY`). Decisions F1–F7 and the v3.1
+engine, with the safety machinery that makes enforcement safe. `-EPERM` deny via BPF LSM
+followed in Phase 2b (the ABI already carries `ACTION_DENY`). Decisions F1–F7 and the v3.1
 ABI additions are in [docs/architecture.md](docs/architecture.md#phase-2-decisions--synchronous-mitigation-kill-based).
 
 | Wave | Where | Tasks | Output |
@@ -114,8 +114,19 @@ Exit check (enforce on): each attacker is killed at its terminal step; benign tw
 node's own runtime are never killed; the detection table is otherwise unchanged. Work is
 parallelized into small agents (sonnet for well-defined work, opus 4.8 for the kernel).
 
-Deferred to a later branch — **Phase 2b, LSM deny:** `lsm/*` programs returning `-EPERM`
-on `action == deny`, reading the same FSM state.
+**Status: done.**
+
+### Phase 2b — LSM `-EPERM` deny (branch `feat/phase-2b-lsm-deny`)
+Make `ACTION_DENY` enforce: `lsm/*` programs on `sb_mount`/`move_mount` return `-EPERM`,
+refusing the host mount before it happens. The `sys_enter_mount` tracepoint stays the only
+FSM writer and arms a deny token in `AG_DENY` (keyed by `pid_tgid`); the LSM program consumes
+it and refuses the mount, emitting `action=deny, enforced=1`. Hybrid: on a kernel with BPF
+LSM the chain halts at `breakout_imminent` (execve/kill never reached); without it the LSM
+programs are dropped at load time and the `kill` fallback fires. New metric
+`ariguard_denies_total`. Design in [docs/phase-2b-lsm-deny.md](docs/phase-2b-lsm-deny.md).
+
+**Status: implemented.** In-kernel integration test drives the chain to the mount step and
+asserts `EPERM` + an enforced deny record; it skips where BPF LSM is absent.
 
 ### Phase 3 — Rule compiler + fleet management
 The AI bridge and the cluster story.
