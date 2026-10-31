@@ -1,0 +1,45 @@
+image:
+  registry: ghcr.io/cosminmilica
+  # Empty means .Chart.AppVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+namespace: ariguard-system
+
+agent:
+  image: ariguard-agent
+  # true appends --enforce, false runs detect-only.
+  enforce: true
+  # Empty with console.enabled defaults to the in-cluster console backend.
+  sinkUrl: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+console:
+  enabled: true
+  storage:
+    size: 1Gi
+    # Empty uses the cluster default StorageClass.
+    storageClassName: ""
+  # none | nodePort | ingress
+  expose: none
+  nodePort: {}
+  ingress:
+    className: ""
+    host: ariguard.local
+    annotations: {}
+    tls: []
+  backend:
+    image: ariguard-console-backend
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+  frontend:
+    image: ariguard-console-frontend
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi

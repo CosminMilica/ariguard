@@ -1,0 +1,22 @@
+{{- if .Values.console.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: ariguard-console-frontend
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ariguard.labels" . | nindent 4 }}
+spec:
+  {{- if eq .Values.console.expose "nodePort" }}
+  type: NodePort
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: ariguard-console-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      {{- if and (eq .Values.console.expose "nodePort") .Values.console.nodePort.port }}
+      nodePort: {{ .Values.console.nodePort.port }}
+      {{- end }}
+{{- end }}

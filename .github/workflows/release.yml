@@ -1,0 +1,51 @@
+name: Release
+
+# Build the three images and push them to GHCR (public). Separate from ci.yml,
+# so it never gates PRs. Images are linux/amd64 (CI runners); multi-arch is a
+# future enhancement (see deploy/PACKAGING.md).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/cosminmilica
+
+jobs:
+  images:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+        with:
+          bpf-linker: "true"
+      - name: Build agent artifacts (bpf object + binary; policy.bin is committed)
+        run: make build-bpf build-agent
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build + push
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          SHA: ${{ github.sha }}
+        run: |
+          short="sha-${SHA:0:7}"
+          build_push() {
+            name="$1"; ctx="$2"; df="$3"; img="$REGISTRY/$name"
+            tags="-t $img:$short"
+            [ "$REF_NAME" = "main" ] && tags="$tags -t $img:latest"
+            [ "$REF_TYPE" = "tag" ] && tags="$tags -t $img:$REF_NAME"
+            docker build $tags -f "$df" "$ctx"
+            docker push --all-tags "$img"
+          }
+          build_push ariguard-agent . deploy/docker/Dockerfile
+          build_push ariguard-console-backend console/backend console/backend/Dockerfile
+          build_push ariguard-console-frontend console/frontend console/frontend/Dockerfile

@@ -1,0 +1,40 @@
+{{- if .Values.console.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ariguard-console-backend
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ariguard-console-backend
+    {{- include "ariguard.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ariguard-console-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ariguard-console-backend
+        {{- include "ariguard.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: backend
+          image: {{ include "ariguard.image" (dict "root" . "name" .Values.console.backend.image) | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--addr", ":8080", "--db", "/data/ariguard-console.db"]
+          ports:
+            - name: http
+              containerPort: 8080
+          {{- with .Values.console.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ariguard-console-db
+{{- end }}
