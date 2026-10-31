@@ -157,10 +157,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           python: "true"
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: bpf-object
-          path: bin
+          bpf-linker: "true"
       - uses: helm/kind-action@v1.15.1
         with:
           cluster_name: statewall-dev
