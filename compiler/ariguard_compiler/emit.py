@@ -116,3 +116,12 @@ def compile_files(files: list[Path]) -> tuple[list[Rule], bytes]:
     """Load ``files`` in the given order and link them into a bundle."""
     rules = [load_rule(f) for f in files]
     return rules, emit_bundle(rules)
+
+
+def compile_sources(yaml_files: list[Path], sigma_files: list[Path]) -> tuple[list[Rule], bytes]:
+    """Link hand-written YAML rule files and Sigma correlation files into a bundle."""
+    from . import sigma
+
+    rules = [load_rule(f) for f in yaml_files]
+    rules += [sigma.compile_sigma(f) for f in sigma_files]
+    return rules, emit_bundle(rules)

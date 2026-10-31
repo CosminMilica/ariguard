@@ -58,6 +58,9 @@ node's own container runtime.
 
 The in-kernel transition table is produced offline and loaded into a BPF map:
 
+- **Sigma path** — rules can be authored as MITRE-ATT&CK-tagged Sigma `temporal_ordered`
+  correlations and compiled straight to the in-kernel FSM (Phase 3, in progress: single-selection
+  sub-rules today).
 - **ML path** — mine malicious subsequences from labeled syscall traces (ADFA-LD / LID-DS +
   synthetic attacks) and emit FSM transitions.
 - **LLM path** — translate ATT&CK technique / Sigma descriptions into the formal

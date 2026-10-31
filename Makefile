@@ -154,6 +154,12 @@ ci-helm: ## G8: Helm chart lint + rendered-manifest schema validation
 	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS) | kubeconform -strict -summary -ignore-missing-schemas -
 	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS) --set console.enabled=false >/dev/null
 
+ci-compiler: ## G9: compiler tests + Sigma rules compile into a bundle that loads within the kernel limits
+	cd compiler && $(PYTHON) -m pytest
+	@mkdir -p $(CURDIR)/bin
+	cd compiler && $(PYTHON) -m ariguard_compiler.cli --sigma-dir rules/sigma --out $(CURDIR)/bin/sigma.bin
+	ARIGUARD_SIGMA_BUNDLE=$(CURDIR)/bin/sigma.bin go test ./pkg/fsm -run TestLoadSigmaBundle -count=1
+
 fmt: ## Format all code
 	cd bpf && cargo fmt
 	go fmt ./...

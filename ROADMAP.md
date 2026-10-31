@@ -134,6 +134,9 @@ The AI bridge and the cluster story.
 - Control plane: CRD, manager, reconciler, gRPC server, registry, audit sink (`CP-3.*`).
 - Agent gRPC client (`AGT-3.1`); finalize proto (`PROTO-3.1`).
 
+**Status: started.** The AI-bridge work is underway: `CMP-3.1` (Sigma `temporal_ordered` →
+FSM) is in progress for single-selection sub-rules; see [docs/phase-3-plan.md](docs/phase-3-plan.md).
+
 ### Phase 4 — Evaluation
 The evidence that earns the grade.
 - Benchmark harness: latency, throughput, **flat memory-vs-process curve** (`EVAL-4.1`, `EVAL-4.2`, `BPF-4.1`).

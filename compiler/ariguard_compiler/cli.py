@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .emit import compile_files, rule_files
+from .emit import compile_sources, rule_files
 from .schema import RuleError
 
 
@@ -18,14 +18,19 @@ def main() -> None:
     )
     parser.add_argument("--rules-dir", help="directory of *.yml rule files")
     parser.add_argument("--input", action="append", default=[], help="rule file (repeatable)")
+    parser.add_argument(
+        "--sigma", action="append", default=[], help="Sigma correlation file (repeatable)"
+    )
+    parser.add_argument("--sigma-dir", help="directory of *.yml Sigma correlation files")
     parser.add_argument("--out", required=True, help="path to write the policy bundle")
     args = parser.parse_args()
 
-    files = rule_files(args.rules_dir, args.input)
-    if not files:
-        parser.error("no rule files: pass --rules-dir and/or --input")
+    yaml_files = rule_files(args.rules_dir, args.input)
+    sigma_files = rule_files(args.sigma_dir, args.sigma)
+    if not yaml_files and not sigma_files:
+        parser.error("no rule files: pass --rules-dir, --input, --sigma and/or --sigma-dir")
     try:
-        rules, bundle = compile_files(files)
+        rules, bundle = compile_sources(yaml_files, sigma_files)
     except RuleError as exc:
         sys.exit(f"ariguard-compile: {exc}")
     Path(args.out).write_bytes(bundle)

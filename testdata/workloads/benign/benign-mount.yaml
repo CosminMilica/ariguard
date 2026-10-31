@@ -1,0 +1,32 @@
+# Benign false-positive guard: a privileged pod doing a legitimate container-local mount.
+# It mounts tmpfs on /mnt/benign in a loop but performs NONE of the preceding chain steps
+# (no runtime-socket open, no setns), so the container-escape FSM never leaves `normal` and the
+# mount is never denied or killed. Long-lived so the exit-check can observe it stays untouched.
+# LIBMOUNT_FORCE_MOUNT2 makes util-linux use mount(2) instead of the new fsopen/fsmount API.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: benign-mount
+  namespace: ariguard-eval
+  labels:
+    app: benign-mount
+    app.kubernetes.io/part-of: ariguard-eval
+spec:
+  restartPolicy: Never
+  containers:
+    - name: mounter
+      image: ubuntu:24.04
+      securityContext:
+        privileged: true
+      env:
+        - name: LIBMOUNT_FORCE_MOUNT2
+          value: always
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          mkdir -p /mnt/benign
+          while true; do
+            mount -t tmpfs tmpfs /mnt/benign || true
+            umount /mnt/benign || true
+            sleep 5
+          done

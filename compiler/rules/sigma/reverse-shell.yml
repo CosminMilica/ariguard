@@ -1,0 +1,66 @@
+# reverse-shell as Sigma: an ordered temporal correlation over syscall sub-rules.
+# Each sub-rule selects one syscall (+ optional predicates); the correlation lists
+# them in order = the kill chain. The compiler turns this into the same FSM Rule the
+# hand-written rules/reverse-shell.yml produces (schema v3), so it flows through
+# emit.py unchanged. See rules/sigma/README.md.
+#
+# ATT&CK: T1059.004 (Unix Shell) driven over a network socket, i.e. a reverse shell.
+
+title: outbound connect
+name: outbound_connect
+# ATT&CK: attack.t1095 (Non-Application Layer Protocol) - the call-home socket.
+tags:
+  - attack.t1095
+logsource:
+  product: linux
+  category: syscall
+detection:
+  sel:
+    syscall: connect
+  condition: sel
+---
+title: stdio redirected onto a socket
+name: stdio_redirect
+# ATT&CK: attack.t1059.004 - wiring stdin/stdout/stderr (fd 0,1,2) to the socket.
+tags:
+  - attack.t1059.004
+logsource:
+  product: linux
+  category: syscall
+detection:
+  sel:
+    # dup2/dup3 share the same predicate: the new fd is one of 0,1,2.
+    syscall: [dup2, dup3]
+    arg1|lte: 2
+  condition: sel
+---
+title: shell executed
+name: shell_exec
+# ATT&CK: attack.t1059.004 - the interactive shell spawned on the redirected stdio.
+tags:
+  - attack.t1059.004
+logsource:
+  product: linux
+  category: syscall
+detection:
+  sel:
+    syscall: execve
+    path|startswith: [/bin/sh, /bin/bash, /usr/bin/sh, /usr/bin/bash]
+  condition: sel
+---
+title: reverse shell
+name: reverse-shell
+# ATT&CK: attack.t1059.004
+tags:
+  - attack.t1059.004
+correlation:
+  type: temporal_ordered
+  rules:
+    - outbound_connect
+    - stdio_redirect
+    - shell_exec
+  timespan: 10s
+  # AriGuard extensions (x-ariguard) on the correlation:
+  scope: process          # cgroup | process
+  terminal_action: kill   # action at the final step (observe|throttle|deny|kill);
+                          # earlier steps default to observe.

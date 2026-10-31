@@ -26,7 +26,9 @@ Contract: [docs/architecture.md](../docs/architecture.md#rule-file-schema-v3).
 ## Phase 3 — Intelligence-driven generation
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` CMP-3.1 | `sigma.py`: ATT&CK / Sigma rules → FSM transitions | CMP-1.1 | a Sigma rule compiles to a table |
+| `[~]` CMP-3.1 | `sigma.py`: ATT&CK / Sigma rules → FSM transitions | CMP-1.1 | a Sigma rule compiles to a table |
 | `[ ]` CMP-3.2 | `mine.py`: sequence mining from labeled syscall traces (ML) | EVAL-1.*, CMP-1.1 | learned chain detects held-out attacks |
 | `[ ]` CMP-3.3 | LLM path: NL technique description → FSM (optional) | CMP-1.1 | NL prompt yields a valid FSM |
 | `[ ]` CMP-3.4 | Validation: round-trip + respect kernel map size limits | CMP-1.2 | oversized/invalid tables rejected |
+
+CMP-3.1 in progress: Sigma `temporal_ordered` → FSM for single-selection sub-rules (fileless-exec, reverse-shell); container-escape multi-selection OR is a follow-up.
