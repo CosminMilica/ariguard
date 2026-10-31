@@ -37,7 +37,7 @@ kubectl -n ariguard-system port-forward svc/ariguard-console-frontend 8080:80   
 | Layer | Choice |
 |---|---|
 | eBPF data plane | **Rust + [Aya](https://aya-rs.dev/)** (`aya-ebpf`, `no_std`, zero-alloc) |
-| Kernel hooks | tracepoints (`sys_enter_*`); **BPF LSM** (`lsm/*`) for `-EPERM` deny (phase 2b) |
+| Kernel hooks | tracepoints (`sys_enter_*`); **BPF LSM** (`lsm/*`, `sb_mount`/`move_mount`) for `-EPERM` deny |
 | Node agent / loader | **Go + [cilium/ebpf](https://github.com/cilium/ebpf)**, DaemonSet |
 | Console | **Go + SQLite** backend, **Vue 3 + Vite** frontend |
 | Cluster control plane | **Go + controller-runtime** (CRDs, distribution) — phase 3 |
@@ -73,8 +73,8 @@ ariguard/
 
 ## Requirements
 
-- Linux kernel **≥ 5.7** with BTF (`/sys/kernel/btf/vmlinux`); `CONFIG_BPF_LSM=y` for the
-  phase-2b `-EPERM` deny.
+- Linux kernel **≥ 5.7** with BTF (`/sys/kernel/btf/vmlinux`); `CONFIG_BPF_LSM=y` with `bpf`
+  in `/sys/kernel/security/lsm` for the `-EPERM` deny (kill fallback otherwise).
 - Rust toolchain + `bpf-linker`; Go ≥ 1.27; Python ≥ 3.11.
 - macOS dev: a Linux VM (Lima) + kind.
 

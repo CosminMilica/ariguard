@@ -233,4 +233,11 @@ export function fmtBytes(b: number) {
   return `${+(b / 1024).toFixed(1)} KiB`
 }
 export const isKill = (a: string) => (a || '').toLowerCase().includes('kill')
+export const isDeny = (a: string) => (a || '').toLowerCase().includes('deny')
+export function actLabel(a: string, enforced: boolean): { text: string; cls: string } {
+  if (isKill(a)) return enforced ? { text: 'KILL', cls: 'act kill' } : { text: 'would kill', cls: 'dim' }
+  if (isDeny(a)) return enforced ? { text: 'DENY', cls: 'act deny' } : { text: 'would deny', cls: 'dim' }
+  if ((a || '').toLowerCase().includes('throttle')) return { text: 'throttle', cls: 'dim' }
+  return { text: 'observe', cls: 'dim' }
+}
 export function nodeOk(s: string) { return ['ready', 'healthy', 'up', 'ok', 'online'].includes((s || '').toLowerCase()) }

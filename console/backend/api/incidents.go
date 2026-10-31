@@ -23,7 +23,7 @@ const stateRank = `CASE to_state WHEN 'compromised' THEN 5 WHEN 'breakout_immine
 func (a *API) incidents(w http.ResponseWriter, r *http.Request) {
 	win := windowOf(r)
 	rows, err := a.DB.Query(`SELECT pod, namespace, node, rule, MIN(ts_ns), MAX(ts_ns), MAX(`+stateRank+`), 
-			MAX(enforced = 1 AND action = 'kill'), MAX(action IN ('deny','throttle')), COUNT(*)
+			MAX(enforced = 1 AND action = 'kill'), MAX(enforced = 1 AND action = 'deny'), COUNT(*)
 		FROM audit_events
 		WHERE ts_ns >= ? AND ts_ns <= ? AND pod != ''
 		GROUP BY pod, namespace, node, rule

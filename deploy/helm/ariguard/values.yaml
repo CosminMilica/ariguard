@@ -10,6 +10,9 @@ agent:
   image: ariguard-agent
   # true appends --enforce, false runs detect-only.
   enforce: true
+  # true appends --deny: refuse deny-action syscalls with -EPERM via BPF LSM where a hook
+  # exists (needs enforce and a kernel with BPF LSM active; falls back to kill otherwise).
+  deny: false
   # Empty with console.enabled defaults to the in-cluster console backend.
   sinkUrl: ""
   resources:

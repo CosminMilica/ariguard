@@ -33,8 +33,15 @@ import (
 )
 
 const (
-	stepsEnv = "ARIGUARD_CHAIN_STEPS"
-	cpuEnv   = "ARIGUARD_CHAIN_CPU"
+	stepsEnv    = "ARIGUARD_CHAIN_STEPS"
+	cpuEnv      = "ARIGUARD_CHAIN_CPU"
+	mountDirEnv = "ARIGUARD_MOUNT_DIR"
+)
+
+const (
+	exitMountDenied  = 13
+	exitMountAllowed = 20
+	exitMountOther   = 21
 )
 
 func TestMain(m *testing.M) {
@@ -93,6 +100,17 @@ func runSteps(steps []string) {
 			_ = unix.Exec("/nonexistent-ariguard", []string{"x"}, nil)
 		case "sleep":
 			time.Sleep(200 * time.Millisecond)
+		case "host-mount-probe":
+			dir := os.Getenv(mountDirEnv)
+			err := unix.Mount("tmpfs", dir, "tmpfs", 0, "")
+			if err == nil {
+				_ = unix.Unmount(dir, 0)
+				os.Exit(exitMountAllowed)
+			}
+			if errors.Is(err, unix.EPERM) {
+				os.Exit(exitMountDenied)
+			}
+			os.Exit(exitMountOther)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown step %q\n", s)
 			os.Exit(2)
@@ -202,7 +220,7 @@ func setup(t *testing.T) *harness {
 	}
 	root := repoRoot(t)
 	objPath := envOr("ARIGUARD_OBJECT", filepath.Join(root, "bin", "ariguard.bpf.o"))
-	obj, err := loader.Load(objPath, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	obj, err := loader.Load(objPath, true, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -497,6 +515,121 @@ func TestEnforcement(t *testing.T) {
 		}
 		if r.Enforced != 0 {
 			t.Errorf("terminal record Enforced=%d, want 0 (%+v)", r.Enforced, r)
+		}
+	})
+}
+
+// bpfLSMActive reports whether the kernel has the bpf LSM enabled.
+func bpfLSMActive() bool {
+	data, err := os.ReadFile("/sys/kernel/security/lsm")
+	if err != nil {
+		return false
+	}
+	for _, tok := range strings.Split(string(data), ",") {
+		if strings.TrimSpace(tok) == "bpf" {
+			return true
+		}
+	}
+	return false
+}
+
+// runProbe runs steps in a fresh cgroup under the given enforce setting, registering
+// it in AG_PODS when pod is true, and returns the child's exit code with the cgroup's
+// audit records. The child reads its mount target from mountDir.
+func (h *harness) runProbe(t *testing.T, enforce uint32, pod bool, mountDir string, steps ...string) (int, []fsm.AuditRecord) {
+	t.Helper()
+	h.setEnforce(t, enforce)
+	cgID, cgFD := newCgroup(t)
+	if pod {
+		if err := h.obj.Maps.Pods.Put(cgID, uint8(1)); err != nil {
+			t.Fatalf("AG_PODS put: %v", err)
+		}
+		t.Cleanup(func() { _ = h.obj.Maps.Pods.Delete(cgID) })
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), stepsEnv+"="+strings.Join(steps, ","), mountDirEnv+"="+mountDir)
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: cgFD}
+
+	code := 0
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("child: %v", err)
+		}
+		code = exitErr.ExitCode()
+		if code == 2 {
+			t.Fatalf("child: %v", err)
+		}
+	}
+
+	var records []fsm.AuditRecord
+	h.rd.SetDeadline(time.Now().Add(time.Second))
+	for {
+		rec, err := h.rd.Read()
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return code, records
+		}
+		if err != nil {
+			t.Fatalf("read ring buffer: %v", err)
+		}
+		r, err := audit.Decode(rec.RawSample)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if r.CgroupID == cgID {
+			records = append(records, r)
+		}
+	}
+}
+
+// TestDeny covers the Phase 2b deny path: the escape chain's host_mount transition
+// carries action=deny, so a pod cgroup under enforcement has its mount syscall refused
+// with EPERM by the LSM program, while a dry run (enforce=0) or a non-pod cgroup mounts.
+func TestDeny(t *testing.T) {
+	if !bpfLSMActive() {
+		t.Skip("BPF LSM not active (needs lsm=bpf on the kernel cmdline)")
+	}
+	h := setup(t)
+	dir := t.TempDir()
+	t.Cleanup(func() { h.setEnforce(t, 0) })
+
+	enforcedDeny := func(records []fsm.AuditRecord) bool {
+		for _, r := range records {
+			if r.Action == fsm.ActionDeny && r.Enforced == 1 {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("enforce + pod: mount refused with EPERM, Enforced deny recorded", func(t *testing.T) {
+		code, records := h.runProbe(t, 1, true, dir, "socket", "setns", "host-mount-probe")
+		if code != exitMountDenied {
+			t.Fatalf("exit code = %d, want %d (EPERM); records=%+v", code, exitMountDenied, records)
+		}
+		if !enforcedDeny(records) {
+			t.Fatalf("no enforced-deny audit record; records=%+v", records)
+		}
+	})
+
+	t.Run("dry run (enforce=0): mount allowed, no enforced deny", func(t *testing.T) {
+		code, records := h.runProbe(t, 0, true, dir, "socket", "setns", "host-mount-probe")
+		if code == exitMountDenied {
+			t.Fatalf("mount refused with enforce=0; records=%+v", records)
+		}
+		if enforcedDeny(records) {
+			t.Fatalf("enforced-deny record with enforce=0; records=%+v", records)
+		}
+	})
+
+	t.Run("non-pod cgroup: mount allowed, no enforced deny", func(t *testing.T) {
+		code, records := h.runProbe(t, 1, false, dir, "socket", "setns", "host-mount-probe")
+		if code == exitMountDenied {
+			t.Fatalf("non-pod mount refused; records=%+v", records)
+		}
+		if enforcedDeny(records) {
+			t.Fatalf("enforced-deny record for non-pod cgroup; records=%+v", records)
 		}
 	})
 }

@@ -145,6 +145,55 @@ func TestIngestAndRead(t *testing.T) {
 	}
 }
 
+func TestOverviewMitigationsCountsDenies(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "o.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mux := http.NewServeMux()
+	(&ingest.Handler{DB: db}).Routes(mux)
+	(&api.API{DB: db}).Routes(mux)
+	srv := httptest.NewServer(api.CORS(mux))
+	defer srv.Close()
+
+	now := time.Now().UnixNano()
+	ev := func(pod, action string, enforced bool) string {
+		b, _ := json.Marshal(map[string]any{"ts_ns": now, "rule": "r1", "event": "execve", "from": "normal",
+			"to": "compromised", "action": action, "enforced": enforced, "namespace": "ns", "pod": pod, "node": "n1", "comm": "sh"})
+		return string(b)
+	}
+	body := "[" + strings.Join([]string{
+		ev("kp", "kill", true),  // enforced kill
+		ev("dp", "deny", true),  // enforced deny -> counts as a mitigation
+		ev("dp", "deny", false), // detection-only deny -> excluded
+	}, ",") + "]"
+	resp, err := http.Post(srv.URL+"/api/v1/audit", "application/json", strings.NewReader(body))
+	if err != nil || resp.StatusCode >= 300 {
+		t.Fatalf("audit: %v %v", err, resp)
+	}
+
+	var ovw struct {
+		Kpis        map[string]float64    `json:"kpis"`
+		KillsSeries []struct{ V float64 } `json:"kills_series"`
+	}
+	nowMS := time.Now().UnixMilli()
+	resp, err = http.Get(srv.URL + "/api/overview?from=" + itoa(nowMS-60000) + "&to=" + itoa(nowMS+60000))
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("overview: %v %v", err, resp)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ovw); err != nil {
+		t.Fatal(err)
+	}
+	var sum float64
+	for _, p := range ovw.KillsSeries {
+		sum += p.V
+	}
+	if ovw.Kpis["kills"] != 2 || sum != 2 {
+		t.Fatalf("mitigations KPI/series: kills=%v sum=%v", ovw.Kpis["kills"], sum)
+	}
+}
+
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
@@ -173,6 +222,8 @@ func TestIncidents(t *testing.T) {
 		ev(now-3000, "killed-pod", "r1", "normal", "suspicious", "observe", false),
 		ev(now-2000, "killed-pod", "r1", "suspicious", "compromised", "kill", true),
 		ev(now-1000, "killed-pod", "r1", "compromised", "compromised", "observe", false),
+		ev(now-900, "deny-pod", "r1", "normal", "escalating", "deny", false),
+		ev(now-800, "deny-pod", "r1", "escalating", "escalating", "deny", true),
 		ev(now-500, "esc-pod", "r1", "normal", "escalating", "observe", false),
 		ev(now-400, "benign-pod", "r1", "normal", "normal", "observe", false),
 		ev(old, "old-pod", "r1", "normal", "compromised", "kill", true),
@@ -205,12 +256,15 @@ func TestIncidents(t *testing.T) {
 	}
 
 	got := get("/api/incidents?range=1h")
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Fatalf("incidents: %+v", got)
 	}
-	esc, killed := got[0], got[1]
+	esc, deny, killed := got[0], got[1], got[2]
 	if esc.Pod != "esc-pod" || esc.Outcome != "detected" || esc.MaxState != "escalating" || esc.Steps != 1 {
 		t.Fatalf("escalating incident: %+v", esc)
+	}
+	if deny.Pod != "deny-pod" || deny.Outcome != "blocked" || deny.MaxState != "escalating" || deny.Steps != 2 {
+		t.Fatalf("deny incident: %+v", deny)
 	}
 	if killed.Pod != "killed-pod" || killed.Outcome != "killed" || killed.MaxState != "compromised" || killed.Steps != 3 ||
 		killed.StartedNS != now-3000 || killed.EndedNS != now-1000 || killed.Node != "n1" || killed.Namespace != "ns" || killed.Rule != "r1" {

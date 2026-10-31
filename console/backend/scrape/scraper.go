@@ -88,7 +88,7 @@ func (s *Scraper) scrapeNode(ctx context.Context, t target) error {
 }
 
 func (s *Scraper) store(node string, samples []Sample) error {
-	var events, kills, dropped float64
+	var events, kills, denies, dropped float64
 	now := time.Now().UnixMilli()
 	tx, err := s.DB.Begin()
 	if err != nil {
@@ -103,6 +103,8 @@ func (s *Scraper) store(node string, samples []Sample) error {
 			events += sm.Value
 		case "ariguard_kills_total":
 			kills += sm.Value
+		case "ariguard_denies_total":
+			denies += sm.Value
 		case "ariguard_audit_dropped_total":
 			dropped += sm.Value
 		case "ariguard_workload_state":
@@ -138,8 +140,8 @@ func (s *Scraper) store(node string, samples []Sample) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO metric_samples(ts,node,events,kills,audit_dropped) VALUES(?,?,?,?,?)`,
-		now, node, int64(events), int64(kills), int64(dropped)); err != nil {
+	if _, err := tx.Exec(`INSERT INTO metric_samples(ts,node,events,kills,denies,audit_dropped) VALUES(?,?,?,?,?,?)`,
+		now, node, int64(events), int64(kills), int64(denies), int64(dropped)); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`UPDATE nodes SET last_seen=? WHERE node=?`, now, node); err != nil {

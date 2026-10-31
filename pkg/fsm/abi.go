@@ -81,7 +81,8 @@ const (
 	MetricEvents       uint32 = 0
 	MetricKills        uint32 = 1
 	MetricAuditDropped uint32 = 2
-	NumMetrics         uint32 = 3
+	MetricDenies       uint32 = 3
+	NumMetrics         uint32 = 4
 )
 
 // FsmKey keys AG_STATE; ID is the cgroup id or the tgid per the rule's scope. 16 bytes.

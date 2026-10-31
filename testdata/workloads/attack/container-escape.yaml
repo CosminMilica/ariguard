@@ -2,6 +2,9 @@
 # Expected FSM path:
 #   normal -(openat containerd.sock)-> suspicious -(setns)-> escalating
 #   -(mount)-> breakout_imminent -(execve)-> compromised
+# Under --deny the mount is refused with -EPERM, so the chain halts at breakout_imminent
+# and the terminal execve/kill never runs; under kill-only enforcement the mount succeeds
+# and the execve is killed at compromised.
 # Harmless: the socket is only opened (ENXIO), nsenter runs `true`, the tmpfs is container-local.
 # LIBMOUNT_FORCE_MOUNT2 makes util-linux use mount(2) instead of the new fsopen/fsmount API.
 apiVersion: v1
@@ -35,9 +38,15 @@ spec:
           nsenter --target 1 --mount -- true || echo "nsenter failed"
           sleep 1
           echo "step 3: mount"
-          mount -t tmpfs tmpfs /mnt || echo "mount failed"
-          echo "step 4: execve (terminal step runs in the main process so a kill fails the pod)"
-          exec /bin/true
+          if mount -t tmpfs tmpfs /mnt; then
+            echo "step 4: execve (terminal step runs in the main process so a kill fails the pod)"
+            exec /bin/true
+          else
+            # Refused with -EPERM: stop here. Any execve now (even `sleep`) would be the
+            # critical_execve terminal and get killed, so exit via the shell builtin only.
+            echo "mount denied (-EPERM): host mount refused, escape blocked at breakout_imminent"
+            exit 7
+          fi
       volumeMounts:
         - name: containerd-sock
           mountPath: /run/containerd/containerd.sock

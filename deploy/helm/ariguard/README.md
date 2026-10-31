@@ -57,6 +57,7 @@ helm upgrade --install ariguard deploy/helm/ariguard -n ariguard-system \
 | `image.pullPolicy` | `IfNotPresent` | pull policy |
 | `agent.image` | `ariguard-agent` | agent image name |
 | `agent.enforce` | `true` | `true` = kill at the terminal step; `false` = observe only |
+| `agent.deny` | `false` | `true` = refuse deny-action syscalls with `-EPERM` via BPF LSM where a hook exists (needs `enforce` + a kernel with BPF LSM; kill fallback otherwise) |
 | `agent.sinkUrl` | `""` | where the agent pushes audit; empty + console on → the console backend svc |
 | `agent.resources` | small requests | agent container resources |
 | `console.enabled` | `true` | deploy the console (false = agent only) |

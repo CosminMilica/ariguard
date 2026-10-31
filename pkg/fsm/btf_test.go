@@ -107,6 +107,7 @@ func TestMapCapacitiesMatchObject(t *testing.T) {
 		{"AG_POLICY", ebpf.Array, 1, 4, 8},
 		{"AG_SCRATCH", ebpf.PerCPUArray, 1, 4, PatternLen},
 		{"AG_PODS", ebpf.LRUHash, MaxTrackedWorkloads, 8, 1},
+		{"AG_DENY", ebpf.LRUHash, MaxTrackedWorkloads, 8, 32},
 		{"AG_METRICS", ebpf.PerCPUArray, NumMetrics, 4, 8},
 	}
 	for _, c := range cases {

@@ -19,3 +19,6 @@ var MapNames = []string{MapState, MapTransitions, MapBindings, MapRules, MapPoli
 
 // ProgramPrefix marks the ariguard tracepoint programs.
 const ProgramPrefix = "sw_"
+
+// LSMProgramPrefix marks the ariguard BPF LSM deny programs.
+const LSMProgramPrefix = "lsm_"

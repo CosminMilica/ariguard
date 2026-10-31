@@ -24,12 +24,12 @@ tracepoint (and, for synchronous deny, an LSM hook):
   │  setns / unshare (mount/pid/user ns)       → namespace manipulation
   ▼
  S2  escalating
-  │  mount (not propagation-only)              → host mount attempt
+  │  mount (not propagation-only)              → host mount attempt  ──► DENY (-EPERM via LSM)
   ▼
  S3  breakout-imminent
   │  execve                                    → CRITICAL
   ▼
- S_COMPROMISED  ──►  MITIGATE  (SIGKILL today; -EPERM deny via LSM is phase 2b)
+ S_COMPROMISED  ──►  MITIGATE  (-EPERM deny at the mount step via BPF LSM; SIGKILL fallback)
 ```
 
 A single `mount` or `setns` is normal in many workloads. The **ordered sequence** is what
@@ -45,8 +45,10 @@ The response depends on the current state, not a static yes/no:
 
 - **observe** — log to the audit ring buffer (early states)
 - **throttle** — delay the syscall (mid states)
-- **deny** — return `-EPERM` from an LSM hook (critical step; phase 2b)
-- **kill / quarantine** — `SIGKILL` via `bpf_send_signal` (compromised state; shipped)
+- **deny** — return `-EPERM` from a BPF LSM hook, refusing the host mount before it happens
+  (`sb_mount`/`move_mount`; shipped)
+- **kill / quarantine** — `SIGKILL` via `bpf_send_signal`, the fallback where no LSM hook
+  exists (compromised state; shipped)
 
 Enforcement is gated per pod: the agent marks which cgroups are enforcement candidates, so
 detection stays cluster-wide while a kill only ever fires on a workload pod — never the
