@@ -1,0 +1,1 @@
+{"rule": "bpf-tampering", "attack": ["bpf:0", "bpf:5"], "benign": ["bpf:0"]}

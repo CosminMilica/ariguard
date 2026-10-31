@@ -1,0 +1,29 @@
+# Generated from MITRE ATT&CK T1055.008 (Process Injection: Ptrace System Calls) by the
+# AriGuard co-author (LLM-assisted). Validated by A4 + the behavioral gate before commit.
+# Chain: ptrace(PTRACE_ATTACH) then ptrace(PTRACE_POKETEXT) = attach to another process
+# and write its memory (code injection). A debugger that only attaches never pokes.
+title: ptrace attach
+name: ptrace_attach
+tags: [attack.t1055.008]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: ptrace, arg0|eq: 16}   # PTRACE_ATTACH
+  condition: sel
+---
+title: ptrace write to memory
+name: ptrace_poke
+tags: [attack.t1055.008]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: ptrace, arg0|eq: 4}    # PTRACE_POKETEXT
+  condition: sel
+---
+title: ptrace process injection
+name: ptrace-injection
+tags: [attack.t1055.008]
+correlation:
+  type: temporal_ordered
+  rules: [ptrace_attach, ptrace_poke]
+  timespan: 10s
+  scope: process
+  terminal_action: kill

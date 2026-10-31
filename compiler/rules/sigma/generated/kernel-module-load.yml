@@ -1,0 +1,29 @@
+# Generated from MITRE ATT&CK T1547.006 (Boot/Logon Autostart Execution: Kernel Modules
+# and Extensions) by the AriGuard co-author (LLM-assisted). Validated by A4 + the behavioral
+# gate before commit. Chain: open a module file under the modules tree, then load it into the
+# kernel (finit_module/init_module). Reading module metadata without loading never fires.
+title: open kernel module
+name: open_module
+tags: [attack.t1547.006]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: openat, path|startswith: [/lib/modules/, /usr/lib/modules/]}
+  condition: sel
+---
+title: load kernel module
+name: load_module
+tags: [attack.t1547.006]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: [finit_module, init_module]}
+  condition: sel
+---
+title: kernel module load
+name: kernel-module-load
+tags: [attack.t1547.006]
+correlation:
+  type: temporal_ordered
+  rules: [open_module, load_module]
+  timespan: 30s
+  scope: process
+  terminal_action: kill

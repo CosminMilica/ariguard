@@ -1,0 +1,1 @@
+{"rule": "cred-access-exfil", "attack": ["openat:/etc/shadow", "connect-unix:/tmp/x"], "benign": ["openat:/etc/shadow"]}

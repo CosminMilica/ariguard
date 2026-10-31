@@ -1,0 +1,1 @@
+{"rule": "kernel-module-load", "attack": ["openat:/lib/modules/x.ko", "finit_module"], "benign": ["openat:/lib/modules/x.ko"]}
