@@ -13,7 +13,8 @@ DEFAULT_EXPECTATIONS = ROOT / "expectations.json"
 FIXTURES = ROOT / "fixtures"
 REQUIRED = ("ts_ns", "rule", "from", "to", "action", "namespace", "pod")
 
-DRY, ENF = False, True
+# (enforce, deny) mode markers.
+DRY, ENF, DENY = (False, False), (True, False), (True, True)
 SELF_TESTS = [
     ("pass.jsonl", DRY, set()),
     ("pass.jsonl", ENF, {("A4", "unenforced")}),
@@ -34,6 +35,14 @@ SELF_TESTS = [
     ("fail-a4-action-not-kill.jsonl", DRY, {("A4", "action"), ("A4", "dryrun")}),
     ("fail-a4-enforce-missing.jsonl", ENF, {("A4", "unenforced")}),
     ("fail-a4-enforce-missing.jsonl", DRY, {("A4", "dryrun")}),
+    # Phase 2b deny-mode (LSM -EPERM deny): container-escape is mitigated at
+    # breakout_imminent; reverse-shell / fileless-exec still kill at compromised.
+    ("pass-v3-deny.jsonl", DENY, set()),
+    ("pass-v3-deny.jsonl", ENF, {("A1", "order"), ("A4", "action")}),
+    ("fail-deny-reached-terminal.jsonl", DENY, {("A4", "reached-terminal")}),
+    ("fail-deny-not-enforced.jsonl", DENY, {("A4", "deny-missing")}),
+    ("fail-deny-benign-enforced.jsonl", DENY, {("A3", "action"), ("A4", "pod")}),
+    ("pass-v2-enforce.jsonl", DENY, {("A4", "deny-missing"), ("A4", "reached-terminal"), ("A4", "action")}),
 ]
 
 
@@ -96,7 +105,7 @@ def is_enforced(rec):
     return rec.get("enforced", False) is True
 
 
-def check(records, exp, enforce=False):
+def check(records, exp, enforce=False, deny=False):
     ns = exp["namespace"]
     rules = exp["rules"]
     groups = defaultdict(list)
@@ -105,18 +114,34 @@ def check(records, exp, enforce=False):
     for recs in groups.values():
         recs.sort(key=lambda r: r["ts_ns"])
 
+    def deny_spec(spec):
+        # Only honoured in deny-mode; a rule without one stays kill-at-terminal.
+        return spec.get("deny") if deny else None
+
+    def rule_chain(spec):
+        d = deny_spec(spec)
+        if d:
+            chain = spec["chain"]
+            return chain[: chain.index(d["terminal"]) + 1]
+        return spec["chain"]
+
+    def enforced_action(spec):
+        d = deny_spec(spec)
+        return d["action"] if d else "kill"
+
     failures = []
     for rule, spec in rules.items():
+        chain = rule_chain(spec)
         for pod in spec["attackers"]:
             recs = groups.get((rule, (ns, pod)), [])
             if not recs:
                 failures.append(("A1", "missing", f"{rule}: attacker {pod} has no records"))
-            elif not follows_chain(recs, spec["chain"]):
+            elif not follows_chain(recs, chain):
                 failures.append(
                     (
                         "A1",
                         "order",
-                        f"{rule}: {pod} did not follow {' -> '.join(spec['chain'])} in order",
+                        f"{rule}: {pod} did not follow {' -> '.join(chain)} in order",
                     )
                 )
     for (rule, pid), recs in groups.items():
@@ -147,7 +172,7 @@ def check(records, exp, enforce=False):
                         f"{rule}: {pod_label(pid)} has enforced=true but is not an attacker",
                     )
                 )
-            elif r["action"] != "kill":
+            elif r["action"] != enforced_action(spec):
                 failures.append(
                     (
                         "A4",
@@ -160,15 +185,37 @@ def check(records, exp, enforce=False):
                     ("A4", "dryrun", f"{rule}: {pod_label(pid)} has enforced=true in dry-run")
                 )
         if enforce and attacker:
-            for r in recs:
-                if r["to"] == spec["terminal"] and not is_enforced(r):
+            d = deny_spec(spec)
+            if d:
+                if not any(
+                    r["to"] == d["terminal"] and r["action"] == d["action"] and is_enforced(r)
+                    for r in recs
+                ):
                     failures.append(
                         (
                             "A4",
-                            "unenforced",
-                            f"{rule}: {pod_label(pid)} terminal record has no enforced=true",
+                            "deny-missing",
+                            f"{rule}: {pod_label(pid)} has no enforced {d['action']} at {d['terminal']}",
                         )
                     )
+                if any(r["to"] == spec["terminal"] for r in recs):
+                    failures.append(
+                        (
+                            "A4",
+                            "reached-terminal",
+                            f"{rule}: {pod_label(pid)} reached {spec['terminal']} despite deny",
+                        )
+                    )
+            else:
+                for r in recs:
+                    if r["to"] == spec["terminal"] and not is_enforced(r):
+                        failures.append(
+                            (
+                                "A4",
+                                "unenforced",
+                                f"{rule}: {pod_label(pid)} terminal record has no enforced=true",
+                            )
+                        )
     return groups, failures
 
 
@@ -185,18 +232,21 @@ def summary(groups, rules):
     return "\n".join("  ".join(c.ljust(w) for c, w in zip(row, widths)).rstrip() for row in rows)
 
 
-def run(path, exp_path, enforce):
+def mode_label(enforce, deny):
+    return "deny" if deny else "enforce" if enforce else "dry-run"
+
+
+def run(path, exp_path, enforce, deny=False):
     exp = load_expectations(exp_path)
     records = load(path)
-    groups, failures = check(records, exp, enforce)
+    groups, failures = check(records, exp, enforce, deny)
     print(summary(groups, exp["rules"]))
     if failures:
         for a, _, msg in failures:
             print(f"FAIL ({a}): {msg}")
         return 1
-    mode = "enforce" if enforce else "dry-run"
     print(
-        f"PASS ({mode}): every rule's attackers followed their chain; nothing else reached a terminal state, got a non-observe action; enforcement only hit attackers"
+        f"PASS ({mode_label(enforce, deny)}): every rule's attackers followed their chain; nothing else reached a terminal state, got a non-observe action; enforcement only hit attackers"
     )
     return 0
 
@@ -204,13 +254,13 @@ def run(path, exp_path, enforce):
 def self_test(exp_path):
     exp = load_expectations(exp_path)
     failed = 0
-    for name, enforce, expected in SELF_TESTS:
-        _, failures = check(load(FIXTURES / name), exp, enforce)
+    for name, (enforce, deny), expected in SELF_TESTS:
+        _, failures = check(load(FIXTURES / name), exp, enforce, deny)
         got = {(a, t) for a, t, _ in failures}
         ok = got == expected
         failed += not ok
         print(
-            f"{'ok  ' if ok else 'FAIL'} {name} [{'enforce' if enforce else 'dry-run'}]: expected {sorted(expected) or 'pass'}, got {sorted(got) or 'pass'}"
+            f"{'ok  ' if ok else 'FAIL'} {name} [{mode_label(enforce, deny)}]: expected {sorted(expected) or 'pass'}, got {sorted(got) or 'pass'}"
         )
     print("self-test passed" if not failed else f"self-test failed: {failed} case(s)")
     return 1 if failed else 0
@@ -230,13 +280,19 @@ def main():
         action="store_true",
         help="enforce-mode run: attackers' terminal records must have enforced=true; default requires enforced=false everywhere",
     )
+    parser.add_argument(
+        "--deny",
+        action="store_true",
+        help="deny-mode run (implies --enforce): deny-spec rules must be mitigated with an enforced deny at their deny terminal and must not reach the rule terminal; other rules still require an enforced kill",
+    )
     args = parser.parse_args()
     if not args.self_test and not args.audit:
         parser.error("audit file or --self-test required")
+    enforce = args.enforce or args.deny
     try:
         if args.self_test:
             return self_test(args.expectations)
-        return run(args.audit, args.expectations, args.enforce)
+        return run(args.audit, args.expectations, enforce, args.deny)
     except (OSError, BadInput) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

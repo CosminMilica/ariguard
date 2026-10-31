@@ -86,6 +86,18 @@ jobs:
       - uses: ./.github/actions/setup
       - run: make ci-console
 
+  compiler:
+    name: Compiler
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup
+        with:
+          python: "true"
+          pip-packages: pytest pytest-cov
+      - run: make ci-compiler
+
   helm:
     name: Helm
     runs-on: ubuntu-latest
@@ -232,7 +244,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [lint, unit, contract, console, helm, security, bpf, kernel, e2e]
+    needs: [lint, unit, contract, console, compiler, helm, security, bpf, kernel, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -246,7 +258,8 @@ jobs:
             echo "| Gate | Job | Result |"
             echo "|---|---|---|"
             for row in "G0:lint:Lint" "G1:unit:Unit tests" "G2:contract:Contracts" "G3:bpf:Build BPF" \
-                       "G4:kernel:Kernel matrix" "G5:e2e:End-to-end" "G6:security:Security" "G7:console:Console" "G8:helm:Helm"; do
+                       "G4:kernel:Kernel matrix" "G5:e2e:End-to-end" "G6:security:Security" "G7:console:Console" \
+                       "G8:helm:Helm" "G9:compiler:Compiler"; do
               IFS=: read -r gate id label <<<"$row"
               result="$(jq -r --arg id "$id" '.[$id].result' <<<"$RESULTS")"
               case "$result" in

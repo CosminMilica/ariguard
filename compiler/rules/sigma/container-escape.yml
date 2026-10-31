@@ -1,0 +1,106 @@
+# container-escape as Sigma: an ordered temporal correlation over syscall sub-rules.
+# Each sub-rule selects one or more syscall alternatives (+ optional predicates); the
+# correlation lists them in order = the kill chain. The compiler turns this into the same
+# FSM Rule the hand-written rules/container-escape.yml produces (schema v3), so it flows
+# through emit.py unchanged. See rules/sigma/README.md.
+#
+# This rule exercises multi-selection OR: an event is an OR over selections with DIFFERENT
+# predicate shapes (different hook and/or different predicate kind), joined by
+# `condition: a or b`.
+#
+# ATT&CK: T1611 (Escape to Host) via the container runtime socket, namespace joins, a host
+# mount, and finally a binary executed on the host. T1610 (Deploy Container) context.
+
+title: runtime socket touched
+name: runtime_socket_open
+# ATT&CK: attack.t1610 - reaching the container runtime's control socket.
+tags:
+  - attack.t1610
+logsource:
+  product: linux
+  category: syscall
+detection:
+  # OR over two predicate shapes: opening the socket path, or connecting to its AF_UNIX
+  # sun_path. Different hook AND different predicate kind in one step.
+  open_sel:
+    syscall: openat
+    path|startswith: [/run/containerd/containerd.sock, /var/run/docker.sock, /run/docker.sock]
+  connect_sel:
+    syscall: connect
+    sun_path|startswith: [/run/containerd/containerd.sock, /var/run/docker.sock, /run/docker.sock]
+  condition: open_sel or connect_sel
+---
+title: namespace manipulation
+name: namespace_manipulation
+# ATT&CK: attack.t1611 - joining/creating a mount/pid/user namespace to escape.
+# CLONE_NEWNS|CLONE_NEWPID|CLONE_NEWUSER = 0x30020000.
+tags:
+  - attack.t1611
+logsource:
+  product: linux
+  category: syscall
+detection:
+  setns_sel:
+    syscall: setns
+    arg1|mask_any: 0x30020000
+  unshare_sel:
+    syscall: unshare
+    arg0|mask_any: 0x30020000
+  condition: setns_sel or unshare_sel
+---
+title: host mount
+name: host_mount
+# ATT&CK: attack.t1611 - mounting the host filesystem (not propagation-only).
+# MS_UNBINDABLE|MS_PRIVATE|MS_SLAVE|MS_SHARED = 0x1E0000.
+tags:
+  - attack.t1611
+logsource:
+  product: linux
+  category: syscall
+detection:
+  mount_sel:
+    syscall: mount
+    arg3|mask_none: 0x1E0000
+  fsmount_sel:
+    syscall: fsmount
+  move_sel:
+    syscall: move_mount
+  condition: mount_sel or fsmount_sel or move_sel
+---
+title: critical execve on the host
+name: critical_execve
+# ATT&CK: attack.t1611 - a binary executed after the escape.
+tags:
+  - attack.t1611
+logsource:
+  product: linux
+  category: syscall
+detection:
+  exec_sel:
+    syscall: [execve, execveat]
+  condition: exec_sel
+---
+title: container escape
+name: container-escape
+# ATT&CK: attack.t1611
+tags:
+  - attack.t1611
+  - attack.t1610
+correlation:
+  type: temporal_ordered
+  rules:
+    - runtime_socket_open
+    - namespace_manipulation
+    - host_mount
+    - critical_execve
+  timespan: 30s
+  # AriGuard extensions (x-ariguard) on the correlation:
+  scope: cgroup           # cgroup | process
+  states: [normal, suspicious, escalating, breakout_imminent, compromised]
+  terminal_action: kill   # action at the final step (observe|throttle|deny|kill).
+  # Per-step actions, matching the hand-written transitions.
+  actions:
+    runtime_socket_open: observe
+    namespace_manipulation: throttle
+    host_mount: deny
+    critical_execve: kill

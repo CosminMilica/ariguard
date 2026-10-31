@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Exit check (EVAL-1.3, EVAL-1.5.4, EVAL-2.3): run benign (incl. twins) + attack workloads under the agent, assert on the audit stream.
 # ARIGUARD_ENFORCE=1: agent runs with --enforce; attackers must be killed, benign pods untouched.
+# ARIGUARD_DENY=1: agent also runs with --deny; the container-escape chain is refused at the host
+#   mount (-EPERM), so those attackers self-exit (exit 7) non-Running instead of being killed at
+#   compromised; reverse/fileless have no deny step and are still killed.
 # Runs inside the Lima VM against the kind cluster; needs passwordless sudo.
 set -euo pipefail
 
@@ -25,6 +28,11 @@ CHECKER_MODE_ARGS=()
 if [[ "$ARIGUARD_ENFORCE" == "1" ]]; then
     AGENT_MODE_ARGS=(--enforce)
     CHECKER_MODE_ARGS=(--enforce)
+fi
+ARIGUARD_DENY="${ARIGUARD_DENY:-0}"
+if [[ "$ARIGUARD_DENY" == "1" ]]; then
+    AGENT_MODE_ARGS+=(--deny)
+    CHECKER_MODE_ARGS+=(--deny)
 fi
 
 WORKLOADS="$REPO_ROOT/testdata/workloads"
@@ -127,14 +135,34 @@ POD_FAILURES=0
 if [[ "$ARIGUARD_ENFORCE" == "1" ]]; then
     log "asserting attackers killed and benign pods untouched"
     for a in "${ATTACKS[@]}"; do
+        # Under --deny the container-escape chain is refused at the host mount (-EPERM), so the
+        # attacker self-exits (exit 7) before the kill terminal: it ends non-Running (mitigated at
+        # the mount) rather than killed at compromised. reverse/fileless have no deny step, so they
+        # are still killed. Any other mode: every attacker must be killed (phase Failed).
+        want_nonrunning=0
+        if [[ "$ARIGUARD_DENY" == "1" ]]; then
+            case "$a" in container-escape | container-escape-connect) want_nonrunning=1 ;; esac
+        fi
         deadline=$((SECONDS + 30))
         phase=""
         while ((SECONDS <= deadline)); do
             phase="$(kc -n "$NAMESPACE" get pod "$a" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
-            [[ "$phase" == "Failed" ]] && break
+            if ((want_nonrunning)); then
+                [[ "$phase" == "Failed" || "$phase" == "Succeeded" ]] && break
+            else
+                [[ "$phase" == "Failed" ]] && break
+            fi
             sleep 2
         done
-        if [[ "$phase" == "Failed" ]]; then
+        if ((want_nonrunning)); then
+            if [[ "$phase" == "Failed" || "$phase" == "Succeeded" ]]; then
+                log "ok: attacker $a phase $phase (mitigated at mount, not killed)"
+            else
+                log "FAIL: attacker $a phase ${phase:-unknown}, expected non-Running (mitigated at mount)"
+                kc -n "$NAMESPACE" describe pod "$a" >&2 || true
+                POD_FAILURES=$((POD_FAILURES + 1))
+            fi
+        elif [[ "$phase" == "Failed" ]]; then
             log "ok: attacker $a phase Failed"
         else
             log "FAIL: attacker $a phase ${phase:-unknown}, expected Failed"

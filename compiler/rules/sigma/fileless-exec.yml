@@ -1,0 +1,60 @@
+# fileless-exec as Sigma: an ordered temporal correlation over syscall sub-rules.
+# Each sub-rule selects one syscall (+ optional predicates); the correlation lists
+# them in order = the kill chain. The compiler turns this into the same FSM Rule the
+# hand-written rules/fileless-exec.yml produces (schema v3), so it flows through
+# emit.py unchanged. See rules/sigma/README.md.
+#
+# ATT&CK: T1620 (Reflective Code Loading) - run code from an anonymous, file-backed-less fd.
+#
+# NOTE on the exec step: the hand-written memfd_exec event is an OR over two different
+# predicate shapes - execveat with AT_EMPTY_PATH (fexecve of the memfd) OR execve of a
+# /proc/self/fd path. Multi-selection OR (`condition: a or b`) expresses both branches, so
+# this rule is now FULLY structurally equal to the hand-written rules/fileless-exec.yml.
+
+title: memfd created
+name: memfd_create
+# ATT&CK: attack.t1620 - an anonymous in-memory file is created.
+tags:
+  - attack.t1620
+logsource:
+  product: linux
+  category: syscall
+detection:
+  sel:
+    syscall: memfd_create
+  condition: sel
+---
+title: exec from an anonymous fd
+name: anon_exec
+# ATT&CK: attack.t1620 - the memfd executed, by either route.
+tags:
+  - attack.t1620
+logsource:
+  product: linux
+  category: syscall
+detection:
+  # OR over two predicate shapes: fexecve(memfd) via AT_EMPTY_PATH, or execve of the
+  # memfd through its /proc/self/fd or /dev/fd path.
+  fexecve_sel:
+    syscall: execveat
+    arg4|mask_any: 0x1000   # AT_EMPTY_PATH -> fexecve of the memfd
+  procfd_sel:
+    syscall: execve
+    path|startswith: [/proc/self/fd/, /dev/fd/]
+  condition: fexecve_sel or procfd_sel
+---
+title: fileless execution
+name: fileless-exec
+# ATT&CK: attack.t1620
+tags:
+  - attack.t1620
+correlation:
+  type: temporal_ordered
+  rules:
+    - memfd_create
+    - anon_exec
+  timespan: 30s
+  # AriGuard extensions (x-ariguard) on the correlation:
+  scope: process          # cgroup | process
+  terminal_action: kill   # action at the final step (observe|throttle|deny|kill);
+                          # earlier steps default to observe.
