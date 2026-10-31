@@ -53,9 +53,9 @@ runs `go test -tags integration` inside it as root (`.vimto.toml`).
 All matrix kernels pass. Pre-6.8 verifiers need the path-prefix loop in `prefix_matches` to exit
 on a constant bound, not on `plen`.
 
-Open: on the runner kernel (7.0-azure) the programs attach but the chain raises no events;
-`stable` (7.2) passes. The 7.0 matrix entry and the per-program run counts logged on failure
-separate a 7.0 regression from an Azure-specific one.
+The runner kernel (7.0-azure) runs syscall tracepoint programs only on CPUs with a perf event
+open for the tracepoint; the agent opens one per online CPU (D9). The `detected on every CPU`
+test pins the chain to each CPU so this cannot regress.
 
 Without KVM (e.g. inside the Lima VM): `VIMTO_DISABLE_KVM=true make ci-kernel KERNEL=5.15`.
 
@@ -97,7 +97,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 | `[x]` CI-2.1 | G4 vimto kernel matrix | CI-1.1 | programs load on 6.12 + stable |
 | `[x]` CI-2.2 | Integration tests: chain, fragments, out of order, expiry, hot swap | CI-2.1 | manual phase-1 runs automated |
 | `[x]` CI-2.3 | Make 5.15/6.1/6.6 blocking | BPF verifier fix | all matrix kernels pass |
-| `[~]` CI-3.1 | G5 exit check on kind | CI-1.1 | green on the runner (passes in the dev VM; no audit records on the runner yet) |
+| `[x]` CI-3.1 | G5 exit check on kind | CI-1.1 | exit check green on the runner |
 | `[ ]` CI-3.2 | G5 on little-vm-helper with `lsm=bpf` + `demo-escape` | BPF-2.2 | phase 2 enforcement verified per PR |
 | `[ ]` CI-4.1 | Branch protection + required checks | CI-0.3 | direct pushes to main blocked |
 | `[ ]` CI-5.1 | Nightly perf trend (EVAL-4.1/4.2) | AGT-4.1, BPF-4.1 | results stored per run |

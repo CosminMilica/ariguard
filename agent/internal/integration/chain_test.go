@@ -12,7 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -28,14 +30,37 @@ import (
 	"github.com/CosminMilica/statewall/pkg/fsm"
 )
 
-const stepsEnv = "STATEWALL_CHAIN_STEPS"
+const (
+	stepsEnv = "STATEWALL_CHAIN_STEPS"
+	cpuEnv   = "STATEWALL_CHAIN_CPU"
+)
 
 func TestMain(m *testing.M) {
 	if steps := os.Getenv(stepsEnv); steps != "" {
+		pinToCPU(os.Getenv(cpuEnv))
 		runSteps(strings.Split(steps, ","))
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+// pinToCPU keeps every step on one thread bound to cpu ("" = no pinning).
+func pinToCPU(cpu string) {
+	if cpu == "" {
+		return
+	}
+	n, err := strconv.Atoi(cpu)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bad %s %q\n", cpuEnv, cpu)
+		os.Exit(2)
+	}
+	runtime.LockOSThread()
+	var set unix.CPUSet
+	set.Set(n)
+	if err := unix.SchedSetaffinity(0, &set); err != nil {
+		fmt.Fprintf(os.Stderr, "pin to cpu %d: %v\n", n, err)
+		os.Exit(2)
+	}
 }
 
 // runSteps issues the syscalls the hooks observe. Their results do not matter:
@@ -155,6 +180,23 @@ func TestChain(t *testing.T) {
 		if !slices.Equal(got, want) {
 			logRunCounts(t)
 			t.Fatalf("states = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("detected on every CPU", func(t *testing.T) {
+		var set unix.CPUSet
+		if err := unix.SchedGetaffinity(0, &set); err != nil {
+			t.Fatalf("sched_getaffinity: %v", err)
+		}
+		for cpu := 0; cpu < 1024; cpu++ {
+			if !set.IsSet(cpu) {
+				continue
+			}
+			t.Setenv(cpuEnv, strconv.Itoa(cpu))
+			if got := h.run(t, "socket", "setns", "mount", "execve"); !reached(got, "compromised") {
+				logRunCounts(t)
+				t.Errorf("cpu %d: states = %v, want compromised", cpu, got)
+			}
 		}
 	})
 
