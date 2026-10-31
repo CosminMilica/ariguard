@@ -17,3 +17,9 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 100
+
+[tool.coverage.run]
+# ingest_attack.py fetches the ATT&CK STIX bundle over the network and writes the technique
+# catalog — an IO entry-point script, not unit-testable without mocking the whole fetch; it is
+# exercised functionally by `make ingest`.
+omit = ["ariguard_compiler/ingest_attack.py"]
