@@ -6,13 +6,13 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 ## Phase 0 — Spike
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` BPF-0.1 | Minimal kprobe program that compiles to a loadable object | — | `cargo build --release` emits a BPF object |
-| `[ ]` BPF-0.2 | Define maps with libbpf-compatible BTF so the Go loader can read them | BPF-0.1 | Go loader (`AGT-0.2`) reads a value written by the program |
+| `[x]` BPF-0.1 | Minimal kprobe program that compiles to a loadable object | — | `cargo build --release` emits a BPF object |
+| `[x]` BPF-0.2 | Define maps with libbpf-compatible BTF so the Go loader can read them | BPF-0.1 | Go loader (`AGT-0.2`) reads a value written by the program |
 
 ## Phase 1 — Passive FSM
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[~]` BPF-1.0 | ABI v2 types in `statewall-common` (hooks, `Binding`, `HookBindings`, `Dims`, `AuditRecord`, capacities) | — | Go mirror passes; Rust compiles in the VM |
+| `[x]` BPF-1.0 | ABI v2 types in `statewall-common` (hooks, `Binding`, `HookBindings`, `Dims`, `AuditRecord`, capacities) | — | Go mirror passes; Rust compiles in the VM |
 | `[ ]` BPF-1.1 | `SW_STATE`: preallocated `LRU_HASH` keyed by `cgroup_id` (D5) | BPF-0.2 | state persists across syscalls for one workload |
 | `[ ]` BPF-1.2 | `SW_TRANSITIONS`, `SW_BINDINGS`, `SW_DIMS` maps | BPF-1.0 | agent can populate all three |
 | `[ ]` BPF-1.3 | Zero-allocation FSM engine (lookup, advance, write-back) | BPF-1.1, BPF-1.2 | no heap/stack growth; passes verifier |
@@ -23,8 +23,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 | `[ ]` BPF-1.8 | State expiry: reset to `normal` after `window_ns` without progress (D4) | BPF-1.3 | stale chains do not accumulate |
 | `[ ]` BPF-1.9 | Cover the new mount API (`fsopen`/`fsmount`/`move_mount`) as mount hooks | BPF-1.4 | default util-linux `mount` (no `LIBMOUNT_FORCE_MOUNT2`) raises `host_mount` |
 
-> BPF-1.0: written on the host; the Go mirror (`pkg/fsm`) passes the size/offset test.
-> Flip to `[x]` once `cargo build` succeeds in the VM.
+> Phase 0 gate (VM, aya-ebpf 0.3.0, bpf-linker 0.12.0): BPF-0.1 is a tracepoint
+> (`sw_execve`), not a kprobe, per D1. All six contract maps are BTF maps; the agent
+> loads them, writes SW_TRANSITIONS/SW_BINDINGS/SW_DIMS and reads `AuditRecord`s
+> from SW_AUDIT. BPF-1.0: `cargo build --release` succeeds in the VM.
 
 ## Phase 2 — Synchronous mitigation
 | ID | Task | Depends | Done when |

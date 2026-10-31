@@ -26,6 +26,18 @@ cat /sys/kernel/btf/vmlinux >/dev/null && echo "BTF ok"
 grep -o 'bpf' /sys/kernel/security/lsm   # bpf must be listed
 ```
 
+### Access from the host (kubectl / Lens)
+
+The kind API server listens on `127.0.0.1:16443` in the VM; Lima forwards it to the
+host. Export the kubeconfig once per cluster creation:
+
+```sh
+make kubeconfig          # writes ~/.kube/statewall-dev.yaml
+KUBECONFIG=~/.kube/statewall-dev.yaml kubectl get nodes
+```
+
+In Lens: *Add Cluster → from kubeconfig file* and pick `~/.kube/statewall-dev.yaml`.
+
 ### Tear down
 
 ```sh

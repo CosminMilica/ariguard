@@ -163,12 +163,10 @@ number of processes" curve should be **flat** — that flat line is the headline
 | Local dev / demo | **Linux VM** (Lima / multipass) + **kind** single-node cluster |
 | Datasets | ADFA-LD / LID-DS + synthetic scripted attacks |
 
-> **Design note (first thing to validate).** The eBPF objects are authored in Rust
-> (`aya-ebpf`) but loaded by a Go agent (`cilium/ebpf`). These are two loader ecosystems
-> with different map/BTF conventions, so **map-ABI compatibility across the toolchain
-> boundary is the first engineering spike**. If it proves impractical, the fallback is to
-> keep the node loader in Rust (Aya's own userspace loader) and limit Go to the cluster
-> control plane. The agent ↔ control-plane boundary is a stable gRPC API regardless.
+> **Design note.** The eBPF objects are authored in Rust (`aya-ebpf`) but loaded by a Go
+> agent (`cilium/ebpf`). The phase 0 gate confirmed this works unchanged with BTF-style
+> maps; the shared layouts live in `bpf/statewall-common` and are mirrored in `pkg/fsm`
+> with size/offset tests. See [docs/architecture.md](docs/architecture.md).
 
 ---
 

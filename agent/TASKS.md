@@ -6,9 +6,14 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 ## Phase 0 — Spike
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` AGT-0.1 | Load the Rust-built BPF object via `cilium/ebpf` | BPF-0.1 | object loads without ABI errors |
-| `[ ]` AGT-0.2 | Attach the kprobe and read one map value | AGT-0.1, BPF-0.2 | value round-trips kernel→user |
-| `[ ]` AGT-0.3 | Decide binding strategy (bpf2go vs BTF-generated structs) | AGT-0.2 | documented decision + working bindings |
+| `[x]` AGT-0.1 | Load the Rust-built BPF object via `cilium/ebpf` | BPF-0.1 | object loads without ABI errors |
+| `[x]` AGT-0.2 | Attach the kprobe and read one map value | AGT-0.1, BPF-0.2 | value round-trips kernel→user |
+| `[x]` AGT-0.3 | Decide binding strategy (bpf2go vs BTF-generated structs) | AGT-0.2 | documented decision + working bindings |
+
+AGT-0.1/0.2: verified in the VM; `sw_execve` attached, audit records stream as JSON; no loader changes needed.
+AGT-0.3: hand-mirrored structs in `pkg/fsm` with size/offset tests, no bpf2go (the object is Rust).
+cilium/ebpf checks every Put against the map's value size, and the BTF maps carry the Rust types
+(`bpftool map dump` pretty-prints them).
 
 ## Phase 1 — Load, maps, telemetry
 | ID | Task | Depends | Done when |

@@ -17,11 +17,12 @@
 `bpf/statewall-common` is the single source of truth for map key/value layouts and the
 state/event/action enums. The Go mirror in `pkg/fsm` must match it byte-for-byte.
 
-**Open decision (phase 0):** the eBPF object is authored in Rust (aya-ebpf) but loaded by
-a Go agent (cilium/ebpf). Map/BTF conventions differ across these toolchains — validating
-that the Go loader can consume the Rust-built object (and read its maps) is the first
-engineering spike. Fallback: keep the node loader in Rust (Aya) and limit Go to the
-cluster control plane.
+**Resolved (phase 0 gate):** the Go agent (cilium/ebpf v0.22) loads the Rust object
+(aya-ebpf 0.3, bpf-linker 0.12) unchanged. Maps are BTF-style (`#[btf_map]`, `.maps`
+section), so bpftool and cilium/ebpf see typed keys and values, and every `Put` is checked
+against the map's value size. The Go structs stay hand-mirrored in `pkg/fsm`, guarded by
+size/offset tests (bpf2go does not apply to a Rust object). Linker flags `--btf` and
+`--disable-expand-memcpy-in-order` are required; see [bpf/README.md](../bpf/README.md).
 
 ## Data flow
 

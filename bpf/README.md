@@ -14,8 +14,17 @@ pre-allocated maps sized at load time.
 ## Build
 
 ```sh
-cargo build --release          # produces the BPF object under target/
+cargo build --release          # target/bpfel-unknown-none/release/statewall
+make build-bpf                 # same, copied to bin/statewall.bpf.o
 ```
 
 Requires a nightly toolchain with `rust-src` (see `rust-toolchain.toml`) and
-`bpf-linker` (`cargo install bpf-linker`).
+`bpf-linker` (the dev VM installs the upstream static build; `cargo install` needs a
+matching shared libLLVM). `.cargo/config.toml` sets the
+`bpfel-unknown-none` target, `build-std = ["core"]` and the linker flags:
+
+- `--btf`: emit BTF; maps are BTF-style (`#[btf_map]`, `.maps` section) so
+  cilium/ebpf sees their key/value types.
+- `--disable-expand-memcpy-in-order`: lets LLVM inline small `memset`s. Without
+  it, zeroing struct fields becomes a call to the global `memset` from
+  compiler-builtins, which the verifier rejects.

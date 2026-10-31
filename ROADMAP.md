@@ -42,8 +42,8 @@ De-risk the single biggest unknown first: the Rust-authored eBPF ↔ Go-loader A
 - Go loader attaches it and reads a map (`AGT-0.1`, `AGT-0.2`); binding strategy decided (`AGT-0.3`).
 - Go ABI mirror + size-assertion test (`PKG-0.1`, `PKG-0.2`).
 - proto code-gen pipeline (`PROTO-0.1`).
-- **Gate:** if the ABI boundary is impractical, switch the node loader to Rust/Aya (see
-  [docs/architecture.md](docs/architecture.md)) before Phase 1.
+- **Gate: passed.** The Go agent loads the Rust object unchanged (BTF maps), writes the
+  policy maps and streams `AuditRecord`s from the ring buffer. No Rust loader fallback.
 
 ### Phase 1 — Passive FSM (detection only)
 The core systems contribution. Design decisions D1–D8, the kernel object contract and

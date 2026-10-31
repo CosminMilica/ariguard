@@ -28,73 +28,96 @@ containerd:
   system: false
   user: false
 
+# Lima runs every provision script on every boot, so each one is guarded to be
+# idempotent and cheap after the first run.
 provision:
-  # Enable the BPF LSM at boot. CONFIG_BPF_LSM=y is not enough: `bpf` must be in
-  # the active LSM list. This edits the kernel cmdline; a reboot is required
-  # (handled by `make dev-up`, which restarts the VM after first provision).
+  # Enable the BPF LSM. CONFIG_BPF_LSM=y is not enough: `bpf` must be in the active
+  # LSM list. The cloud image sets the cmdline in grub.d/50-cloudimg-settings.cfg,
+  # which overrides /etc/default/grub, so append from a later grub.d file.
+  # Takes effect after a reboot (`make dev-up` restarts the VM once).
   - mode: system
     script: |
       #!/bin/bash
       set -euo pipefail
-      if ! grep -q 'lsm=.*bpf' /proc/cmdline; then
-        sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)"/\1 lsm=landlock,lockdown,yama,integrity,apparmor,bpf"/' /etc/default/grub
+      CFG=/etc/default/grub.d/99-statewall-lsm.cfg
+      LINE='GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} lsm=landlock,lockdown,yama,integrity,apparmor,bpf"'
+      if [ "$(cat "$CFG" 2>/dev/null)" != "$LINE" ]; then
+        echo "$LINE" > "$CFG"
         update-grub
-        echo "BPF LSM added to kernel cmdline — reboot required."
       fi
 
-  # System packages for eBPF / Rust / general builds.
+  # System packages for eBPF / Rust / general builds. bpftool comes from linux-tools.
   - mode: system
     script: |
       #!/bin/bash
       set -euo pipefail
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update
-      apt-get install -y --no-install-recommends \
-        build-essential clang llvm pkg-config libelf-dev zlib1g-dev \
-        linux-tools-common linux-tools-generic bpftool \
-        docker.io ca-certificates curl git unzip
-      usermod -aG docker "$(id -un 1000 2>/dev/null || echo ubuntu)" || true
-      systemctl enable --now docker
+      if ! command -v docker >/dev/null || ! command -v clang >/dev/null; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y --no-install-recommends \
+          build-essential clang llvm pkg-config libelf-dev zlib1g-dev \
+          linux-tools-common linux-tools-generic \
+          docker.io ca-certificates curl git unzip jq zstd
+        systemctl enable --now docker
+      fi
+      usermod -aG docker "{{.User}}"
 
-  # Go, kind, kubectl, buf, protoc plugins (system-wide under /usr/local).
+  # Go, kind, kubectl, buf (system-wide under /usr/local).
   - mode: system
     script: |
       #!/bin/bash
       set -euo pipefail
       ARCH="$(dpkg --print-architecture)"  # arm64 | amd64
       GO_VERSION=1.27.3
-      curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
-      ln -sf /usr/local/go/bin/go /usr/local/bin/go
-      ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
-      KIND_ARCH="$ARCH"; [ "$ARCH" = "amd64" ] && KIND_ARCH="amd64"
-      curl -fsSL -o /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-${KIND_ARCH}"
-      chmod +x /usr/local/bin/kind
-      curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.31.0/bin/linux/${ARCH}/kubectl"
-      chmod +x /usr/local/bin/kubectl
-      BUF_ARCH="$(uname -m)"
-      curl -fsSL -o /usr/local/bin/buf "https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-${BUF_ARCH}"
-      chmod +x /usr/local/bin/buf
+      if [ "$(/usr/local/go/bin/go env GOVERSION 2>/dev/null)" != "go${GO_VERSION}" ]; then
+        rm -rf /usr/local/go
+        curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
+        ln -sf /usr/local/go/bin/go /usr/local/bin/go
+        ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+      fi
+      if [ ! -x /usr/local/bin/kind ]; then
+        curl -fsSL -o /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-${ARCH}"
+        chmod +x /usr/local/bin/kind
+      fi
+      if [ ! -x /usr/local/bin/kubectl ]; then
+        curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.31.0/bin/linux/${ARCH}/kubectl"
+        chmod +x /usr/local/bin/kubectl
+      fi
+      if [ ! -x /usr/local/bin/buf ]; then
+        curl -fsSL -o /usr/local/bin/buf "https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-$(uname -m)"
+        chmod +x /usr/local/bin/buf
+      fi
 
-  # Rust toolchain (per-user) with the eBPF target support.
+  # Rust nightly + bpf-linker, protoc plugins (per-user).
+  # bpf-linker is the upstream static build: `cargo install` needs a shared libLLVM
+  # matching its LLVM version, which Ubuntu 24.04 does not ship.
   - mode: user
     script: |
       #!/bin/bash
       set -euo pipefail
-      if ! command -v rustup >/dev/null; then
+      if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
       fi
-      source "$HOME/.cargo/env"
+      . "$HOME/.cargo/env"
       rustup component add rust-src rustfmt clippy
-      cargo install bpf-linker
-      export PATH="/usr/local/go/bin:$PATH"
-      go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-      go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+      BPF_LINKER_VERSION=0.12.0
+      if ! bpf-linker --version 2>/dev/null | grep -q "$BPF_LINKER_VERSION"; then
+        curl -fsSL "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-$(uname -m)-unknown-linux-musl.tar.zst" \
+          | tar --zstd -x -C "$HOME/.cargo/bin" bpf-linker
+      fi
+      export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+      command -v protoc-gen-go >/dev/null || go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+      command -v protoc-gen-go-grpc >/dev/null || go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+      grep -q 'go/bin' "$HOME/.profile" || echo 'export PATH="$HOME/go/bin:$PATH"' >> "$HOME/.profile"
 
 probes:
   - script: |
       #!/bin/bash
       set -eux -o pipefail
-      command -v go >/dev/null || exit 1
-      command -v kind >/dev/null || exit 1
-      test -f /sys/kernel/btf/vmlinux || exit 1
-    hint: "Toolchain or BTF not ready; check `limactl shell statewall` and provisioning logs."
+      command -v docker >/dev/null
+      command -v clang >/dev/null
+      command -v go >/dev/null
+      command -v kind >/dev/null
+      test -x "$HOME/.cargo/bin/bpf-linker"
+      test -f /sys/kernel/btf/vmlinux
+    hint: "Toolchain not ready; see /var/log/cloud-init-output.log inside the VM."
