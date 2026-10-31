@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/CosminMilica/ariguard/agent/internal/audit"
 	"github.com/CosminMilica/ariguard/agent/internal/audit/ringbuf"
 	"github.com/CosminMilica/ariguard/agent/internal/loader"
@@ -27,6 +29,7 @@ import (
 	"github.com/CosminMilica/ariguard/agent/internal/podsync/podmap"
 	"github.com/CosminMilica/ariguard/agent/internal/policy"
 	"github.com/CosminMilica/ariguard/agent/internal/policy/kmap"
+	"github.com/CosminMilica/ariguard/agent/internal/sink"
 	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
@@ -47,6 +50,7 @@ func run(log *slog.Logger) error {
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig for pod names (empty: in-cluster config)")
 	enforce := flag.Bool("enforce", false, "kill on matching kill actions in pod cgroups (default: detect only)")
 	metricsAddr := flag.String("metrics-addr", "", `Prometheus listen address such as ":9102" (empty: disabled)`)
+	sinkURL := flag.String("sink-url", "", `console base URL such as "http://console:8080" (empty: disabled)`)
 	flag.Parse()
 	if *objectPath == "" || *bundlePath == "" {
 		flag.Usage()
@@ -76,7 +80,8 @@ func run(log *slog.Logger) error {
 	}
 
 	var names audit.Names
-	if err := applyBundle(maps, &names, *bundlePath, *enforce); err != nil {
+	bundle, err := applyBundle(maps, &names, *bundlePath, *enforce)
+	if err != nil {
 		return err
 	}
 	log.Info("policy applied", "bundle", *bundlePath, "enforce", *enforce)
@@ -88,6 +93,23 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	var snk *sink.Sink
+	if *sinkURL != "" {
+		snk = sink.New(*sinkURL, sink.Registration{
+			Node:           sink.NodeName(os.Getenv),
+			Kernel:         kernelRelease(),
+			Enforce:        *enforce,
+			HooksAttached:  obj.HooksAttached(),
+			HooksTotal:     int(fsm.NumHooks),
+			AuditRingBytes: int(obj.Maps.Audit.MaxEntries()),
+			MetricsAddr:    sink.AdvertiseAddr(*metricsAddr, os.Getenv),
+		}, log)
+		snk.SetBundle(sink.RulesFromBundle(bundle))
+		snk.Register(ctx)
+		out = io.MultiWriter(out, snk)
+	}
+	node := sink.NodeName(os.Getenv)
+
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -97,10 +119,13 @@ func run(log *slog.Logger) error {
 			case <-ctx.Done():
 				return
 			case <-hup:
-				if err := applyBundle(maps, &names, *bundlePath, *enforce); err != nil {
+				b, err := applyBundle(maps, &names, *bundlePath, *enforce)
+				if err != nil {
 					log.Error("policy reload failed", "bundle", *bundlePath, "err", err)
 					continue
 				}
+				snk.SetBundle(sink.RulesFromBundle(b))
+				snk.Register(ctx)
 				log.Info("policy reloaded", "bundle", *bundlePath)
 			}
 		}
@@ -119,12 +144,23 @@ func run(log *slog.Logger) error {
 		defer wg.Done()
 		podsync.Run(ctx, podmap.Map{M: obj.Maps.Pods}, pods, podSyncInterval, log)
 	}()
+	if snk != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Info("pushing to console", "url", *sinkURL)
+			snk.Run(ctx)
+		}()
+	}
 	if *metricsAddr != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			log.Info("serving metrics", "addr", *metricsAddr)
-			if err := metrics.Serve(ctx, *metricsAddr, metricmap.Reader{M: obj.Maps.Metrics}); err != nil {
+			if err := metrics.Serve(ctx, *metricsAddr, metricmap.Reader{
+				M: obj.Maps.Metrics, Pods: obj.Maps.Pods, State: obj.Maps.State,
+				Names: &names, Resolver: pods, Node: node,
+			}); err != nil {
 				log.Error("metrics server", "err", err)
 				stop()
 			}
@@ -137,20 +173,28 @@ func run(log *slog.Logger) error {
 	return err
 }
 
-func applyBundle(m policy.Maps, names *audit.Names, path string, enforce bool) error {
+func applyBundle(m policy.Maps, names *audit.Names, path string, enforce bool) (fsm.Bundle, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read bundle: %w", err)
+		return fsm.Bundle{}, fmt.Errorf("read bundle: %w", err)
 	}
 	b, err := fsm.UnmarshalBundle(data)
 	if err != nil {
-		return fmt.Errorf("decode bundle %s: %w", path, err)
+		return fsm.Bundle{}, fmt.Errorf("decode bundle %s: %w", path, err)
 	}
 	if err := policy.Apply(m, b, policy.WithEnforce(enforce)); err != nil {
-		return fmt.Errorf("apply bundle %s: %w", path, err)
+		return fsm.Bundle{}, fmt.Errorf("apply bundle %s: %w", path, err)
 	}
 	names.Store(b.Meta)
-	return nil
+	return *b, nil
+}
+
+func kernelRelease() string {
+	var u unix.Utsname
+	if err := unix.Uname(&u); err != nil {
+		return ""
+	}
+	return unix.ByteSliceToString(u.Release[:])
 }
 
 func openOutput(path string) (io.Writer, func(), error) {

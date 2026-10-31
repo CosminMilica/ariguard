@@ -9,6 +9,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "ariguard-common"
+version = "0.1.0"
+
+[[package]]
+name = "ariguard-ebpf"
+version = "0.1.0"
+dependencies = [
+ "ariguard-common",
+ "aya-ebpf",
+]
+
+[[package]]
 name = "aya-build"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,18 +210,6 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
-]
-
-[[package]]
-name = "ariguard-common"
-version = "0.1.0"
-
-[[package]]
-name = "ariguard-ebpf"
-version = "0.1.0"
-dependencies = [
- "aya-ebpf",
- "ariguard-common",
 ]
 
 [[package]]

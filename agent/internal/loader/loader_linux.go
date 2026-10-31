@@ -119,6 +119,9 @@ func (o *Object) Attach() error {
 	return nil
 }
 
+// HooksAttached returns the number of attached hook programs.
+func (o *Object) HooksAttached() int { return len(o.links) }
+
 // Close detaches all links and releases the collection.
 func (o *Object) Close() error {
 	var errs []error

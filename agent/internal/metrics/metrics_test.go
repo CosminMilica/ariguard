@@ -79,3 +79,35 @@ func TestServeShutsDown(t *testing.T) {
 		t.Fatalf("serve: %v", err)
 	}
 }
+
+func TestFormatWorkloads(t *testing.T) {
+	got := FormatWorkloads([]Workload{
+		{Pod: "web", Namespace: "prod", Node: "n1", Comm: "nginx", Rule: "escape", State: 2},
+		{Pod: "db", Namespace: "prod", Node: "n1", Comm: "pg", State: 9},
+	})
+	for _, want := range []string{
+		"# TYPE ariguard_workload_state gauge\n",
+		`ariguard_workload_state{pod="web",namespace="prod",node="n1",comm="nginx",rule="escape"} 2` + "\n",
+		`ariguard_workload_state{pod="db",namespace="prod",node="n1",comm="pg",rule=""} 4` + "\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+}
+
+type workloadReader struct {
+	fakeReader
+	ws []Workload
+}
+
+func (f workloadReader) Workloads() ([]Workload, error) { return f.ws, nil }
+
+func TestHandlerWorkloads(t *testing.T) {
+	rec := httptest.NewRecorder()
+	r := workloadReader{ws: []Workload{{Pod: "p", Namespace: "n", Node: "x", Comm: "c"}}}
+	Handler(r).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), `ariguard_workload_state{pod="p",namespace="n",node="x",comm="c",rule=""} 0`) {
+		t.Fatalf("body %s", rec.Body)
+	}
+}

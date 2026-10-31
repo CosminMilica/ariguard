@@ -51,7 +51,9 @@ func Stream(ctx context.Context, m *ebpf.Map, w io.Writer, names *audit.Names, p
 			}
 			pod = pods.Lookup(ctx, r.CgroupID)
 		}
-		if err := audit.WriteLine(w, audit.NewEvent(r, names.Load(), pod)); err != nil {
+		ev := audit.NewEvent(r, names.Load(), pod)
+		names.SetComm(ev.CgroupID, ev.Comm)
+		if err := audit.WriteLine(w, ev); err != nil {
 			return fmt.Errorf("write audit event: %w", err)
 		}
 	}

@@ -2,7 +2,6 @@
   <img src="logo.png" alt="AriGuard" width="440">
 </p>
 
-# AriGuard
 
 > **In-kernel, zero-allocation threat mitigation.**
 > AriGuard recognizes *multi-stage* attacks as they unfold inside the Linux kernel and blocks the critical step **synchronously** — before the payload executes.

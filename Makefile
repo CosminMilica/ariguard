@@ -141,6 +141,18 @@ fmt: ## Format all code
 	go fmt ./...
 	cd compiler && ruff format .
 
+console-up: ## Build + run the AriGuard Console (backend+frontend+sqlite) at http://localhost:8080
+	docker compose -f console/docker-compose.yml up --build
+
+console-down: ## Stop the console
+	docker compose -f console/docker-compose.yml down
+
+console-backend: ## Run the console backend locally on :8080 (serves ./public if built)
+	cd console/backend && go run . --addr :8080
+
+console-frontend: ## Run the console frontend dev server (Vite)
+	cd console/frontend && npm install && npm run dev
+
 clean: ## Remove build artifacts
 	cd bpf && cargo clean
 	go clean ./...
