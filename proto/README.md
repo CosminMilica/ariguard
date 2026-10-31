@@ -1,7 +1,7 @@
 # proto — gRPC contract (agent ↔ control-plane)
 
-Source: [ariguard/v1/ariguard.proto](ariguard/v1/ariguard.proto).
-Generated Go lands in `pkg/proto/ariguardv1` (per the `go_package` option).
+Source: [statewall/v1/statewall.proto](statewall/v1/statewall.proto).
+Generated Go lands in `pkg/proto/statewallv1` (per the `go_package` option).
 
 ## Generate
 
@@ -30,4 +30,4 @@ go mod tidy     # adds google.golang.org/protobuf and google.golang.org/grpc
 
 - `buf.yaml` (here) — module config: lint + breaking-change rules.
 - `buf.gen.yaml` (repo root) — plugins and output; `module=` strips the Go module
-  prefix so files land at `pkg/proto/ariguardv1/`.
+  prefix so files land at `pkg/proto/statewallv1/`.

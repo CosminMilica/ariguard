@@ -6,6 +6,14 @@
 // state through its block of AG_TRANSITIONS and emits an AuditRecord. Detection only,
 // no enforcement (that is phase 2, BPF LSM).
 
+use ariguard_common::{
+    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_KILL,
+    ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT,
+    HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT,
+    HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE,
+    HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRANSITIONS, PATH_ANY,
+    PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS, STATE_INITIAL,
+};
 use aya_ebpf::{
     btf_maps::{Array, LruHashMap, PerCpuArray, RingBuf},
     helpers::{
@@ -14,14 +22,6 @@ use aya_ebpf::{
     },
     macros::{btf_map, tracepoint},
     programs::TracePointContext,
-};
-use ariguard_common::{
-    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_KILL,
-    ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT,
-    HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT,
-    HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE,
-    HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRANSITIONS, PATH_ANY,
-    PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS, STATE_INITIAL,
 };
 
 #[unsafe(no_mangle)]
@@ -63,11 +63,8 @@ static AG_TRANSITIONS: Array<Transition, { MAX_TRANSITIONS as usize }> = Array::
 static AG_BINDINGS: Array<HookBindings, { ariguard_common::NUM_HOOKS as usize }> = Array::new();
 
 #[btf_map]
-static AG_STATE: LruHashMap<
-    FsmKey,
-    FsmState,
-    { ariguard_common::MAX_TRACKED_WORKLOADS as usize },
-> = LruHashMap::new();
+static AG_STATE: LruHashMap<FsmKey, FsmState, { ariguard_common::MAX_TRACKED_WORKLOADS as usize }> =
+    LruHashMap::new();
 
 #[btf_map]
 static AG_AUDIT: RingBuf<AuditRecord, AUDIT_RING_BYTES> = RingBuf::new();
