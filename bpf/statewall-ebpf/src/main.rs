@@ -120,11 +120,10 @@ fn prefix_matches(
         return false;
     }
     let buf = unsafe { &*buf };
+    // No early exit on plen: LLVM turns it into `j == min(plen, 64)`, which
+    // pre-6.8 verifiers cannot use to bound j.
     for j in 0..PATTERN_LEN {
-        if j >= plen {
-            break;
-        }
-        if buf[j] != pattern[j] {
+        if j < plen && buf[j] != pattern[j] {
             return false;
         }
     }

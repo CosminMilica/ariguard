@@ -1,5 +1,5 @@
 .PHONY: help dev-up kubeconfig dev-down build build-bpf build-agent build-go build-compiler proto golden deploy load-policy demo-escape test fmt clean \
-	ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-e2e ci-security
+	ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-kernel-host ci-e2e ci-security
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -92,6 +92,9 @@ ci-bpf: build-bpf ## G3: BPF object builds, ABI matches its BTF, instruction bud
 
 ci-kernel: ## G4: load + chain tests on KERNEL in a VM (vimto; needs bin/statewall.bpf.o)
 	$(OBJECT_ENV) vimto -kernel :$(KERNEL) -- go test -tags integration -count=1 -v ./agent/internal/integration
+
+ci-kernel-host: ## G4: load + chain tests on the running kernel (sudo; needs bin/statewall.bpf.o)
+	$(OBJECT_ENV) go test -exec 'sudo -E' -tags integration -count=1 -v ./agent/internal/integration
 
 ci-e2e: build-agent ## G5: Phase 1 exit check on the kind cluster (needs bin/statewall.bpf.o)
 	STATEWALL_OBJECT=$(CURDIR)/$(BPF_OBJECT) testdata/scripts/phase1-exit-check.sh
