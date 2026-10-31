@@ -1,0 +1,13 @@
+[package]
+name = "ariguard-ebpf"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+aya-ebpf = "0.3.0"
+ariguard-common = { path = "../ariguard-common" }
+
+[[bin]]
+name = "ariguard"
+path = "src/main.rs"

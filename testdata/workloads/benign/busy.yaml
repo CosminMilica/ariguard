@@ -4,9 +4,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: busy
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   replicas: 1
   selector:
@@ -16,7 +16,7 @@ spec:
     metadata:
       labels:
         app: busy
-        app.kubernetes.io/part-of: statewall-eval
+        app.kubernetes.io/part-of: ariguard-eval
     spec:
       containers:
         - name: busy

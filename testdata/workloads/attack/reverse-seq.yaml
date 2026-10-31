@@ -5,10 +5,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: reverse-seq
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
     app: reverse-seq
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   restartPolicy: Never
   containers:

@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"unsafe"
 
-	"github.com/CosminMilica/statewall/agent/internal/podmeta"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 func TestRecordSize(t *testing.T) {
@@ -51,7 +52,7 @@ func sample() []byte {
 	le.PutUint32(b[32:], 0)
 	le.PutUint32(b[36:], 1)
 	le.PutUint32(b[40:], fsm.ActionObserve)
-	le.PutUint32(b[44:], 0xdeadbeef)
+	le.PutUint32(b[44:], 0)
 	copy(b[48:], "cat")
 	return b
 }
@@ -86,17 +87,17 @@ func line(t *testing.T, r fsm.AuditRecord, m *fsm.Meta, pod podmeta.Info) string
 func TestWriteLine(t *testing.T) {
 	r, _ := Decode(sample())
 	m := meta()
-	pod := podmeta.Info{Namespace: "statewall-eval", Pod: "container-escape", Container: "attacker"}
+	pod := podmeta.Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker"}
 	want := `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"openat",` +
-		`"rule":"container-escape","event":"runtime_socket_open","from":"normal","to":"suspicious","action":"observe",` +
-		`"namespace":"statewall-eval","pod":"container-escape","container":"attacker"}` + "\n"
+		`"rule":"container-escape","event":"runtime_socket_open","from":"normal","to":"suspicious","action":"observe","enforced":false,` +
+		`"namespace":"ariguard-eval","pod":"container-escape","container":"attacker"}` + "\n"
 	if got := line(t, r, &m, pod); got != want {
 		t.Fatalf("line = %s\nwant   %s", got, want)
 	}
 
 	r.Hook, r.Event, r.ToState, r.Action = 99, 9, 11, 13
 	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"99",` +
-		`"rule":"container-escape","event":"9","from":"normal","to":"11","action":"13",` +
+		`"rule":"container-escape","event":"9","from":"normal","to":"11","action":"13","enforced":false,` +
 		`"namespace":"","pod":"","container":""}` + "\n"
 	if got := line(t, r, &m, podmeta.Info{}); got != want {
 		t.Fatalf("line = %s\nwant   %s", got, want)
@@ -104,7 +105,7 @@ func TestWriteLine(t *testing.T) {
 
 	r.Rule = 3
 	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"99",` +
-		`"rule":"3","event":"9","from":"0","to":"11","action":"13",` +
+		`"rule":"3","event":"9","from":"0","to":"11","action":"13","enforced":false,` +
 		`"namespace":"","pod":"","container":""}` + "\n"
 	if got := line(t, r, &m, podmeta.Info{}); got != want {
 		t.Fatalf("unknown rule: line = %s\nwant   %s", got, want)
@@ -158,4 +159,13 @@ func TestNamesReload(t *testing.T) {
 		}
 	}
 	wg.Wait()
+}
+
+func TestEnforcedFlag(t *testing.T) {
+	r, _ := Decode(sample())
+	r.Action, r.Enforced = fsm.ActionKill, 1
+	got := line(t, r, nil, podmeta.Info{})
+	if !strings.Contains(got, `"action":"kill","enforced":true,`) {
+		t.Fatalf("line = %s", got)
+	}
 }

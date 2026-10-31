@@ -1,6 +1,6 @@
 package fsm
 
-// Mirror of bpf/statewall-common (ABI v3). Struct and field names must match the
+// Mirror of bpf/ariguard-common (ABI v3). Struct and field names must match the
 // Rust ones (case and underscores aside): btf_test.go compares them with the object.
 
 // StateInitial is the state every rule starts in.
@@ -76,7 +76,15 @@ const (
 	MaxTrackedWorkloads uint32 = 16384
 )
 
-// FsmKey keys SW_STATE; ID is the cgroup id or the tgid per the rule's scope. 16 bytes.
+// AG_METRICS per-CPU counter indices.
+const (
+	MetricEvents       uint32 = 0
+	MetricKills        uint32 = 1
+	MetricAuditDropped uint32 = 2
+	NumMetrics         uint32 = 3
+)
+
+// FsmKey keys AG_STATE; ID is the cgroup id or the tgid per the rule's scope. 16 bytes.
 type FsmKey struct {
 	ID   uint64
 	Rule uint32
@@ -111,14 +119,14 @@ type Binding struct {
 	Pattern  [PatternLen]byte
 }
 
-// HookBindings is the SW_BINDINGS value, indexed by hook. 840 bytes.
+// HookBindings is the AG_BINDINGS value, indexed by hook. 840 bytes.
 type HookBindings struct {
 	Count   uint32
 	_       uint32
 	Entries [MaxBindingsPerHook]Binding
 }
 
-// Rule is one SW_RULES entry; its cells start at TransBase in SW_TRANSITIONS. 32 bytes.
+// Rule is one AG_RULES entry; its cells start at TransBase in AG_TRANSITIONS. 32 bytes.
 type Rule struct {
 	NumStates    uint32
 	NumEvents    uint32
@@ -129,13 +137,14 @@ type Rule struct {
 	WindowNs     uint64
 }
 
-// Policy is SW_POLICY[0]; NumRules = 0 disables evaluation. 8 bytes.
+// Policy is AG_POLICY[0]; NumRules = 0 disables evaluation. Enforce = 1 applies
+// mitigations, 0 is detect-only (dry run). 8 bytes.
 type Policy struct {
 	NumRules uint32
-	_        uint32
+	Enforce  uint32
 }
 
-// AuditRecord is emitted to SW_AUDIT on a state change or a non-observe action. 64 bytes.
+// AuditRecord is emitted to AG_AUDIT on a state change or a non-observe action. 64 bytes.
 type AuditRecord struct {
 	CgroupID  uint64
 	TsNs      uint64
@@ -146,6 +155,6 @@ type AuditRecord struct {
 	FromState uint32
 	ToState   uint32
 	Action    uint32
-	_         uint32
+	Enforced  uint32
 	Comm      [CommLen]byte
 }

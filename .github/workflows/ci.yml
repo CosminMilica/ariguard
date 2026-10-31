@@ -113,7 +113,7 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: bpf-object
-          path: bin/statewall.bpf.o
+          path: bin/ariguard.bpf.o
           retention-days: 7
           if-no-files-found: error
 
@@ -155,13 +155,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
-      - uses: actions/download-artifact@v8.0.2
         with:
-          name: bpf-object
-          path: bin
+          python: "true"
+          bpf-linker: "true"
+      - name: Install bpftool
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends bpftool \
+            || sudo apt-get install -y -q --no-install-recommends \
+                 linux-tools-common "linux-tools-$(uname -r)"
+          bpftool version
       - uses: helm/kind-action@v1.15.1
         with:
-          cluster_name: statewall-dev
+          cluster_name: ariguard-dev
           config: deploy/kind/cluster.yaml
       - name: Phase 1 exit check
         env:
@@ -172,13 +178,28 @@ jobs:
       - name: Diagnostics
         if: failure()
         run: |
+          set +e
+          node=ariguard-dev-control-plane
+          echo "::group::host + cgroup"
           uname -a
           stat -fc 'cgroup fs: %T' /sys/fs/cgroup
           echo "runner cgroup: $(cat /proc/self/cgroup)"
           docker info --format 'docker cgroup: {{.CgroupDriver}} v{{.CgroupVersion}}'
-          docker exec statewall-dev-control-plane cat /proc/1/cgroup
-          node_pid="$(docker inspect -f '{{.State.Pid}}' statewall-dev-control-plane)"
-          echo "kind node cgroup: $(cat "/proc/${node_pid}/cgroup")"
+          echo "::endgroup::"
+          echo "::group::bpftool on runner"
+          command -v bpftool; bpftool version; sudo -n bpftool map show 2>&1 | head
+          echo "::endgroup::"
+          echo "::group::kind node capabilities (what the agent can mount)"
+          docker exec "$node" sh -c 'ls -l /sys/kernel/btf/vmlinux; echo ---; ls -ld /sys/kernel/debug /sys/kernel/debug/tracing /sys/kernel/tracing /sys/fs/bpf 2>&1; echo ---; mount | grep -E "bpf|tracefs|debugfs|/sys " ' 2>&1
+          echo "::endgroup::"
+          echo "::group::agent pods + daemonset"
+          kubectl -n ariguard-system get pods -o wide
+          kubectl -n ariguard-system describe ds ariguard-agent | tail -40
+          echo "::endgroup::"
+          echo "::group::agent logs (current + previous)"
+          kubectl -n ariguard-system logs -l app.kubernetes.io/name=ariguard-agent --tail=200
+          kubectl -n ariguard-system logs -l app.kubernetes.io/name=ariguard-agent --previous --tail=200
+          echo "::endgroup::"
       - uses: actions/upload-artifact@v7.0.2
         if: failure()
         with:

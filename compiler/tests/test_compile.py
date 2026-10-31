@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from statewall_compiler import cli
-from statewall_compiler.emit import (
+from ariguard_compiler import cli
+from ariguard_compiler.emit import (
     BINDING,
     HEADER,
     MAGIC,
@@ -21,7 +21,7 @@ from statewall_compiler.emit import (
     emit_bundle,
     rule_files,
 )
-from statewall_compiler.schema import (
+from ariguard_compiler.schema import (
     ARG_ANY,
     HOOK_VALUES,
     HOOKS,
@@ -190,7 +190,7 @@ def test_deterministic():
 
 def test_cli(tmp_path, monkeypatch, capsys):
     out = tmp_path / "policy.bin"
-    argv = ["statewall-compile", "--input", str(RULES / "reverse-shell.yml")]
+    argv = ["ariguard-compile", "--input", str(RULES / "reverse-shell.yml")]
     argv += ["--input", str(RULES / "container-escape.yml"), "--out", str(out)]
     monkeypatch.setattr(sys, "argv", argv)
     cli.main()

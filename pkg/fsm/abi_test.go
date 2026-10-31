@@ -5,7 +5,7 @@ import (
 	"unsafe"
 )
 
-// Guards against ABI drift vs bpf/statewall-common #[repr(C)] layouts.
+// Guards against ABI drift vs bpf/ariguard-common #[repr(C)] layouts.
 func TestStructSizes(t *testing.T) {
 	cases := []struct {
 		name string

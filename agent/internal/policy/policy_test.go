@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 type recorder struct {
@@ -101,10 +101,10 @@ func TestApplyOrdering(t *testing.T) {
 		t.Fatalf("ops = %v\nwant %v", r.ops, want)
 	}
 	if r.policies[0] != (fsm.Policy{}) {
-		t.Errorf("first SW_POLICY write = %+v, want zero", r.policies[0])
+		t.Errorf("first AG_POLICY write = %+v, want zero", r.policies[0])
 	}
 	if last := r.policies[len(r.policies)-1]; last != b.Policy() || last.NumRules != 2 {
-		t.Errorf("last SW_POLICY write = %+v, want %+v", last, b.Policy())
+		t.Errorf("last AG_POLICY write = %+v, want %+v", last, b.Policy())
 	}
 }
 
@@ -122,7 +122,7 @@ func TestApplyStopsOnWriteError(t *testing.T) {
 		}
 		published := failAt == n
 		if !published && len(r.policies) != 1 {
-			t.Errorf("failAt %d: SW_POLICY writes = %+v, want only the disabling one", failAt, r.policies)
+			t.Errorf("failAt %d: AG_POLICY writes = %+v, want only the disabling one", failAt, r.policies)
 		}
 	}
 }
@@ -145,5 +145,27 @@ func TestApplyInvalidBundleWritesNothing(t *testing.T) {
 				t.Errorf("ops = %v, want none", r.ops)
 			}
 		})
+	}
+}
+
+func TestApplyEnforce(t *testing.T) {
+	b := testBundle()
+	skipIfStub(t, b)
+	for _, enforce := range []bool{false, true} {
+		r := &recorder{}
+		if err := Apply(r, b, WithEnforce(enforce)); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+		if r.policies[0] != (fsm.Policy{}) {
+			t.Errorf("enforce=%v: first write = %+v, want zero", enforce, r.policies[0])
+		}
+		last := r.policies[len(r.policies)-1]
+		want := b.Policy()
+		if enforce {
+			want.Enforce = 1
+		}
+		if last != want {
+			t.Errorf("enforce=%v: published %+v, want %+v", enforce, last, want)
+		}
 	}
 }

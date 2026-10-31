@@ -1,27 +1,35 @@
 #!/usr/bin/env bash
-# Exit check (EVAL-1.3, EVAL-1.5.4): run benign (incl. twins) + attack workloads under the agent, assert on the audit stream.
+# Exit check (EVAL-1.3, EVAL-1.5.4, EVAL-2.3): run benign (incl. twins) + attack workloads under the agent, assert on the audit stream.
+# ARIGUARD_ENFORCE=1: agent runs with --enforce; attackers must be killed, benign pods untouched.
 # Runs inside the Lima VM against the kind cluster; needs passwordless sudo.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-STATEWALL_AGENT="${STATEWALL_AGENT:-$REPO_ROOT/bin/statewall-agent}"
-STATEWALL_OBJECT="${STATEWALL_OBJECT:-$REPO_ROOT/bpf/target/bpfel-unknown-none/release/statewall}"
-STATEWALL_BUNDLE="${STATEWALL_BUNDLE:-$REPO_ROOT/testdata/golden/policy.bin}"
+ARIGUARD_AGENT="${ARIGUARD_AGENT:-$REPO_ROOT/bin/ariguard-agent}"
+ARIGUARD_OBJECT="${ARIGUARD_OBJECT:-$REPO_ROOT/bpf/target/bpfel-unknown-none/release/ariguard}"
+ARIGUARD_BUNDLE="${ARIGUARD_BUNDLE:-$REPO_ROOT/testdata/golden/policy.bin}"
 if [[ -n "${SUDO_USER:-}" ]]; then
     INVOKER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
 else
     INVOKER_HOME="$HOME"
 fi
-STATEWALL_KUBECONFIG="${STATEWALL_KUBECONFIG:-$INVOKER_HOME/.kube/config}"
-KUBE_CONTEXT="${KUBE_CONTEXT:-kind-statewall-dev}"
-NAMESPACE="statewall-eval"
+ARIGUARD_KUBECONFIG="${ARIGUARD_KUBECONFIG:-$INVOKER_HOME/.kube/config}"
+KUBE_CONTEXT="${KUBE_CONTEXT:-kind-ariguard-dev}"
+NAMESPACE="ariguard-eval"
 BENIGN_SECONDS="${BENIGN_SECONDS:-30}"
 ATTACK_SECONDS="${ATTACK_SECONDS:-15}"
 READY_TIMEOUT="${READY_TIMEOUT:-300s}"
+ARIGUARD_ENFORCE="${ARIGUARD_ENFORCE:-0}"
+AGENT_MODE_ARGS=()
+CHECKER_MODE_ARGS=()
+if [[ "$ARIGUARD_ENFORCE" == "1" ]]; then
+    AGENT_MODE_ARGS=(--enforce)
+    CHECKER_MODE_ARGS=(--enforce)
+fi
 
 WORKLOADS="$REPO_ROOT/testdata/workloads"
 CHECKER="$REPO_ROOT/testdata/scripts/check_audit.py"
-WORKDIR="$(mktemp -d -t statewall-exit-check.XXXXXX)"
+WORKDIR="$(mktemp -d -t ariguard-exit-check.XXXXXX)"
 AUDIT="$WORKDIR/audit.jsonl"
 AGENT_LOG="$WORKDIR/agent.log"
 AGENT_PIDFILE="$WORKDIR/agent.pid"
@@ -29,7 +37,7 @@ AGENT_PID=""
 
 ATTACKS=(container-escape container-escape-connect reverse-seq fileless-seq)
 
-kc() { kubectl --kubeconfig "$STATEWALL_KUBECONFIG" --context "$KUBE_CONTEXT" "$@"; }
+kc() { kubectl --kubeconfig "$ARIGUARD_KUBECONFIG" --context "$KUBE_CONTEXT" "$@"; }
 log() { echo "[exit-check] $*" >&2; }
 
 agent_alive() { [[ -n "$AGENT_PID" ]] && ps -p "$AGENT_PID" >/dev/null 2>&1; }
@@ -48,6 +56,7 @@ stop_agent() {
     AGENT_PID=""
 }
 
+# shellcheck disable=SC2329,SC2317  # cleanup and its body run via the EXIT trap, not a direct call
 cleanup() {
     stop_agent
     kc delete namespace "$NAMESPACE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
@@ -56,16 +65,16 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-for f in "$STATEWALL_AGENT" "$STATEWALL_OBJECT" "$STATEWALL_BUNDLE" "$STATEWALL_KUBECONFIG"; do
+for f in "$ARIGUARD_AGENT" "$ARIGUARD_OBJECT" "$ARIGUARD_BUNDLE" "$ARIGUARD_KUBECONFIG"; do
     [[ -f "$f" ]] || { log "missing: $f"; exit 2; }
 done
 kc get nodes >/dev/null
 
-log "starting agent (audit: $AUDIT)"
+log "starting agent (enforce=$ARIGUARD_ENFORCE, audit: $AUDIT)"
 # shellcheck disable=SC2016,SC2024
 sudo -n sh -c 'echo $$ > "$1"; shift; exec "$@"' sh "$AGENT_PIDFILE" \
-    "$STATEWALL_AGENT" --object "$STATEWALL_OBJECT" --bundle "$STATEWALL_BUNDLE" \
-    --kubeconfig "$STATEWALL_KUBECONFIG" >"$AUDIT" 2>"$AGENT_LOG" &
+    "$ARIGUARD_AGENT" --object "$ARIGUARD_OBJECT" --bundle "$ARIGUARD_BUNDLE" \
+    --kubeconfig "$ARIGUARD_KUBECONFIG" "${AGENT_MODE_ARGS[@]}" >"$AUDIT" 2>"$AGENT_LOG" &
 sleep 3
 AGENT_PID="$(cat "$AGENT_PIDFILE" 2>/dev/null || true)"
 if ! agent_alive; then
@@ -113,7 +122,49 @@ for a in "${ATTACKS[@]}"; do
     kc -n "$NAMESPACE" logs "pod/$a" >&2 || true
 done
 
+BENIGN_PODS="$(kc -n "$NAMESPACE" get pod -o name | sed 's|^pod/||' | grep -vxF -f <(printf '%s\n' "${ATTACKS[@]}") || true)"
+POD_FAILURES=0
+if [[ "$ARIGUARD_ENFORCE" == "1" ]]; then
+    log "asserting attackers killed and benign pods untouched"
+    for a in "${ATTACKS[@]}"; do
+        deadline=$((SECONDS + 30))
+        phase=""
+        while ((SECONDS <= deadline)); do
+            phase="$(kc -n "$NAMESPACE" get pod "$a" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+            [[ "$phase" == "Failed" ]] && break
+            sleep 2
+        done
+        if [[ "$phase" == "Failed" ]]; then
+            log "ok: attacker $a phase Failed"
+        else
+            log "FAIL: attacker $a phase ${phase:-unknown}, expected Failed"
+            kc -n "$NAMESPACE" describe pod "$a" >&2 || true
+            POD_FAILURES=$((POD_FAILURES + 1))
+        fi
+    done
+fi
+for b in $BENIGN_PODS; do
+    phase="$(kc -n "$NAMESPACE" get pod "$b" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    restarts="$(kc -n "$NAMESPACE" get pod "$b" -o jsonpath='{range .status.containerStatuses[*]}{.restartCount}{"\n"}{end}' 2>/dev/null | awk '{s+=$1} END {print s+0}')"
+    if [[ "$phase" == "Failed" || "$restarts" != "0" ]]; then
+        log "FAIL: benign pod $b disturbed (phase ${phase:-unknown}, restarts $restarts)"
+        kc -n "$NAMESPACE" describe pod "$b" >&2 || true
+        POD_FAILURES=$((POD_FAILURES + 1))
+    fi
+done
+if ! agent_alive; then
+    log "FAIL: agent died during the run"
+    POD_FAILURES=$((POD_FAILURES + 1))
+fi
+kc get nodes --no-headers >&2 || POD_FAILURES=$((POD_FAILURES + 1))
+
 log "stopping agent"
 stop_agent
 
-python3 "$CHECKER" --expectations "$REPO_ROOT/testdata/expectations.json" "$AUDIT"
+rc=0
+python3 "$CHECKER" --expectations "$REPO_ROOT/testdata/expectations.json" "${CHECKER_MODE_ARGS[@]}" "$AUDIT" || rc=$?
+if ((POD_FAILURES > 0)); then
+    log "$POD_FAILURES pod/agent assertion(s) failed"
+    exit 1
+fi
+exit "$rc"

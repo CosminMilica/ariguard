@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ariguard-agent
+  namespace: ariguard-system
+  labels:
+    app.kubernetes.io/name: ariguard-agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ariguard-agent
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ariguard-agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9102"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: ariguard-agent
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: agent
+          image: ariguard-agent:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - --object=/opt/ariguard/ariguard.bpf.o
+            - --bundle=/opt/ariguard/policy.bin
+            - --metrics-addr=:9102
+          ports:
+            - name: metrics
+              containerPort: 9102
+          # The metrics server binds only after the policy is applied and the
+          # programs are attached, so a successful probe means the agent is
+          # actually enforcing — not merely that the container started.
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            failureThreshold: 20
+          securityContext:
+            privileged: true
+            capabilities:
+              add: [BPF, PERFMON, SYS_ADMIN, SYS_RESOURCE, KILL]
+          volumeMounts:
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+              readOnly: true
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+            - name: tracefs
+              mountPath: /sys/kernel/tracing
+              readOnly: true
+            - name: debugfs
+              mountPath: /sys/kernel/debug
+              readOnly: true
+      volumes:
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+        - name: tracefs
+          hostPath:
+            path: /sys/kernel/tracing
+        - name: debugfs
+          hostPath:
+            path: /sys/kernel/debug

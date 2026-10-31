@@ -241,7 +241,7 @@ func (b *Bundle) validateBinding(bd Binding) error {
 	return nil
 }
 
-// GroupBindings groups bindings by hook into SW_BINDINGS values.
+// GroupBindings groups bindings by hook into AG_BINDINGS values.
 func (b *Bundle) GroupBindings() ([NumHooks]HookBindings, error) {
 	var out [NumHooks]HookBindings
 	for _, bd := range b.Bindings {
@@ -258,7 +258,7 @@ func (b *Bundle) GroupBindings() ([NumHooks]HookBindings, error) {
 	return out, nil
 }
 
-// Policy returns the SW_POLICY value that activates this bundle.
+// Policy returns the AG_POLICY value that activates this bundle.
 func (b *Bundle) Policy() Policy { return Policy{NumRules: uint32(len(b.Rules))} }
 
 // At returns rule's transition for (state, event).

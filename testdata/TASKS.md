@@ -26,10 +26,17 @@ rule finding: the container runtime (containerd/shim/CNI, a host cgroup) walked 
 during pod setup — fixed by scoping `namespace_manipulation` to mount/pid/user namespaces
 (setns/unshare `mask_any 0x30020000`), which excludes the runtime's network/cgroup/uts work.
 
+## Phase 2 — Enforce mode
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[x]` EVAL-2.1 | Checker A4 + `--enforce`: `enforced` only on attackers' `kill` records; enforce requires attackers' terminal records enforced, dry-run requires none | AGT-2.* | self-test green in both modes; verified by ci-unit (self-test) and ci-e2e (both modes) |
+| `[x]` EVAL-2.2 | v2 fixtures with the `enforced` key: dry-run pass, enforce pass, and one failing fixture per A4 reason | EVAL-2.1 | each fails for exactly its assertion; verified by ci-unit self-test |
+| `[~]` EVAL-2.3 | `phase2-exit-check.sh` (`ARIGUARD_ENFORCE=1`): attackers Failed, benign/host untouched, checker `--enforce` | EVAL-2.1, AGT-2.* | PASS on kind in the VM (authored; not yet run) |
+
 ## Phase 4 — Benchmarks & results
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` EVAL-4.1 | Latency harness: syscall overhead (ns) with/without Statewall | AGT-4.1 | reproducible latency numbers |
+| `[ ]` EVAL-4.1 | Latency harness: syscall overhead (ns) with/without AriGuard | AGT-4.1 | reproducible latency numbers |
 | `[ ]` EVAL-4.2 | Memory vs. process-count measurement (the flat curve) | BPF-4.1 | flat-line result produced |
 | `[ ]` EVAL-4.3 | Efficacy: detection rate + false-positive rate | EVAL-1.*, BPF-2.* | precision/recall per kill chain |
 | `[ ]` EVAL-4.4 | Head-to-head vs Falco/Tetragon (reaction timing) | DEP-4.1 | sync (ns) vs async (ms) shown |

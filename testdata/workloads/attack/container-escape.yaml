@@ -8,10 +8,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: container-escape
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
     app: container-escape
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   restartPolicy: Never
   hostPID: true
@@ -36,10 +36,8 @@ spec:
           sleep 1
           echo "step 3: mount"
           mount -t tmpfs tmpfs /mnt || echo "mount failed"
-          echo "step 4: execve"
-          /bin/true
-          echo "chain done"
-          exec sleep infinity
+          echo "step 4: execve (terminal step runs in the main process so a kill fails the pod)"
+          exec /bin/true
       volumeMounts:
         - name: containerd-sock
           mountPath: /run/containerd/containerd.sock

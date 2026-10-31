@@ -105,6 +105,22 @@ func TestWalk(t *testing.T) {
 	}
 }
 
+func TestIsPod(t *testing.T) {
+	root := t.TempDir()
+	inoPod := mkdir(t, root, "kubepods.slice/kubepods-pod1.slice/cri-containerd-"+idA+".scope")
+	inoRuntime := mkdir(t, root, "system.slice/containerd.service")
+	r, _, _ := newResolver(t, root)
+	if !r.IsPod(inoPod) {
+		t.Errorf("IsPod(pod container cgroup) = false, want true")
+	}
+	if r.IsPod(inoRuntime) {
+		t.Errorf("IsPod(containerd.service) = true, want false")
+	}
+	if r.IsPod(1 << 62) {
+		t.Errorf("IsPod(unknown cgroup) = true, want false")
+	}
+}
+
 func pod(ns, name string, statuses ...corev1.ContainerStatus) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
@@ -117,7 +133,7 @@ func TestLookup(t *testing.T) {
 	inoA := mkdir(t, root, "kubepods.slice/kubepods-pod1.slice/cri-containerd-"+idA+".scope")
 	inoHost := mkdir(t, root, "system.slice/sshd.service")
 
-	p := pod("statewall-eval", "container-escape",
+	p := pod("ariguard-eval", "container-escape",
 		corev1.ContainerStatus{Name: "attacker", ContainerID: "containerd://" + idA})
 	p.Status.InitContainerStatuses = []corev1.ContainerStatus{{Name: "init", ContainerID: "containerd://" + idB}}
 	p.Status.EphemeralContainerStatuses = []corev1.ContainerStatus{{Name: "debug", ContainerID: "containerd://" + idC}}
@@ -129,7 +145,7 @@ func TestLookup(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	want := Info{Namespace: "statewall-eval", Pod: "container-escape", Container: "attacker"}
+	want := Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker"}
 	if got := r.Lookup(ctx, inoA); got != want {
 		t.Fatalf("Lookup = %+v, want %+v", got, want)
 	}
@@ -259,5 +275,17 @@ func TestCgroupPath(t *testing.T) {
 		if got := cgroupPath(tc.root, tc.path); got != tc.want {
 			t.Errorf("cgroupPath(%q, %q) = %q, want %q", tc.root, tc.path, got, tc.want)
 		}
+	}
+}
+
+func TestPodCgroups(t *testing.T) {
+	root := t.TempDir()
+	pod := mkdir(t, root, "kubepods.slice/kubepods-pod1.slice/cri-containerd-"+idA+".scope")
+	mkdir(t, root, "system.slice/docker-"+idB+".scope")
+	mkdir(t, root, "kubepods.slice/kubepods-pod1.slice")
+	r, _, _ := newResolver(t, root)
+	got := r.PodCgroups()
+	if len(got) != 1 || got[0] != pod {
+		t.Fatalf("PodCgroups = %v, want [%d]", got, pod)
 	}
 }

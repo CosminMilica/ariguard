@@ -1,6 +1,6 @@
 # control-plane — cluster operator (Go)
 
-A Kubernetes operator (controller-runtime) that manages Statewall across the fleet:
+A Kubernetes operator (controller-runtime) that manages AriGuard across the fleet:
 
 - **apis/v1alpha1** — the `ThreatPolicy` CRD: which FSM / kill chains to enforce and
   how to escalate mitigation.

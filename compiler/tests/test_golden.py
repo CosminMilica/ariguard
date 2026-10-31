@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from statewall_compiler.emit import compile_files, rule_files
+from ariguard_compiler.emit import compile_files, rule_files
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES = ROOT / "compiler" / "rules"

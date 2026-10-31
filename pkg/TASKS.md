@@ -6,7 +6,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked.
 ## Phase 0 — ABI mirror
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[x]` PKG-0.1 | Go mirror of `bpf/statewall-common` (states, events, actions, key/value structs) | — | constants + structs defined in `pkg/fsm` |
+| `[x]` PKG-0.1 | Go mirror of `bpf/ariguard-common` (states, events, actions, key/value structs) | — | constants + structs defined in `pkg/fsm` |
 | `[x]` PKG-0.2 | Size/offset assertion test guarding ABI drift vs the Rust source of truth | PKG-0.1 | test fails if layouts diverge |
 
 ## Phase 1 — Serialization
@@ -24,6 +24,11 @@ Contract: [docs/architecture.md](../docs/architecture.md#phase-15-decisions).
 |---|---|---|---|
 | `[x]` PKG-1.5.1 | Go mirror of ABI v3 + size/offset tests; `btf_test.go` updated to the v3 types and maps | BPF-1.5.1 | `go test ./pkg/...` passes; BTF test passes once the v3 object exists |
 | `[x]` PKG-1.5.2 | Bundle v3: `Marshal`, `UnmarshalBundle`, `Validate`, `GroupBindings`, metadata; replaces v2; golden test on the v3 policy | PKG-1.5.1, CMP-1.5.2 | Go decodes `testdata/golden/policy.bin` and checks every rule |
+
+## Phase 2 — Mitigation (branch `feat/mitigation`)
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[ ]` PKG-2.1 | Mirror ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, `AG_PODS`/`AG_METRICS` map names + metric indices; extend size/offset + btf tests | — | `go test ./pkg/...` passes; btf test covers the new fields and maps |
 
 ## Phase 3 — Generated proto
 | ID | Task | Depends | Done when |

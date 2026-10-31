@@ -6,10 +6,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: fragments
-  namespace: statewall-eval
+  namespace: ariguard-eval
   labels:
     app: fragments
-    app.kubernetes.io/part-of: statewall-eval
+    app.kubernetes.io/part-of: ariguard-eval
 spec:
   restartPolicy: Always
   containers:

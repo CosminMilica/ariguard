@@ -3,7 +3,7 @@ package hooks
 import (
 	"testing"
 
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 func TestNames(t *testing.T) {

@@ -12,15 +12,15 @@ import (
 )
 
 // objectPath returns the built BPF object. The test skips when it is missing,
-// unless STATEWALL_REQUIRE_OBJECT is set (CI).
+// unless ARIGUARD_REQUIRE_OBJECT is set (CI).
 func objectPath(t *testing.T) string {
 	t.Helper()
-	path := os.Getenv("STATEWALL_OBJECT")
+	path := os.Getenv("ARIGUARD_OBJECT")
 	if path == "" {
-		path = filepath.Join("..", "..", "bin", "statewall.bpf.o")
+		path = filepath.Join("..", "..", "bin", "ariguard.bpf.o")
 	}
 	if _, err := os.Stat(path); err != nil {
-		if os.Getenv("STATEWALL_REQUIRE_OBJECT") != "" {
+		if os.Getenv("ARIGUARD_REQUIRE_OBJECT") != "" {
 			t.Fatalf("BPF object: %v (build with `make build-bpf`)", err)
 		}
 		t.Skipf("BPF object %s not built, skipping", path)
@@ -100,12 +100,14 @@ func TestMapCapacitiesMatchObject(t *testing.T) {
 		keySize    uint32
 		valueSize  uint32
 	}{
-		{"SW_STATE", ebpf.LRUHash, MaxTrackedWorkloads, 16, 16},
-		{"SW_TRANSITIONS", ebpf.Array, MaxTransitions, 4, 8},
-		{"SW_BINDINGS", ebpf.Array, NumHooks, 4, 840},
-		{"SW_RULES", ebpf.Array, MaxRules, 4, 32},
-		{"SW_POLICY", ebpf.Array, 1, 4, 8},
-		{"SW_SCRATCH", ebpf.PerCPUArray, 1, 4, PatternLen},
+		{"AG_STATE", ebpf.LRUHash, MaxTrackedWorkloads, 16, 16},
+		{"AG_TRANSITIONS", ebpf.Array, MaxTransitions, 4, 8},
+		{"AG_BINDINGS", ebpf.Array, NumHooks, 4, 840},
+		{"AG_RULES", ebpf.Array, MaxRules, 4, 32},
+		{"AG_POLICY", ebpf.Array, 1, 4, 8},
+		{"AG_SCRATCH", ebpf.PerCPUArray, 1, 4, PatternLen},
+		{"AG_PODS", ebpf.LRUHash, MaxTrackedWorkloads, 8, 1},
+		{"AG_METRICS", ebpf.PerCPUArray, NumMetrics, 4, 8},
 	}
 	for _, c := range cases {
 		m, ok := spec.Maps[c.name]
@@ -119,7 +121,7 @@ func TestMapCapacitiesMatchObject(t *testing.T) {
 				c.typ, c.maxEntries, c.keySize, c.valueSize)
 		}
 	}
-	if m, ok := spec.Maps["SW_AUDIT"]; !ok || m.Type != ebpf.RingBuf {
-		t.Errorf("SW_AUDIT missing or not a ring buffer")
+	if m, ok := spec.Maps["AG_AUDIT"]; !ok || m.Type != ebpf.RingBuf {
+		t.Errorf("AG_AUDIT missing or not a ring buffer")
 	}
 }

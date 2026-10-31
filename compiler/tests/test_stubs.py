@@ -2,7 +2,7 @@
 
 import pytest
 
-from statewall_compiler import mine, sigma
+from ariguard_compiler import mine, sigma
 
 
 def test_sigma_not_implemented():

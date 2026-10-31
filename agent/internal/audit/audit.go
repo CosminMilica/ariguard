@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/CosminMilica/statewall/agent/internal/hooks"
-	"github.com/CosminMilica/statewall/agent/internal/podmeta"
-	"github.com/CosminMilica/statewall/pkg/fsm"
+	"github.com/CosminMilica/ariguard/agent/internal/hooks"
+	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // RecordSize is the wire size of fsm.AuditRecord.
@@ -53,6 +53,8 @@ func (n *Names) Load() *fsm.Meta {
 // Pods resolves a cgroup id to pod metadata.
 type Pods interface {
 	Lookup(ctx context.Context, cgroupID uint64) podmeta.Info
+	// IsPod reports whether the cgroup belongs to a Kubernetes pod container.
+	IsPod(cgroupID uint64) bool
 }
 
 // Decode parses one little-endian ring buffer sample.
@@ -77,6 +79,7 @@ type Event struct {
 	From      string `json:"from"`
 	To        string `json:"to"`
 	Action    string `json:"action"`
+	Enforced  bool   `json:"enforced"`
 	Namespace string `json:"namespace"`
 	Pod       string `json:"pod"`
 	Container string `json:"container"`
@@ -104,6 +107,7 @@ func NewEvent(r fsm.AuditRecord, meta *fsm.Meta, pod podmeta.Info) Event {
 		From:      number(r.FromState),
 		To:        number(r.ToState),
 		Action:    ActionName(r.Action),
+		Enforced:  r.Enforced != 0,
 		Namespace: pod.Namespace,
 		Pod:       pod.Pod,
 		Container: pod.Container,

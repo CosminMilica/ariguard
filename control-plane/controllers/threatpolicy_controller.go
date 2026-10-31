@@ -1,2 +1,2 @@
-// Package controllers reconciles Statewall CRDs and distributes policies to agents.
+// Package controllers reconciles AriGuard CRDs and distributes policies to agents.
 package controllers

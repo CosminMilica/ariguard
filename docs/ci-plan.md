@@ -34,7 +34,7 @@ The repo is public, so everything runs on free GitHub tiers. No paid runners or 
 | Gate | Target | What it proves | Blocking |
 |---|---|---|---|
 | G0 hygiene | `ci-hygiene` | `cargo fmt --check`, `clippy -D warnings`, `gofmt`, `golangci-lint`, `ruff check/format`, `buf lint`, `shellcheck` | yes |
-| G1 unit | `ci-unit` | `cargo test -p statewall-common`, `go test ./...`, `pytest`, `check_audit.py --self-test` | yes |
+| G1 unit | `ci-unit` | `cargo test -p ariguard-common`, `go test ./...`, `pytest`, `check_audit.py --self-test` | yes |
 | G2 contract | `ci-contract` | golden regenerated = committed, `go mod tidy -diff`, `buf breaking` vs `origin/main` | yes |
 | G3 bpf | `ci-bpf` | object builds; Go mirror = object BTF (sizes, offsets, names, map types/capacities); program/section contract; ≤ 512 insns per program | yes |
 | G4 kernel | `ci-kernel KERNEL=…`, `ci-kernel-host` | object loads + attaches on 5.15, 6.1, 6.6, 6.12, 7.0, stable (VM) and the runner kernel; chain → `compromised`, fragments, out of order, expiry, hot swap | yes |
@@ -76,10 +76,10 @@ bpf/deny.toml                 cargo-deny policy
 Makefile                      ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel ci-e2e ci-security
 pkg/fsm/btf_test.go           G3: ABI vs object BTF
 agent/internal/loader/object_test.go       G3: program contract + insn budget
-agent/internal/integration/chain_test.go   G4: chains in a child cgroup, asserts SW_AUDIT
+agent/internal/integration/chain_test.go   G4: chains in a child cgroup, asserts AG_AUDIT
 ```
 
-Object tests skip when `bin/statewall.bpf.o` is missing; CI sets `STATEWALL_REQUIRE_OBJECT=1`
+Object tests skip when `bin/ariguard.bpf.o` is missing; CI sets `ARIGUARD_REQUIRE_OBJECT=1`
 so they fail instead.
 
 ## Tasks

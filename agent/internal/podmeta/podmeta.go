@@ -96,6 +96,20 @@ func (r *Resolver) Lookup(ctx context.Context, cgroupID uint64) Info {
 	return info
 }
 
+// IsPod reports whether cgroupID is a Kubernetes pod container cgroup. It is
+// resolved from the cgroup tree walk alone (no API call), so it does not depend
+// on pod-name resolution being ready.
+func (r *Resolver) IsPod(cgroupID uint64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	path, ok := r.paths[cgroupID]
+	if !ok && r.due(r.walkedAt) {
+		r.walk()
+		path, ok = r.paths[cgroupID]
+	}
+	return ok && IsPodCgroup(path)
+}
+
 func (r *Resolver) due(last time.Time) bool {
 	return last.IsZero() || r.now().Sub(last) >= refreshInterval
 }
@@ -189,4 +203,23 @@ func stripRuntime(id string) string {
 		return id[i+3:]
 	}
 	return id
+}
+
+// PodCgroups walks the cgroup tree and returns the ids of all pod container cgroups.
+func (r *Resolver) PodCgroups() []uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.walk()
+	ids := make([]uint64, 0, len(r.paths))
+	for id, path := range r.paths {
+		if IsPodCgroup(path) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// IsPodCgroup reports whether path is a Kubernetes container cgroup.
+func IsPodCgroup(path string) bool {
+	return strings.Contains(path, "kubepods") && ContainerID(path) != ""
 }
