@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package statewall.v1;
+
+option go_package = "github.com/CosminMilica/statewall/pkg/proto/statewallv1";
+
+// Statewall is the contract between the cluster control plane and the node agents.
+service Statewall {
+  // PushPolicy distributes a compiled transition table to an agent.
+  rpc PushPolicy(PushPolicyRequest) returns (PushPolicyResponse);
+
+  // StreamAudit streams kernel audit events from an agent to the control plane.
+  rpc StreamAudit(StreamAuditRequest) returns (stream AuditEvent);
+}
+
+message PushPolicyRequest {
+  string policy_name = 1;
+  bytes transition_table = 2;
+}
+
+message PushPolicyResponse {
+  bool accepted = 1;
+}
+
+message StreamAuditRequest {
+  string node = 1;
+}
+
+message AuditEvent {
+  uint64 cgroup_id = 1;
+  uint32 state = 2;
+  uint32 event = 3;
+  uint32 action = 4;
+  uint64 timestamp_ns = 5;
+}

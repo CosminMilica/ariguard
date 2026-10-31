@@ -1,0 +1,12 @@
+[package]
+name = "statewall-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya-ebpf = "0.1"
+statewall-common = { path = "../statewall-common" }
+
+[[bin]]
+name = "statewall"
+path = "src/main.rs"

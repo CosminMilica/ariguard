@@ -1,0 +1,10 @@
+[package]
+name = "statewall-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[features]
+# Enable when consumed from user-space Rust (adds aya::Pod impls, std interop).
+user = []

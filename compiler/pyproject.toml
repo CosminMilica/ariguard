@@ -1,0 +1,16 @@
+[project]
+name = "statewall-compiler"
+version = "0.1.0"
+description = "Compile threat intelligence (ATT&CK / Sigma / syscall traces) into Statewall in-kernel FSM transition tables."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+statewall-compile = "statewall_compiler.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100

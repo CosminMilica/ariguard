@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["statewall-ebpf", "statewall-common"]
+
+[profile.release]
+# eBPF requires optimizations; the verifier rejects unoptimized output.
+opt-level = 2
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
