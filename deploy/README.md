@@ -53,6 +53,7 @@ make dev-down            # delete kind cluster, stop & delete the VM
 | `docker/Dockerfile` | agent image: binary + BPF object + policy bundle |
 | `k8s/base/` | namespace, RBAC, agent DaemonSet (detect-only) |
 | `k8s/overlays/detect`, `k8s/overlays/enforce` | enforce overlay appends `--enforce` to the agent args |
+| `k8s/overlays/isolate` | enforce + autonomous isolation: appends `--enforce --isolate=on` |
 | `demo-escape.sh` | container-escape demo: detect-only, then enforce |
 
 The VM mounts `~/work/ariguard` writable; edit on the host, build in the VM. Adjust the

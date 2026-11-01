@@ -38,7 +38,7 @@ The repo is public, so everything runs on free GitHub tiers. No paid runners or 
 | G2 contract | `ci-contract` | golden regenerated = committed, `go mod tidy -diff`, `buf breaking` vs `origin/main` | yes |
 | G3 bpf | `ci-bpf` | object builds; Go mirror = object BTF (sizes, offsets, names, map types/capacities); program/section contract; ≤ 512 insns per program | yes |
 | G4 kernel | `ci-kernel KERNEL=…`, `ci-kernel-host` | object loads + attaches on 5.15, 6.1, 6.6, 6.12, 7.0, stable (VM) and the runner kernel; chain → `compromised`, fragments, out of order, expiry, hot swap | yes |
-| G5 e2e | `ci-e2e` | `phase1-exit-check.sh` on kind, directly on the runner kernel | yes |
+| G5 e2e | `ci-e2e` | `go test ./test/e2e` on kind, directly on the runner kernel: detect + enforce exit checks, plus `TestIsolation` (quarantine label + deny-all NetworkPolicy via the isolate overlay) | yes |
 | G6 security | `ci-security` | `govulncheck`, `cargo deny check`, `pip-audit`, `gitleaks` (full history) | yes |
 | G7 perf | — | latency + memory-vs-process (EVAL-4.1/4.2) | later, nightly only |
 
@@ -77,6 +77,9 @@ Makefile                      ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel
 pkg/fsm/btf_test.go           G3: ABI vs object BTF
 agent/internal/loader/object_test.go       G3: program contract + insn budget
 agent/internal/integration/chain_test.go   G4: chains in a child cgroup, asserts AG_AUDIT
+agent/internal/responder/*_test.go          G1: isolation — every mode, skip guards, mute, idempotency, retry, concurrency, report callback, NetworkPolicy spec (fake clientset, -race)
+console/backend/api/quarantine_test.go      G1: quarantine ingest + read API
+test/e2e/isolation_test.go                  G5: TestIsolation — quarantine label + deny-all NetworkPolicy on attackers, zero benign false positives, via the isolate overlay
 compiler/tests/test_bundle.py              G2: committed full rule bundle (testdata/golden/policy-full.bin, 7 rules, `make bundle`) matches the rule files
 ```
 

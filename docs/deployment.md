@@ -23,8 +23,14 @@ flowchart LR
   usr(["browser"]) --> co
 ```
 
-**Modes** (a Helm value): `detect` observes only, `enforce` kills at the terminal step.
-Policy can be hot-swapped in place (SIGHUP). The full chart and all values are documented in
+**Modes** (Helm values): `detect` observes only, `enforce` kills at the terminal step, and
+`agent.isolate` (default `off`; `off|dryrun|on`) appends `--isolate=<mode>` so that on a confirmed
+terminal mitigation the agent **autonomously quarantines the pod** — it labels it
+`ariguard.io/quarantine=true` and, in mode `on`, applies a namespace-scoped deny-all NetworkPolicy
+(`ariguard-quarantine`); `dryrun` labels only. This needs extra RBAC on the agent ClusterRole
+(`pods: get,patch` and `networking.k8s.io/networkpolicies: get,list,create,update`), which the
+chart and the `deploy/k8s/base/rbac.yaml` base already grant. Policy can be hot-swapped in place
+(SIGHUP). The full chart and all values are documented in
 [deploy/helm/ariguard](../deploy/helm/ariguard/README.md).
 
 ```sh
@@ -75,6 +81,9 @@ ariguard/
 
 - Linux kernel **≥ 5.7** with BTF (`/sys/kernel/btf/vmlinux`); `CONFIG_BPF_LSM=y` with `bpf`
   in `/sys/kernel/security/lsm` for the `-EPERM` deny (kill fallback otherwise).
+- A NetworkPolicy-enforcing CNI (**Cilium/Calico**) for autonomous isolation (`--isolate=on`);
+  kindnet (kind's default) does **not** enforce NetworkPolicy, so on kind the quarantine policy is
+  created but traffic is not actually blocked.
 - Rust toolchain + `bpf-linker`; Go ≥ 1.27; Python ≥ 3.11.
 - macOS dev: a Linux VM (Lima) + kind.
 
@@ -85,7 +94,7 @@ make dev-up                       # Lima VM + kind + kubeconfig
 make golden                       # compiler/rules/*.yml -> testdata/golden/policy.bin
 # in the VM (limactl shell ariguard), from the repo:
 make build-bpf build-agent image kind-load
-kubectl apply -k deploy/k8s/overlays/enforce     # or overlays/console to feed the console
+kubectl apply -k deploy/k8s/overlays/enforce     # or overlays/isolate (--enforce --isolate=on), or overlays/console
 testdata/scripts/phase1-exit-check.sh            # benign + attack workloads, asserted
 ```
 

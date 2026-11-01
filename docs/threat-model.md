@@ -4,6 +4,10 @@
 
 - Detection and **synchronous** mitigation of multi-stage, syscall-observable attack
   chains on a single node (container escape, local privilege escalation).
+- **Autonomous workload isolation**: on a confirmed terminal mitigation (audit `enforced=1`,
+  action `kill`/`deny`) the agent quarantines the offending pod with no operator — a
+  `ariguard.io/quarantine=true` label plus a namespace-scoped deny-all NetworkPolicy — to contain
+  the blast radius (egress, ingress, lateral movement) beyond the in-kernel process kill.
 - Deterministic, bounded overhead with a fixed memory budget.
 
 ## Out of scope (for now)
@@ -38,4 +42,7 @@ before denying or killing anything.
 
 - Kernel ≥ 5.7 with `CONFIG_BPF_LSM=y` and BTF enabled.
 - The agent runs privileged enough to load BPF and attach LSM hooks.
+- Autonomous isolation assumes a NetworkPolicy-enforcing CNI (Cilium/Calico); where the CNI does
+  not enforce NetworkPolicy (e.g. kindnet), the quarantine policy is created but does not block
+  traffic.
 - The control plane and agents trust each other over an authenticated channel.

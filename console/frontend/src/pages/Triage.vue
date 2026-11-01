@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ContainmentBar from '../components/ContainmentBar.vue'
+import QuarantineBadge from '../components/QuarantineBadge.vue'
 import { store, clockNs, toMs, openChainModal, exportIncident, type TriageRow } from '../api'
 
 const stateLabel = (s: string) => (s || '').replace(/_/g, ' ')
@@ -58,7 +59,7 @@ function onExport(e: Event, pod: string) {
             <td class="mono">{{ t.steps }}</td>
             <td class="mono">{{ age(t.started_ts_ns) }}</td>
             <td class="mono dim">{{ clockNs(t.last_ts_ns) }}</td>
-            <td><span :class="outcome(t.outcome).cls">{{ outcome(t.outcome).text }}</span></td>
+            <td><span :class="outcome(t.outcome).cls">{{ outcome(t.outcome).text }}</span><QuarantineBadge v-if="t.quarantined" class="qb" /></td>
             <td class="right"><button class="btn" @click="onExport($event, t.pod)">Export</button></td>
           </tr>
         </tbody>
@@ -69,6 +70,7 @@ function onExport(e: Event, pod: string) {
 
 <style scoped>
 .clickrow { cursor:pointer; }
+.qb { margin-left:8px; vertical-align:middle; }
 .live { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--faint); }
 .live.on { background:var(--crit); box-shadow:0 0 0 0 color-mix(in srgb, var(--crit) 70%, transparent); animation:pulse 1.6s infinite; }
 @keyframes pulse {

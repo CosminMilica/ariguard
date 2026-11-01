@@ -25,6 +25,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chain", a.chain)
 	mux.HandleFunc("GET /api/incidents", a.incidents)
 	mux.HandleFunc("GET /api/triage", a.triage)
+	mux.HandleFunc("GET /api/quarantine", a.quarantine)
 	mux.HandleFunc("GET /api/campaigns", a.campaigns)
 	mux.HandleFunc("GET /api/containment", a.containment)
 	mux.HandleFunc("GET /api/coverage", a.coverage)

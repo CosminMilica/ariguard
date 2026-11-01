@@ -37,6 +37,7 @@ Transport: **push** for audit + register (captures SIGHUP reloads promptly),
 | Severity timeline | audit bucketed by severity over time |
 | Settings (metrics addr, bundle, ring buffer, kernel, enforce) | register |
 | Triage queue, Campaigns, Containment | `/api/triage`, `/api/campaigns`, `/api/containment` over audit |
+| `ISOLATED` badge on Triage / Incidents rows | `quarantined` flag on `/api/triage` and `/api/incidents` ← `/api/quarantine` (`QuarantineBadge.vue`) |
 | Timeline page | audit over time |
 | Coverage page | `/api/coverage` (rules × audit) |
 | Performance page | agent `ariguard_program_run_time_ns_total` / `ariguard_program_runs_total` / `ariguard_bpf_map_bytes` + events/sec |
@@ -56,18 +57,23 @@ control (backend→agent) is a later, separate addition.
 2. Push **audit** batches (`audit.Event` + node + ts) to the sink.
 3. Expose a per-workload gauge in `/metrics` from `AG_PODS`+`AG_STATE`+podmeta
    so scrape yields the full workload table (including `normal` pods).
+4. Push a **quarantine** record (node, namespace, pod, rule, mode, ts) to the
+   sink when the responder isolates a pod (`--isolate`).
 
 ## Backend (Go + SQLite, no cgo)
 
-Ingest: `POST /api/v1/register`, `POST /api/v1/audit`.
+Ingest: `POST /api/v1/register`, `POST /api/v1/audit`, `POST /api/v1/quarantine`.
 Scraper: polls each agent's `/metrics` every ~3s.
 Read API (all accept `?range=15m|1h|24h`): `/api/overview`, `/api/workloads`,
 `/api/events` (also `?rule=&namespace=&node=` filters), `/api/rules`,
 `/api/nodes`, `/api/settings`, `/api/chain?pod=`, `/api/triage`,
-`/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`.
+`/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`,
+`/api/quarantine` (window-filtered, newest first). `/api/triage` and
+`/api/incidents` rows carry a `quarantined` boolean.
 
 SQLite tables: `nodes`, `rules`, `audit_events`, `metric_samples`,
-`workloads`, `mutes`.
+`workloads`, `mutes`, `quarantine` (node, namespace, pod, rule, mode, ts_ns;
+PK node+namespace+pod, upsert latest).
 
 ## File tree
 
@@ -79,12 +85,12 @@ console/
     main.go                   # http server: ingest + scraper + api
     store/ (sqlite.go, schema.sql)
     api/   (overview.go, workloads.go, events.go, rules.go, nodes.go, chain.go)
-    ingest/(register.go, audit.go)
+    ingest/(register.go, audit.go, quarantine.go)
     scrape/(scraper.go, prom.go)
   frontend/
     index.html, vite.config.ts, package.json
     src/ (App.vue, api.ts, pages/{Overview,Triage,Campaigns,Workloads,Events,Timeline,Coverage,Performance,Rules,Nodes,Settings}.vue,
-          components/{Sidebar,Topbar,StatTiles,Chart,Table,Chip,RowMenu,Chain,Feed}.vue)
+          components/{Sidebar,Topbar,StatTiles,Chart,Table,Chip,RowMenu,Chain,Feed,QuarantineBadge}.vue)
 ```
 
 Scaffold backend + frontend from Forge templates, then trim.

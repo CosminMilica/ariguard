@@ -78,3 +78,14 @@ CREATE TABLE IF NOT EXISTS program_stats (
 CREATE TABLE IF NOT EXISTS mutes (
   pod TEXT PRIMARY KEY
 );
+
+CREATE TABLE IF NOT EXISTS quarantine (
+  node TEXT NOT NULL,
+  namespace TEXT NOT NULL DEFAULT '',
+  pod TEXT NOT NULL,
+  rule TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL DEFAULT '',
+  ts_ns INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (node, namespace, pod)
+);
+CREATE INDEX IF NOT EXISTS idx_quarantine_pod ON quarantine(pod);

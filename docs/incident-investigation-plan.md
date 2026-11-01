@@ -11,19 +11,22 @@ Campaigns (blast-radius), Timeline, Coverage (ATT&CK × 16 hooks + blind spots),
 per-incident JSON export (#1–6), with interactive per-rule FSM diagrams and enforcement mix, plus
 read endpoints `/api/triage`, `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`
 and rule/namespace/node filters on `/api/events`. **Tier B #7 (ppid ancestry) and #9 (container
-image/digest) are now captured and shown**; a Process Tree is built from `ppid`. Still open: #8
-(observed argv/path/dst) and Tier C (#10–12).
+image/digest) are now captured and shown**; a Process Tree is built from `ppid`. **Tier C #11
+(autonomous workload isolation) is now shipped as C1** — the agent quarantines the pod on a
+confirmed terminal and the console shows an `ISOLATED` badge. Still open: #8 (observed argv/path/dst),
+#10 (actor correlation, C2) and #12 (lateral-movement graph, C3).
 
-## Enforcement model: process-kill vs pod-isolation (gap)
+## Enforcement model: process-kill vs pod-isolation (closed by C1)
 AriGuard enforces at **process granularity**: `bpf_send_signal(SIGKILL)` kills the task that
 triggered the terminal transition, and LSM `-EPERM` fails the offending syscall. This is instant
 (µs, in-kernel) and is the real enforcement signal — **the audit `enforced` count, not the k8s
 pod phase**. A pod can stay `Running` after a confirmed kill when the malicious code ran in a
 *child* while PID1 lives on (exactly the real threat: a payload injected into a long-lived
 service). Killing the process stops the act; it does **not** evict/quarantine the workload.
-→ The missing layer is **autonomous workload isolation** (see #11): the product, on a confirmed
-terminal, also quarantines the pod (deny-all NetworkPolicy / cordon / evict) — driven by the
-agent, never by an operator clicking.
+→ This missing layer is now shipped as **autonomous workload isolation** (C1, #11): on a confirmed
+terminal the agent's responder also quarantines the pod — labels it `ariguard.io/quarantine=true`
+and, in mode `on`, applies a deny-all NetworkPolicy — driven by the agent, never by an operator
+clicking. Gated `--isolate=off|dryrun|on`, idempotent, skipping system namespaces and muted pods.
 
 ## Design constraints
 - **Autonomous enforcement is the product**, not the console. No manual "kill pod / cordon node"
@@ -77,7 +80,7 @@ agent/internal/podmeta/podmeta.go                           # T9 read image/dige
 | 8 | Observed values (argv / path / dst IP:port) | "The concrete IOC, not just 'predicate matched'" | B | **new kernel fields** |
 | 9 | Container image / digest | "Pin the compromised image across the fleet" | B | agent-only (podmeta) |
 | 10 | Actor correlation (shared IOC) | "Is this the same attacker across pods?" | C | depends on #8/#9 |
-| 11 | **Autonomous workload isolation** | "Kill stops the process — also quarantine the pod" (deny-all NetworkPolicy / cordon / evict, product-driven) | C | agent k8s responder + RBAC |
+| 11 | **Autonomous workload isolation** (shipped, C1) | "Kill stops the process — also quarantine the pod" (deny-all NetworkPolicy / cordon / evict, product-driven) | C | agent k8s responder + RBAC |
 | 11b | Expand autonomous coverage | "Auto-block the chains that only got observed" | C | more hooks/rules + profiles |
 | 12 | Lateral-movement graph (ns→ns) | "Watch the spread" | C | depends on #2/#3 |
 

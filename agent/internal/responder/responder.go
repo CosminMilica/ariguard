@@ -77,6 +77,7 @@ type Responder struct {
 	client kubernetes.Interface
 	mode   Mode
 	muted  func(pod string) bool
+	report func(ns, pod, rule, mode string) // optional: notify the console of a quarantine
 	log    *slog.Logger
 
 	mu   sync.Mutex
@@ -84,11 +85,12 @@ type Responder struct {
 }
 
 // New returns a Responder, or nil when mode is off (the stream then skips reaction entirely).
-func New(client kubernetes.Interface, mode Mode, muted func(string) bool, log *slog.Logger) *Responder {
+// report, when non-nil, is called after a successful quarantine (e.g. to tell the console).
+func New(client kubernetes.Interface, mode Mode, muted func(string) bool, report func(ns, pod, rule, mode string), log *slog.Logger) *Responder {
 	if mode == ModeOff || client == nil {
 		return nil
 	}
-	return &Responder{client: client, mode: mode, muted: muted, log: log, seen: map[string]bool{}}
+	return &Responder{client: client, mode: mode, muted: muted, report: report, log: log, seen: map[string]bool{}}
 }
 
 // React quarantines the pod behind a confirmed terminal mitigation. It returns immediately and
@@ -126,6 +128,9 @@ func (r *Responder) React(ctx context.Context, e audit.Event) {
 			return
 		}
 		r.log.Info("workload quarantined", "pod", key, "rule", rule, "mode", r.mode.String())
+		if r.report != nil {
+			r.report(ns, pod, rule, r.mode.String())
+		}
 	}(e.Namespace, e.Pod, e.Rule)
 }
 

@@ -228,3 +228,47 @@ Added for the incident-investigation console (see
   the pod object and emits `image` / `image_id` per event, which the sink stores.
 
 Mirrored in `pkg/fsm`; the size/offset checks extend to the new `ppid` field.
+
+## Tier C1 — autonomous workload isolation
+
+The in-kernel kill/deny stops the offending **process**; it does not contain the **workload** —
+a pod can keep running (and its egress/ingress open) after a confirmed kill. Tier C1 closes that
+gap with no new kernel work: it is pure agent/control-plane (see
+[docs/tier-c-plan.md](tier-c-plan.md)).
+
+- **Trigger.** The ringbuf audit stream drives an `audit.Reactor` interface. On a confirmed
+  terminal mitigation — an `AuditRecord` with `enforced == 1` and action `kill` or `deny` — the
+  agent's responder (`agent/internal/responder`) quarantines that pod, once. The pod identity is
+  already resolved from `podmeta` (namespace/pod). The reactor runs off the audit drain, so it is
+  non-blocking and never on the kernel data path.
+- **Quarantine action.** The responder labels the pod `ariguard.io/quarantine=true` and adds the
+  annotations `ariguard.io/quarantine-rule` and `ariguard.io/quarantined-at`. In mode `on` it also
+  creates a namespace-scoped deny-all NetworkPolicy named `ariguard-quarantine` (podSelector
+  `ariguard.io/quarantine=true`, `policyTypes: Ingress, Egress`, no ingress/egress rules = deny
+  all). This cuts egress (C2 callback, exfiltration), ingress and lateral movement while leaving
+  the pod running for investigation (isolate-don't-destroy).
+- **Gating + safety.** `--isolate=off|dryrun|on`; `dryrun` labels only, no NetworkPolicy. It is
+  idempotent (a pod is quarantined once), never isolates system namespaces (`kube-system`,
+  `kube-public`, `kube-node-lease`, `ariguard-system`), and honors muted pods — the same allowlist
+  spirit as the F2 pod-gating.
+- **Wiring + reporting.** The agent gets a `--isolate` flag; each quarantine is reported to the
+  console via `POST /api/v1/quarantine`.
+- **CNI caveat.** NetworkPolicy is enforced by the CNI (Cilium/Calico). kindnet (kind's default)
+  does **not** enforce it, so on kind the policy object is created but traffic is not actually
+  blocked.
+
+### RBAC additions
+
+The agent ClusterRole gains `pods: get,patch` and
+`networking.k8s.io/networkpolicies: get,list,create,update`
+(`deploy/k8s/base/rbac.yaml` + Helm). Deploy wiring: Helm value `agent.isolate` (default `"off"`)
+appends `--isolate=<mode>`; a new kustomize overlay `deploy/k8s/overlays/isolate` runs
+`--enforce --isolate=on`.
+
+### Console
+
+Ingest `POST /api/v1/quarantine` writes a `quarantine` table; read `GET /api/quarantine`. A
+`quarantined` boolean is added to `/api/triage` and `/api/incidents`, surfaced as an `ISOLATED`
+badge in the Triage and Incidents UI.
+
+Still next/deferred: C2 (actor correlation on shared IOCs) and C3 (lateral-movement graph).

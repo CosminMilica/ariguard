@@ -57,17 +57,17 @@ func TestParseMode(t *testing.T) {
 }
 
 func TestNewOffIsNil(t *testing.T) {
-	if r := New(fake.NewSimpleClientset(), ModeOff, nil, quiet); r != nil {
+	if r := New(fake.NewSimpleClientset(), ModeOff, nil, nil, quiet); r != nil {
 		t.Error("New with ModeOff should return nil")
 	}
-	if r := New(nil, ModeOn, nil, quiet); r != nil {
+	if r := New(nil, ModeOn, nil, nil, quiet); r != nil {
 		t.Error("New with nil client should return nil")
 	}
 }
 
 func TestReactOnQuarantines(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	r := New(c, ModeOn, nil, quiet)
+	r := New(c, ModeOn, nil, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	waitLabeled(t, c, "ariguard-eval", "attacker")
 	if !hasNetpol(c, "ariguard-eval") {
@@ -77,7 +77,7 @@ func TestReactOnQuarantines(t *testing.T) {
 
 func TestReactDryRunLabelsButNoNetpol(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	r := New(c, ModeDryRun, nil, quiet)
+	r := New(c, ModeDryRun, nil, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	waitLabeled(t, c, "ariguard-eval", "attacker")
 	if hasNetpol(c, "ariguard-eval") {
@@ -98,7 +98,7 @@ func TestReactSkips(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := fake.NewSimpleClientset(newPod(tc.ev.Namespace, "a"))
-			r := New(c, ModeOn, nil, quiet)
+			r := New(c, ModeOn, nil, nil, quiet)
 			r.React(context.Background(), tc.ev)
 			time.Sleep(100 * time.Millisecond)
 			if p, err := c.CoreV1().Pods(tc.ev.Namespace).Get(context.Background(), "a", metav1.GetOptions{}); err == nil && p.Labels[QuarantineLabel] != "" {
@@ -110,7 +110,7 @@ func TestReactSkips(t *testing.T) {
 
 func TestReactRespectsMute(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "muted"))
-	r := New(c, ModeOn, func(pod string) bool { return pod == "muted" }, quiet)
+	r := New(c, ModeOn, func(pod string) bool { return pod == "muted" }, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "muted"))
 	time.Sleep(100 * time.Millisecond)
 	if p, _ := c.CoreV1().Pods("ariguard-eval").Get(context.Background(), "muted", metav1.GetOptions{}); p.Labels[QuarantineLabel] != "" {
@@ -120,7 +120,7 @@ func TestReactRespectsMute(t *testing.T) {
 
 func TestReactIdempotent(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	r := New(c, ModeOn, nil, quiet)
+	r := New(c, ModeOn, nil, nil, quiet)
 	for i := 0; i < 3; i++ {
 		r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	}

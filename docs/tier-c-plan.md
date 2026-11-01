@@ -7,6 +7,10 @@ offending process in-kernel, but the pod keeps running** — the product must al
 workload autonomously, and the console must let an SRE reason about *the actor*, not just single
 incidents.
 
+**Status: C1 shipped.** Autonomous workload isolation is implemented and wired end to end
+(agent responder → RBAC → console). C2 (actor correlation) and C3 (lateral-movement graph) are
+still planned.
+
 ## Design constraints
 - **Autonomous, not operator-driven.** Isolation is the product's action on a confirmed terminal
   (`enforced=1`, action kill/deny), never a console button. Same stance as enforcement.
@@ -38,31 +42,42 @@ console/frontend/src/components/
 
 | # | Feature | Answers | Needs | Tier |
 |---|---------|---------|-------|------|
-| C1 | **Autonomous workload isolation** | "Kill stopped the process — is the pod contained?" | agent responder + k8s client + RBAC; console status | **first** |
-| C2 | Actor correlation (IOC) | "Is this one attacker across many pods?" | backend grouping by image/comm (+ dst IP once B3 lands) + Actors page | second |
-| C3 | Lateral-movement graph | "Watch the spread ns→ns over time" | backend edges from incidents + graph page | third |
+| C1 | **Autonomous workload isolation** | "Kill stopped the process — is the pod contained?" | agent responder + k8s client + RBAC; console status | **shipped** |
+| C2 | Actor correlation (IOC) | "Is this one attacker across many pods?" | backend grouping by image/comm (+ dst IP once B3 lands) + Actors page | next |
+| C3 | Lateral-movement graph | "Watch the spread ns→ns over time" | backend edges from incidents + graph page | deferred |
 
-## C1 — autonomous workload isolation (detail)
+## C1 — autonomous workload isolation (detail, shipped)
 ```
- confirmed terminal (audit enforced=1, kill/deny)  ──►  responder
-   │  pod identity already resolved (podmeta: ns/pod)
+ confirmed terminal (audit enforced=1, kill/deny)  ──►  responder (agent/internal/responder)
+   │  pod identity already resolved (podmeta: ns/pod); runs off the audit drain (non-blocking)
    ▼
  quarantine(pod), once:
-   • apply deny-all NetworkPolicy selecting the pod's label (cut C2 + lateral)
-   • label pod  ariguard.io/quarantine=<rule>,<ts>  (visible, idempotent key)
+   • label pod  ariguard.io/quarantine=true  +  annotations
+     ariguard.io/quarantine-rule, ariguard.io/quarantined-at   (visible, idempotent key)
+   • mode on: create namespace-scoped deny-all NetworkPolicy "ariguard-quarantine"
+     (podSelector ariguard.io/quarantine=true, policyTypes Ingress+Egress, no rules = deny all)
    • dryrun: label only, no NetworkPolicy
    • (opt-in escalation) cordon node / evict pod — off by default
    ▼
- record a quarantine event  ──►  console /api/quarantine + QuarantineBadge
+ report the quarantine  ──►  console POST /api/v1/quarantine (read GET /api/quarantine, ISOLATED badge)
 ```
-- **Where**: the agent (DaemonSet) already has the pod identity and runs per-node. First cut: the
+- **Where**: the agent (DaemonSet) already has the pod identity and runs per-node. Shipped cut: the
   agent applies isolation directly via the in-cluster k8s API (needs RBAC). Later: route the
   decision through the control-plane (CRD/gRPC, Phase 3 B7) for a central policy and audit trail.
-- **Safety**: never quarantine the node's own system namespaces or AriGuard itself (same
-  allowlist spirit as F2 pod-gating); honor the existing `mutes`.
-- **Testing**: e2e — an attacker reaches terminal → assert a deny-all NetworkPolicy exists for its
-  pod and the quarantine label is set; a benign twin is never quarantined; dry-run applies no
-  NetworkPolicy.
+- **Wiring**: an `audit.Reactor` interface is called from the ringbuf audit stream; the agent gets a
+  `--isolate=off|dryrun|on` flag (Helm `agent.isolate`, default `off`; kustomize overlay
+  `deploy/k8s/overlays/isolate` = `--enforce --isolate=on`). RBAC: the agent ClusterRole gained
+  `pods: get,patch` and `networking.k8s.io/networkpolicies: get,list,create,update`
+  (`deploy/k8s/base/rbac.yaml` + Helm).
+- **Safety**: idempotent (a pod is quarantined once); never quarantines system namespaces
+  (`kube-system`, `kube-public`, `kube-node-lease`, `ariguard-system`) or AriGuard itself (same
+  allowlist spirit as F2 pod-gating); honors the existing `mutes`.
+- **Testing**: unit tests (fake clientset, ~94% coverage, pass with `-race`) cover every mode, the
+  skip guards, mute, idempotency, retry-after-API-failure, concurrency, the report callback, the
+  NetworkPolicy spec, the `deny` action, label preservation and multi-namespace; a `sink.Quarantine`
+  test; a backend quarantine ingest/api test; and an e2e `TestIsolation` (asserts the quarantine
+  label + deny-all NetworkPolicy on attackers, and zero benign false positives) via the isolate
+  overlay.
 
 ## Recommended order
 **C1 first** — highest impact on the "1000-service compromise" scenario, pure control-plane

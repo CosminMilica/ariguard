@@ -164,6 +164,12 @@ See [docs/phase-4-eval-plan.md](docs/phase-4-eval-plan.md).
   per-incident JSON export, interactive per-rule FSM diagrams and a process tree from `ppid`.
   Reads the agent's Prometheus `/metrics` + the audit stream. See
   [docs/incident-investigation-plan.md](docs/incident-investigation-plan.md).
+- **Autonomous workload isolation — shipped (Tier C1):** on a confirmed terminal mitigation
+  (`enforced=1`, action `kill`/`deny`) the agent's responder quarantines the offending pod with no
+  operator — a `ariguard.io/quarantine` label/annotations plus a namespace-scoped deny-all
+  NetworkPolicy (`ariguard-quarantine`) — gated `--isolate=off|dryrun|on`, idempotent, never
+  touching system namespaces. Closes the process-kill ≠ pod-isolation gap. Actor correlation (C2)
+  and the lateral-movement graph (C3) are next. See [docs/tier-c-plan.md](docs/tier-c-plan.md).
 
 ## Critical path
 

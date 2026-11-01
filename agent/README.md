@@ -9,6 +9,17 @@ Runs as a DaemonSet, one instance per node. Responsibilities:
 - **audit** — drain the kernel ring buffer and stream events upstream. Each event
   carries `ppid` plus the container image and image_id (from pod metadata); the
   `AuditRecord` wire size is 72 bytes.
+- **responder** (`internal/responder`) — on a confirmed terminal mitigation
+  (enforced kill/deny) quarantines the offending pod. Gated by
+  `--isolate=off|dryrun|on` (default `off`): it labels the pod
+  `ariguard.io/quarantine=true` (plus `quarantine-rule` / `quarantined-at`
+  annotations) and, in mode `on`, creates a namespace deny-all NetworkPolicy
+  `ariguard-quarantine` (podSelector on that label, Ingress+Egress, no rules);
+  `dryrun` applies the label only. It is idempotent, never touches system
+  namespaces or muted pods, and runs non-blocking off the mitigation path. Each
+  quarantine is POSTed to the console (`/api/v1/quarantine`). NetworkPolicy
+  enforcement requires a NetworkPolicy-capable CNI (Cilium/Calico); kindnet does
+  not enforce it.
 
 The agent holds **no decision logic**: detection and enforcement happen in the kernel.
 It is a loader, map manager, and telemetry pump.

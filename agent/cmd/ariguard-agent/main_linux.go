@@ -161,7 +161,9 @@ func run(log *slog.Logger) error {
 		log.Error("invalid --isolate", "err", err)
 		os.Exit(2)
 	}
-	rsp := responder.New(client, isolateMode, nil, log)
+	rsp := responder.New(client, isolateMode, nil, func(ns, pod, rule, mode string) {
+		snk.Quarantine(context.Background(), ns, pod, rule, mode)
+	}, log)
 	if rsp != nil {
 		log.Info("autonomous workload isolation enabled", "mode", isolateMode.String())
 	}
