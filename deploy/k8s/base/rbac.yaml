@@ -11,7 +11,10 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["list", "watch"]
+    verbs: ["list", "watch", "get", "patch"] # patch: label a pod on autonomous quarantine
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "create", "update"] # deny-all NetworkPolicy to isolate a compromised pod
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

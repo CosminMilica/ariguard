@@ -14,6 +14,7 @@ type Handler struct{ DB *sql.DB }
 func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/register", h.Register)
 	mux.HandleFunc("POST /api/v1/audit", h.Audit)
+	mux.HandleFunc("POST /api/v1/quarantine", h.Quarantine)
 }
 
 type registerReq struct {

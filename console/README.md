@@ -35,14 +35,15 @@ ariguard-agent --enforce --metrics-addr :9102 --sink-url http://localhost:8080
 ```
 
 The agent then pushes `register` (node, kernel, rules, enforce) and `audit`
-events; the backend also scrapes the agent's `/metrics` for the counters and
-the per-workload state gauge. Open the console and watch it fill live.
+events, plus a `quarantine` POST whenever the responder isolates a pod
+(`--isolate`); the backend also scrapes the agent's `/metrics` for the counters
+and the per-workload state gauge. Open the console and watch it fill live.
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
-| `backend/` | Go API: ingest (`/api/v1/register`, `/api/v1/audit`), scraper, read API (`/api/*`, incl. `/api/triage`, `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`, and rule/namespace/node filters on `/api/events`), SQLite |
-| `frontend/` | Vue dashboard (Overview, Triage, Campaigns, Workloads, Events, Timeline, Coverage, Performance, Rules, Nodes, Settings) |
+| `backend/` | Go API: ingest (`/api/v1/register`, `/api/v1/audit`, `/api/v1/quarantine`), scraper, read API (`/api/*`, incl. `/api/triage`, `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`, `/api/quarantine`, and rule/namespace/node filters on `/api/events`), SQLite |
+| `frontend/` | Vue dashboard (Overview, Triage, Campaigns, Workloads, Events, Timeline, Coverage, Performance, Rules, Nodes, Settings); an `ISOLATED` badge marks quarantined pods on the Triage and Incidents rows |
 | `Dockerfile` | multi-stage build → one image serving frontend + API |
 | `docker-compose.yml` | one service, a volume for the SQLite file |

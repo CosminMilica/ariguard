@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import QuarantineBadge from '../components/QuarantineBadge.vue'
 import { store, clockNs, openChainModal, type Incident } from '../api'
 
 const outcomeCls = (o: string) => ({ killed: 'killed', blocked: 'blocked' }[(o || '').toLowerCase()] || 'detected')
@@ -14,7 +15,7 @@ const key = (i: Incident) => i.pod + i.started_ts_ns
       <div v-else class="inc-list">
         <article v-for="i in store.incidents" :key="key(i)" class="inc" :class="outcomeCls(i.outcome)">
           <div class="inc-main">
-            <div class="inc-pod mono">{{ i.pod }}</div>
+            <div class="inc-pod mono">{{ i.pod }} <QuarantineBadge v-if="i.quarantined" class="qb" /></div>
             <div class="inc-rule">{{ i.rule }}</div>
             <div class="inc-meta mono">{{ i.namespace }} · {{ i.node }}</div>
           </div>
@@ -30,3 +31,7 @@ const key = (i: Incident) => i.pod + i.started_ts_ns
     </div>
   </section>
 </template>
+
+<style scoped>
+.qb { margin-left:6px; vertical-align:middle; }
+</style>

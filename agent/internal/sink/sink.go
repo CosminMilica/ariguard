@@ -82,6 +82,16 @@ type Event struct {
 	Node string `json:"node"`
 }
 
+// QuarantineEvent is the body of POST /api/v1/quarantine: a pod the responder isolated.
+type QuarantineEvent struct {
+	Node      string `json:"node"`
+	Namespace string `json:"namespace"`
+	Pod       string `json:"pod"`
+	Rule      string `json:"rule"`
+	Mode      string `json:"mode"`
+	TsNs      uint64 `json:"ts_ns"`
+}
+
 // Sink buffers audit events and posts them, with registrations, to a base URL.
 // A nil *Sink is a no-op.
 type Sink struct {
@@ -146,6 +156,20 @@ func (s *Sink) Register(ctx context.Context) {
 	}
 	if err := s.post(ctx, "/api/v1/register", s.Registration()); err != nil {
 		s.log.Warn("sink register", "err", err)
+	}
+}
+
+// Quarantine reports that the responder isolated a pod; failures are logged. Safe on a nil *Sink.
+func (s *Sink) Quarantine(ctx context.Context, ns, pod, rule, mode string) {
+	if s == nil {
+		return
+	}
+	e := QuarantineEvent{
+		Node: s.info.Node, Namespace: ns, Pod: pod, Rule: rule, Mode: mode,
+		TsNs: uint64(s.now().UnixNano()),
+	}
+	if err := s.post(ctx, "/api/v1/quarantine", e); err != nil {
+		s.log.Warn("sink quarantine", "err", err)
 	}
 }
 

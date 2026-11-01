@@ -13,6 +13,10 @@ agent:
   # true appends --deny: refuse deny-action syscalls with -EPERM via BPF LSM where a hook
   # exists (needs enforce and a kernel with BPF LSM active; falls back to kill otherwise).
   deny: false
+  # Autonomous workload isolation on a confirmed terminal mitigation: off|dryrun|on.
+  # "on" applies a deny-all NetworkPolicy to the compromised pod (needs a NetworkPolicy-
+  # enforcing CNI); "dryrun" only labels it. Requires the RBAC in agent-rbac.yaml.
+  isolate: "off"
   # Empty with console.enabled defaults to the in-cluster console backend.
   sinkUrl: ""
   resources:

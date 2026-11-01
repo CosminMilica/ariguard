@@ -59,6 +59,31 @@ func TestRegisterPayload(t *testing.T) {
 	}
 }
 
+func TestQuarantine(t *testing.T) {
+	rec := &recorder{}
+	srv := httptest.NewServer(rec)
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+	s.Quarantine(context.Background(), "ariguard-eval", "attacker", "reverse-shell", "on")
+	bodies := rec.bodies["/api/v1/quarantine"]
+	if len(bodies) != 1 {
+		t.Fatalf("got %d quarantine posts, want 1", len(bodies))
+	}
+	var got map[string]any
+	if err := json.Unmarshal(bodies[0], &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["node"] != "n1" || got["namespace"] != "ariguard-eval" || got["pod"] != "attacker" ||
+		got["rule"] != "reverse-shell" || got["mode"] != "on" {
+		t.Errorf("quarantine body = %v", got)
+	}
+	if _, ok := got["ts_ns"]; !ok {
+		t.Error("missing ts_ns")
+	}
+	var nilS *Sink
+	nilS.Quarantine(context.Background(), "x", "y", "z", "on") // nil sink must be a no-op
+}
+
 func TestAuditBatching(t *testing.T) {
 	rec := &recorder{}
 	srv := httptest.NewServer(rec)

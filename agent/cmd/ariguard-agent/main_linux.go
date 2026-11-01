@@ -30,6 +30,7 @@ import (
 	"github.com/CosminMilica/ariguard/agent/internal/podsync/podmap"
 	"github.com/CosminMilica/ariguard/agent/internal/policy"
 	"github.com/CosminMilica/ariguard/agent/internal/policy/kmap"
+	"github.com/CosminMilica/ariguard/agent/internal/responder"
 	"github.com/CosminMilica/ariguard/agent/internal/sink"
 	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
@@ -54,6 +55,7 @@ func run(log *slog.Logger) error {
 	metricsAddr := flag.String("metrics-addr", "", `Prometheus listen address such as ":9102" (empty: disabled)`)
 	bpfStats := flag.Bool("bpf-stats", false, "enable BPF_STATS_RUN_TIME and expose per-program run-time metrics (small per-event overhead)")
 	sinkURL := flag.String("sink-url", "", `console base URL such as "http://console:8080" (empty: disabled)`)
+	isolate := flag.String("isolate", "off", "autonomous workload isolation on a confirmed terminal mitigation: off|dryrun|on (on applies a deny-all NetworkPolicy; dryrun only labels the pod; needs Kubernetes API access)")
 	flag.Parse()
 	if *objectPath == "" || *bundlePath == "" {
 		flag.Usage()
@@ -154,6 +156,18 @@ func run(log *slog.Logger) error {
 	}
 	pods := podmeta.New(podmeta.DefaultCgroupRoot, client, log)
 
+	isolateMode, err := responder.ParseMode(*isolate)
+	if err != nil {
+		log.Error("invalid --isolate", "err", err)
+		os.Exit(2)
+	}
+	rsp := responder.New(client, isolateMode, nil, func(ns, pod, rule, mode string) {
+		snk.Quarantine(context.Background(), ns, pod, rule, mode)
+	}, log)
+	if rsp != nil {
+		log.Info("autonomous workload isolation enabled", "mode", isolateMode.String())
+	}
+
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	wg.Add(1)
@@ -185,7 +199,7 @@ func run(log *slog.Logger) error {
 	}
 
 	log.Info("streaming audit", "out", *auditOut)
-	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, out, &names, pods, log)
+	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, out, &names, pods, rsp, log)
 	stop()
 	return err
 }

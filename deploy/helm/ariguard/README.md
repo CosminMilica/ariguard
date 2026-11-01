@@ -58,6 +58,7 @@ helm upgrade --install ariguard deploy/helm/ariguard -n ariguard-system \
 | `agent.image` | `ariguard-agent` | agent image name |
 | `agent.enforce` | `true` | `true` = kill at the terminal step; `false` = observe only |
 | `agent.deny` | `false` | `true` = refuse deny-action syscalls with `-EPERM` via BPF LSM where a hook exists (needs `enforce` + a kernel with BPF LSM; kill fallback otherwise) |
+| `agent.isolate` | `"off"` | `off` \| `dryrun` \| `on` → appends `--isolate=<mode>`; `on` quarantines a pod after a confirmed terminal mitigation (label + deny-all NetworkPolicy), `dryrun` labels only (needs a NetworkPolicy-capable CNI for enforcement) |
 | `agent.sinkUrl` | `""` | where the agent pushes audit; empty + console on → the console backend svc |
 | `agent.resources` | small requests | agent container resources |
 | `console.enabled` | `true` | deploy the console (false = agent only) |
@@ -71,7 +72,9 @@ helm upgrade --install ariguard deploy/helm/ariguard -n ariguard-system \
 | `namespace` | `ariguard-system` | install namespace |
 
 ## What gets created
-- `ServiceAccount`, `ClusterRole` (+binding) for pod list/watch.
+- `ServiceAccount`, `ClusterRole` (+binding): pod list/watch, plus (for the
+  responder) pods get/patch and `networking.k8s.io` networkpolicies
+  get/list/create/update.
 - `DaemonSet` `ariguard-agent` (privileged; loads the baked-in BPF object + policy).
 - When `console.enabled`: `ariguard-console-backend` (Deployment + Service + PVC)
   and `ariguard-console-frontend` (Deployment + Service), plus a NodePort/Ingress

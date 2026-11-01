@@ -22,14 +22,15 @@ export interface Rule {
 }
 export interface NodeInfo { node: string; kernel: string; hooks_attached: number; hooks_total: number; status: string; events_per_sec: number }
 export interface Settings { enforce: boolean; metrics_addr: string; bundle: { rules: unknown }; audit_ring_bytes: number; kernel: string }
-export interface Incident { pod: string; namespace: string; node: string; rule: string; started_ts_ns: number; ended_ts_ns: number; max_state: string; outcome: string; steps: number }
+export interface Incident { pod: string; namespace: string; node: string; rule: string; started_ts_ns: number; ended_ts_ns: number; max_state: string; outcome: string; steps: number; quarantined?: boolean }
+export interface Quarantine { node: string; namespace: string; pod: string; rule: string; mode: string; ts_ns: number }
 export interface ChainStep { ts_ns: number; state: string; event: string; action: string; enforced: boolean; comm?: string; pid?: number; ppid?: number; hook?: string }
 export interface PerfProgram { program: string; runs: number; ns_per_run: number }
 export interface Perf { bpf_map_bytes: number; events_per_sec: number; audit_dropped: number; programs: PerfProgram[] }
 export interface TriageRow {
   pod: string; namespace: string; node: string; rule: string
   started_ts_ns: number; last_ts_ns: number; max_state: string; max_action: string
-  outcome: string; steps: number; active: boolean
+  outcome: string; steps: number; active: boolean; quarantined?: boolean
 }
 export interface CampaignRule {
   rule: string; incidents: number; pods: number; namespaces: number; nodes: number

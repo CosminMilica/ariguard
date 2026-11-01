@@ -40,6 +40,9 @@ spec:
             {{- if .Values.agent.deny }}
             - --deny
             {{- end }}
+            {{- if and .Values.agent.isolate (ne .Values.agent.isolate "off") }}
+            - --isolate={{ .Values.agent.isolate }}
+            {{- end }}
             {{- with include "ariguard.sinkUrl" . }}
             - --sink-url={{ . }}
             {{- end }}

@@ -48,12 +48,23 @@ The response depends on the current state, not a static yes/no:
 - **throttle** — delay the syscall (mid states)
 - **deny** — return `-EPERM` from a BPF LSM hook, refusing the host mount before it happens
   (`sb_mount`/`move_mount`; shipped)
-- **kill / quarantine** — `SIGKILL` via `bpf_send_signal`, the fallback where no LSM hook
-  exists (compromised state; shipped)
+- **kill** — `SIGKILL` via `bpf_send_signal`, the fallback where no LSM hook exists
+  (compromised state; shipped)
 
 Enforcement is gated per pod: the agent marks which cgroups are enforcement candidates, so
 detection stays cluster-wide while a kill only ever fires on a workload pod — never the
 node's own container runtime.
+
+**Isolate the workload, not just the process (Tier C1).** The in-kernel kill/deny stops the
+offending *process*, but the pod can keep running. So on a confirmed terminal mitigation (an audit
+record with `enforced=1` and action `kill` or `deny`) the agent's responder also **quarantines the
+pod autonomously** — no operator in the loop: it labels the pod `ariguard.io/quarantine=true` and,
+in mode `on`, applies a namespace-scoped deny-all NetworkPolicy (`ariguard-quarantine`), cutting
+egress, ingress and lateral movement while the pod stays up for investigation
+(isolate-don't-destroy). It is gated `--isolate=off|dryrun|on` (dry-run labels only), idempotent,
+and never touches system namespaces or muted pods. NetworkPolicy is enforced by the CNI
+(Cilium/Calico); kindnet does not enforce it, so on kind the policy is created but not actually
+blocking.
 
 ## 3. Rules come from threat intelligence
 

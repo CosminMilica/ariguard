@@ -3,15 +3,16 @@ package api
 import "net/http"
 
 type incident struct {
-	Pod       string `json:"pod"`
-	Namespace string `json:"namespace"`
-	Node      string `json:"node"`
-	Rule      string `json:"rule"`
-	StartedNS int64  `json:"started_ts_ns"`
-	EndedNS   int64  `json:"ended_ts_ns"`
-	MaxState  string `json:"max_state"`
-	Outcome   string `json:"outcome"`
-	Steps     int64  `json:"steps"`
+	Pod         string `json:"pod"`
+	Namespace   string `json:"namespace"`
+	Node        string `json:"node"`
+	Rule        string `json:"rule"`
+	StartedNS   int64  `json:"started_ts_ns"`
+	EndedNS     int64  `json:"ended_ts_ns"`
+	MaxState    string `json:"max_state"`
+	Outcome     string `json:"outcome"`
+	Steps       int64  `json:"steps"`
+	Quarantined bool   `json:"quarantined"`
 }
 
 // maxStateOf maps a stateRank to its name; action-only groups (rank <= 1) report "suspicious".
@@ -34,7 +35,12 @@ const incidentGroupsSQL = `SELECT pod, namespace, node, rule,
 // incidents aggregates audit events per (pod, namespace, node, rule) within the window.
 func (a *API) incidents(w http.ResponseWriter, r *http.Request) {
 	win := windowOf(r)
-	rows, err := a.DB.Query(`SELECT pod, namespace, node, rule, MIN(ts_ns), MAX(ts_ns), MAX(`+stateRank+`), 
+	qset, err := a.quarantinedKeys()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	rows, err := a.DB.Query(`SELECT pod, namespace, node, rule, MIN(ts_ns), MAX(ts_ns), MAX(`+stateRank+`),
 			MAX(enforced = 1 AND action = 'kill'), MAX(enforced = 1 AND action = 'deny'), COUNT(*)
 		FROM audit_events
 		WHERE ts_ns >= ? AND ts_ns <= ? AND pod != ''
@@ -63,6 +69,7 @@ func (a *API) incidents(w http.ResponseWriter, r *http.Request) {
 		default:
 			i.Outcome = "detected"
 		}
+		i.Quarantined = qset[i.Namespace+"\x00"+i.Pod]
 		out = append(out, i)
 	}
 	if err := rows.Err(); err != nil {

@@ -10,22 +10,28 @@ const actionRank = `CASE action WHEN 'kill' THEN 4 WHEN 'deny' THEN 3 WHEN 'thro
 var maxActionOf = map[int]string{4: "kill", 3: "deny", 2: "throttle", 1: "observe"}
 
 type triageItem struct {
-	Pod       string `json:"pod"`
-	Namespace string `json:"namespace"`
-	Node      string `json:"node"`
-	Rule      string `json:"rule"`
-	StartedNS int64  `json:"started_ts_ns"`
-	LastNS    int64  `json:"last_ts_ns"`
-	MaxState  string `json:"max_state"`
-	MaxAction string `json:"max_action"`
-	Outcome   string `json:"outcome"`
-	Steps     int64  `json:"steps"`
-	Active    bool   `json:"active"`
+	Pod         string `json:"pod"`
+	Namespace   string `json:"namespace"`
+	Node        string `json:"node"`
+	Rule        string `json:"rule"`
+	StartedNS   int64  `json:"started_ts_ns"`
+	LastNS      int64  `json:"last_ts_ns"`
+	MaxState    string `json:"max_state"`
+	MaxAction   string `json:"max_action"`
+	Outcome     string `json:"outcome"`
+	Steps       int64  `json:"steps"`
+	Active      bool   `json:"active"`
+	Quarantined bool   `json:"quarantined"`
 }
 
 // triage lists in-progress attacks, most advanced first (max state, then most recent).
 func (a *API) triage(w http.ResponseWriter, r *http.Request) {
 	win := windowOf(r)
+	qset, err := a.quarantinedKeys()
+	if err != nil {
+		fail(w, err)
+		return
+	}
 	rows, err := a.DB.Query(`SELECT pod, namespace, node, rule, MIN(ts_ns), MAX(ts_ns),
 			MAX(`+stateRank+`), MAX(`+actionRank+`),
 			MAX(enforced = 1 AND action = 'kill'), MAX(enforced = 1 AND action = 'deny'), COUNT(*)
@@ -59,6 +65,7 @@ func (a *API) triage(w http.ResponseWriter, r *http.Request) {
 			t.Outcome = "detected"
 		}
 		t.Active = t.LastNS >= now-10_000_000_000 && killed == 0 && blocked == 0 && t.MaxState != "compromised"
+		t.Quarantined = qset[t.Namespace+"\x00"+t.Pod]
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {

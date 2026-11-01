@@ -24,7 +24,8 @@ single step looks benign; the *chain* is the attack.
 AriGuard runs a **finite state machine entirely in the kernel**: syscalls are transitions,
 each container/process carries a state, and when a sequence reaches a compromised state
 AriGuard mitigates **synchronously** — `-EPERM` deny via a BPF LSM hook where one exists, kill
-everywhere else. All state
+everywhere else — and then **autonomously isolates the workload** (a deny-all NetworkPolicy)
+so a compromise cannot spread, with no operator in the loop. All state
 lives in **pre-allocated eBPF maps** — no allocation on the data path, so memory is flat and
 latency is bounded regardless of load. High-level threat intel (ATT&CK / Sigma / labeled
 traces) is compiled into the compact in-kernel tables offline (ML / LLM assisted).
@@ -60,7 +61,8 @@ contract, console, helm, security, bpf, the kernel matrix 5.15→stable, and the
   (`bpf_send_signal`), gated per pod; benign workloads and the node runtime are untouched.
 - [x] **Console** — a full incident-investigation tool (agent → sink → SQLite → Vue): Triage,
   Campaigns (blast-radius), Timeline, Coverage (ATT&CK × hooks), Performance, per-incident JSON
-  export, and a process tree built from `ppid`.
+  export, a process tree built from `ppid`, and the quarantine status (an `ISOLATED` badge) of
+  autonomously isolated workloads.
 - [x] **Phase 2b** — LSM `-EPERM` deny: the host mount is refused via a BPF LSM hook
   (`sb_mount`/`move_mount`), with a `kill` fallback where no LSM hook exists.
 - [x] **Phase 3** — Sigma `temporal_ordered` → FSM compiler plus automated rule generation
@@ -69,6 +71,11 @@ contract, console, helm, security, bpf, the kernel matrix 5.15→stable, and the
   **7 kill-chains**. Control-plane / CRD fleet distribution is deferred.
 - [x] **Phase 4** — evaluation (our-metrics-first): the `ariguard-bench` harness measures
   per-hook latency, the flat memory curve and throughput. Falco/Tetragon comparison is deferred.
+- [x] **Tier C (C1)** — autonomous workload isolation: on a confirmed terminal mitigation the
+  agent quarantines the pod (`ariguard.io/quarantine` label + a deny-all NetworkPolicy), gated
+  `off|dryrun|on` (`--isolate`), idempotent, never touching system namespaces. Actual network
+  enforcement needs a NetworkPolicy-enforcing CNI (Cilium/Calico). Actor correlation (C2) and the
+  lateral-movement graph (C3) are next.
 
 ## Academic context
 
