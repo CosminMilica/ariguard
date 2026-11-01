@@ -2,7 +2,9 @@
 
 Complete development plan. Work is organized into **phases**; each phase has an exit
 criterion. Concrete tasks live in each component's `TASKS.md` and are referenced here by
-ID (`<PREFIX>-<phase>.<n>`).
+ID (`<PREFIX>-<phase>.<n>`). The live backlog of missing tests + functionality (real-attack
+testbed, observed values, true lateral movement, fleet control plane) is in
+[docs/backlog.md](docs/backlog.md).
 
 **Phases 1–2 alone are a complete dissertation contribution. Phase 3 is the differentiator;
 Phase 4 produces the evidence.**

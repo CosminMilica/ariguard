@@ -128,3 +128,12 @@ Decisions F1–F7 and the v3.1 ABI additions: [docs/architecture.md](../docs/arc
 > BPF-4.1: map bytes exposed as `ariguard_bpf_map_bytes` (agent `--bpf-stats`); the
 > memory curve (RSS + BPF map bytes vs process count) is flat at ~938 KiB, independent
 > of process count.
+
+## Phase 5 — Observed values (see [docs/backlog.md](../docs/backlog.md))
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[ ]` BPF-5.1 | B3 — observed values in the record: argv, opened path, and `connect` dst IP:port, as concrete IOCs and the input for real lateral movement (backlog F1) | BPF-1.5.* | the `AuditRecord` carries argv / path / connect dst IP:port; verifies on 5.15 → stable |
+
+> BPF-5.1 (B3) touches the record ABI; the 5.15/6.1 verifier limit bit us on ppid, so keep B3's
+> capture verifier-safe and minimal — prefer a dedicated program/map over widening the hot-path
+> programs (like the ppid fork-map approach), not a `task_struct` walk in the hot path.

@@ -58,9 +58,12 @@ export interface CoverageHook {
   hook: string; attached: boolean; rules: string[]; techniques: string[]; events: number
 }
 export interface Coverage { attached: number; total: number; hooks: CoverageHook[] }
-export interface LatNode { namespace: string; incidents: number; pods: number }
-export interface LatEdge { from: string; to: string; count: number; images: string[] }
-export interface Lateral { nodes: LatNode[]; edges: LatEdge[] }
+export interface ActorTrail {
+  image_id: string; image: string; path: string[]
+  hops: number; namespaces: number; pods: number; incidents: number; killed: number; blocked: number
+  rules: string[]; first_ts_ns: number; last_ts_ns: number
+}
+export interface Lateral { actors: ActorTrail[]; namespaces: string[] }
 
 export const store = reactive({
   page: 'overview' as Page,

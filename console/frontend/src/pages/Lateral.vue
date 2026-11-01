@@ -1,178 +1,201 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { store, shortImage, type LatNode, type LatEdge } from '../api'
+import { computed, ref } from 'vue'
+import { store, shortImage, clockNs, type ActorTrail } from '../api'
 
-const data = computed(() => store.lateral ?? { nodes: [] as LatNode[], edges: [] as LatEdge[] })
-const nodeCount = computed(() => data.value.nodes.length)
-const hopCount = computed(() => data.value.edges.length)
+const selectedActorId = ref('')
+const selectedNs = ref('')
+const movedOnly = ref(true)
 
-// viewBox is fixed; the <svg> scales to its container, so it stays correct at
-// any width. Nodes sit on a circle; edges are quadratic curves bent to one side
-// so A->B and B->A never overlap.
-const VW = 720, VH = 520
-const CX = VW / 2, CY = VH / 2
-const LAYOUT_R = 170
+const actors = computed<ActorTrail[]>(() => store.lateral?.actors ?? [])
+const namespaces = computed<string[]>(() => store.lateral?.namespaces ?? [])
 
-const shortLabel = (s: string) => (s.length > 18 ? s.slice(0, 17) + '…' : s)
+const focused = computed<ActorTrail | null>(() =>
+  selectedActorId.value ? actors.value.find(a => a.image_id === selectedActorId.value) ?? null : null)
 
-const graph = computed(() => {
-  const ns = data.value.nodes
-  const edges = data.value.edges
-  const n = ns.length
-
-  const maxInc = Math.max(1, ...ns.map(x => x.incidents))
-  const maxCount = Math.max(1, ...edges.map(e => e.count))
-
-  // node placement: evenly spaced around a circle, first node at the top
-  const pos = new Map<string, { x: number; y: number; r: number }>()
-  const nodes = ns.map((d, i) => {
-    const ang = n <= 1 ? -Math.PI / 2 : -Math.PI / 2 + (i * 2 * Math.PI) / n
-    const x = n <= 1 ? CX : CX + Math.cos(ang) * LAYOUT_R
-    const y = n <= 1 ? CY : CY + Math.sin(ang) * LAYOUT_R
-    const r = 14 + (d.incidents / maxInc) * 16
-    pos.set(d.namespace, { x, y, r })
-    const ca = Math.cos(ang), sa = Math.sin(ang)
-    const anchor = ca > 0.3 ? 'start' : ca < -0.3 ? 'end' : 'middle'
-    return {
-      ns: d.namespace, label: shortLabel(d.namespace), incidents: d.incidents, pods: d.pods,
-      x, y, r,
-      lx: x + ca * (r + 7), ly: y + sa * (r + 7) + (sa > 0.3 ? 11 : 0), anchor,
-    }
-  })
-
-  const hops = edges.map(e => {
-    const a = pos.get(e.from), b = pos.get(e.to)
-    if (!a || !b || e.from === e.to) return null
-    const dx = b.x - a.x, dy = b.y - a.y
-    const dist = Math.hypot(dx, dy) || 1
-    // control point: midpoint pushed along the left-perpendicular of travel, so
-    // the opposite direction (which flips dx,dy) bends to the other physical side
-    const px = -dy / dist, py = dx / dist
-    const bend = 26
-    const cx = (a.x + b.x) / 2 + px * bend
-    const cy = (a.y + b.y) / 2 + py * bend
-    // trim endpoints to the circle boundaries along the curve's tangent
-    const sdx = cx - a.x, sdy = cy - a.y, sl = Math.hypot(sdx, sdy) || 1
-    const edx = cx - b.x, edy = cy - b.y, el = Math.hypot(edx, edy) || 1
-    const sx = a.x + (sdx / sl) * a.r
-    const sy = a.y + (sdy / sl) * a.r
-    const ex = b.x + (edx / el) * (b.r + 7)
-    const ey = b.y + (edy / el) * (b.r + 7)
-    // label at the curve's midpoint (quadratic at t=0.5)
-    const mx = 0.25 * sx + 0.5 * cx + 0.25 * ex
-    const my = 0.25 * sy + 0.5 * cy + 0.25 * ey
-    const top = e.count === maxCount
-    const imgs = Array.isArray(e.images) ? e.images : []
-    return {
-      from: e.from, to: e.to, count: e.count, images: imgs, top,
-      d: `M ${sx.toFixed(1)} ${sy.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`,
-      w: 1.4 + (e.count / maxCount) * 3.6,
-      label: imgs.length > 1 ? `${e.count} · ${imgs.length} img` : `${e.count}`,
-      lw: (imgs.length > 1 ? `${e.count} · ${imgs.length} img` : `${e.count}`).length * 6.2 + 8,
-      lx: mx, ly: my,
-    }
-  }).filter((h): h is NonNullable<typeof h> => h !== null)
-
-  return { nodes, hops }
+// Client-side filters. An explicit actor selection wins over the moved/namespace
+// filters so a focused actor is always shown, even a single-namespace one.
+const filtered = computed<ActorTrail[]>(() => {
+  if (selectedActorId.value) return actors.value.filter(a => a.image_id === selectedActorId.value)
+  let list = actors.value
+  if (movedOnly.value) list = list.filter(a => a.hops >= 1)
+  if (selectedNs.value) list = list.filter(a => a.path.includes(selectedNs.value))
+  return list
 })
 
-function imagesShort(images: string[]): string {
-  const a = images ?? []
-  if (!a.length) return '—'
-  const first = shortImage(a[0]) || a[0]
-  return a.length > 1 ? `${first} +${a.length - 1}` : first
+const movedCount = computed(() => filtered.value.filter(a => a.hops >= 1).length)
+
+function focusRow(a: ActorTrail) {
+  selectedActorId.value = selectedActorId.value === a.image_id ? '' : a.image_id
 }
+
+const shortNs = (s: string) => (s.length > 18 ? s.slice(0, 17) + '…' : s)
+
+function chips(list: string[]) {
+  const a = list ?? []
+  const shown = a.slice(0, 4)
+  return { shown, rest: a.length - shown.length }
+}
+
+/* Focused path diagram: a horizontal line of namespace circles, earliest left,
+   joined by step-numbered arrows. Conventions follow FsmDiagram.vue. */
+const R = 20, STEP = 164, PAD = 20, TOP = 26, LBL = 24
+const diagram = computed(() => {
+  const p = focused.value?.path ?? []
+  const cy = PAD + TOP + R
+  const nodes = p.map((ns, i) => ({ ns, label: shortNs(ns), i, x: PAD + R + i * STEP, y: cy }))
+  const arrows = nodes.slice(0, -1).map((a, i) => {
+    const b = nodes[i + 1]
+    const sx = a.x + R + 4, ex = b.x - R - 11
+    return { sx, ex, y: cy, mx: (sx + ex) / 2, step: i + 1 }
+  })
+  const w = PAD * 2 + (p.length ? (p.length - 1) * STEP + R * 2 : 0)
+  const h = cy + R + LBL + PAD
+  return { nodes, arrows, viewBox: `0 0 ${w} ${h}` }
+})
 </script>
 
 <template>
   <section class="card">
     <div class="hd">
       <h2>Lateral</h2>
-      <span class="c">{{ nodeCount }} namespaces · {{ hopCount }} movement hops</span>
+      <span class="c">{{ filtered.length }} actors · {{ movedCount }} moved laterally</span>
     </div>
 
-    <div class="bd" v-if="!nodeCount">
-      <div class="empty">No namespace activity in this range.</div>
+    <p class="intro">
+      Lateral movement — a compromised image (an <b>actor</b>) reaching more than one namespace over time.
+      Each row is an actor and the namespaces it moved through, earliest first.
+    </p>
+
+    <div class="toolbar">
+      <label class="fl">Actor
+        <select v-model="selectedActorId">
+          <option value="">All actors</option>
+          <option v-for="a in actors" :key="a.image_id" :value="a.image_id">{{ shortImage(a.image) }}</option>
+        </select>
+      </label>
+      <label class="fl">Namespace
+        <select v-model="selectedNs" :disabled="!!selectedActorId">
+          <option value="">All namespaces</option>
+          <option v-for="n in namespaces" :key="n" :value="n">{{ n }}</option>
+        </select>
+      </label>
+      <button class="chip-f" :class="{ on: movedOnly }" :disabled="!!selectedActorId"
+        @click="movedOnly = !movedOnly">Moved only</button>
+      <button v-if="selectedActorId" class="chip-f" @click="selectedActorId = ''">Clear focus</button>
     </div>
 
-    <template v-else>
-      <figure class="lat">
-        <svg :viewBox="`0 0 ${VW} ${VH}`" preserveAspectRatio="xMidYMid meet" role="img"
-          :aria-label="`Lateral movement graph: ${nodeCount} namespaces, ${hopCount} movement hops`">
-          <defs>
-            <marker id="lat-arrow" viewBox="0 0 10 10" refX="9" refY="5"
-              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
-            </marker>
-            <marker id="lat-arrow-top" viewBox="0 0 10 10" refX="9" refY="5"
-              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0 0 L10 5 L0 10 z" fill="var(--orange)" />
-            </marker>
-          </defs>
-
-          <g class="lat-edges">
-            <template v-for="(h, i) in graph.hops" :key="'e' + i">
-              <path :d="h.d" fill="none" :class="{ top: h.top }" :stroke-width="h.w"
-                :marker-end="h.top ? 'url(#lat-arrow-top)' : 'url(#lat-arrow)'">
-                <title>{{ h.from }} → {{ h.to }} · {{ h.count }} hop(s){{ h.images.length ? ', ' + h.images.length + ' image(s)' : '' }}</title>
-              </path>
-              <rect :x="h.lx - h.lw / 2" :y="h.ly - 8" :width="h.lw" height="16" rx="3" class="lat-lbg" />
-              <text :x="h.lx" :y="h.ly" text-anchor="middle" dominant-baseline="central"
-                class="lat-elabel" :class="{ top: h.top }">{{ h.label }}</text>
-            </template>
+    <figure v-if="focused" class="pathfig">
+      <svg :viewBox="diagram.viewBox" preserveAspectRatio="xMidYMid meet" role="img"
+        :aria-label="`Movement path for ${shortImage(focused.image)}: ${focused.path.join(' to ')}`">
+        <defs>
+          <marker id="lat-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--teal)" />
+          </marker>
+        </defs>
+        <g class="arrows">
+          <template v-for="(ar, i) in diagram.arrows" :key="'a' + i">
+            <line :x1="ar.sx" :y1="ar.y" :x2="ar.ex" :y2="ar.y" marker-end="url(#lat-arrow)" />
+            <text :x="ar.mx" :y="ar.y - 10" text-anchor="middle" class="step">{{ ar.step }}</text>
+          </template>
+        </g>
+        <g class="nodes">
+          <g v-for="nd in diagram.nodes" :key="nd.i">
+            <circle :cx="nd.x" :cy="nd.y" :r="R" />
+            <text :x="nd.x" :y="nd.y" text-anchor="middle" dominant-baseline="central" class="num">{{ nd.i + 1 }}</text>
+            <text :x="nd.x" :y="nd.y + R + 15" text-anchor="middle" class="nlbl">{{ nd.label }}<title>{{ nd.ns }}</title></text>
           </g>
+        </g>
+      </svg>
+      <figcaption>
+        Path of <b>{{ shortImage(focused.image) }}</b> across {{ focused.namespaces }} namespaces
+        ({{ focused.hops }} hops). Each circle is a namespace; arrows run earliest → latest.
+      </figcaption>
+    </figure>
 
-          <g class="lat-nodes">
-            <g v-for="nd in graph.nodes" :key="nd.ns">
-              <circle :cx="nd.x" :cy="nd.y" :r="nd.r" />
-              <text :x="nd.lx" :y="nd.ly" :text-anchor="nd.anchor" dominant-baseline="central" class="lat-nlabel">
-                {{ nd.label }}<title>{{ nd.ns }} · {{ nd.incidents }} incidents · {{ nd.pods }} pods</title>
-              </text>
-            </g>
-          </g>
-        </svg>
-        <figcaption>
-          Each circle is a namespace that had incidents (radius by incident count). An arrow A→B means the
-          same actor image appeared in A then later in B; thicker, accented arrows carry more hops.
-        </figcaption>
-      </figure>
-
-      <div class="bd" v-if="!hopCount">
-        <div class="empty">No lateral movement observed in this range.</div>
+    <div class="bd" v-if="!actors.length">
+      <div class="empty">No incidents in this range.</div>
+    </div>
+    <div class="bd" v-else-if="!filtered.length">
+      <div class="empty">
+        <template v-if="movedOnly && !selectedNs">
+          No lateral movement detected in this range.
+          <button class="btn linkish" @click="movedOnly = false">Show all actors</button>
+        </template>
+        <template v-else>No actors match these filters.</template>
       </div>
+    </div>
 
-      <div class="scroll" v-else>
-        <table>
-          <thead>
-            <tr><th>From</th><th></th><th>To</th><th>Hops</th><th>Images</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(h, i) in graph.hops" :key="'r' + i">
-              <td class="mono">{{ h.from }}</td>
-              <td class="dim">→</td>
-              <td class="mono">{{ h.to }}</td>
-              <td class="mono">{{ h.count }}</td>
-              <td class="mono dim" :title="h.images.join('\n')">{{ imagesShort(h.images) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </template>
+    <div class="scroll" v-else>
+      <table>
+        <thead>
+          <tr>
+            <th>Actor</th><th>Path</th><th>Hops</th><th>NS</th><th>Pods</th>
+            <th>Incidents</th><th>Outcomes</th><th>Rules</th><th>First</th><th>Last</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="a in filtered" :key="a.image_id" class="clickable"
+            :class="{ sel: a.image_id === selectedActorId, mover: a.hops >= 1 }" @click="focusRow(a)">
+            <td :title="a.image_id">{{ a.image }}</td>
+            <td class="path">
+              <template v-for="(ns, i) in a.path" :key="i">
+                <span v-if="i" class="arr">→</span>
+                <span class="chip mono" :class="{ hit: ns === selectedNs }">{{ shortNs(ns) }}</span>
+              </template>
+            </td>
+            <td class="mono">{{ a.hops }}</td>
+            <td class="mono">{{ a.namespaces }}</td>
+            <td class="mono">{{ a.pods }}</td>
+            <td class="mono">{{ a.incidents }}</td>
+            <td>
+              <span v-if="a.killed" class="act kill">{{ a.killed }} killed</span>
+              <span v-if="a.blocked" class="act deny">{{ a.blocked }} blocked</span>
+            </td>
+            <td class="chips">
+              <span v-for="r in chips(a.rules).shown" :key="r" class="chip mono">{{ r }}</span>
+              <span v-if="chips(a.rules).rest > 0" class="chip more">+{{ chips(a.rules).rest }}</span>
+            </td>
+            <td class="mono dim">{{ clockNs(a.first_ts_ns) }}</td>
+            <td class="mono dim">{{ clockNs(a.last_ts_ns) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.lat { margin: 0; padding: 14px 15px; border-bottom: 1px solid var(--border); color: var(--fg-2); }
-.lat svg { display: block; width: 100%; max-width: 100%; height: auto; }
+.intro { margin:0; padding:12px 15px; border-bottom:1px solid var(--border); font-size:12.5px; color:var(--fg-2); }
+.intro b { color:var(--fg); }
 
-.lat-edges path { stroke: currentColor; opacity: .55; }
-.lat-edges path.top { stroke: var(--orange); opacity: .95; }
-.lat-lbg { fill: var(--surface); opacity: .9; }
-.lat-elabel { font-family: var(--mono); font-size: 11px; fill: var(--fg-2); }
-.lat-elabel.top { fill: var(--orange); }
+.fl { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted); }
+.fl select { font-family:var(--sans); font-size:12.5px; color:var(--fg); background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:5px 9px; cursor:pointer; max-width:220px; }
+.fl select:hover { border-color:var(--teal-dim); }
+.fl select:disabled { opacity:.5; cursor:not-allowed; }
+.chip-f:disabled { opacity:.5; cursor:not-allowed; }
 
-.lat-nodes circle { fill: currentColor; fill-opacity: .08; stroke: currentColor; stroke-width: 1.6; }
-.lat-nlabel { font-family: var(--mono); font-size: 11.5px; fill: var(--fg); }
+.pathfig { margin:0; padding:16px 15px; border-bottom:1px solid var(--border); color:var(--fg-2); }
+.pathfig svg { display:block; width:100%; max-width:100%; height:auto; }
+.pathfig .arrows line { stroke:var(--teal); stroke-width:2; }
+.pathfig .step { font-family:var(--mono); font-size:11px; fill:var(--teal); }
+.pathfig .nodes circle { fill:currentColor; fill-opacity:.08; stroke:currentColor; stroke-width:1.6; }
+.pathfig .num { font-family:var(--mono); font-size:12px; fill:var(--fg); }
+.pathfig .nlbl { font-family:var(--mono); font-size:11.5px; fill:var(--fg-2); }
+.pathfig figcaption { margin-top:10px; font-size:11.5px; color:var(--faint); max-width:640px; }
+.pathfig figcaption b { color:var(--fg-2); }
 
-.lat figcaption { margin-top: 10px; font-size: 11.5px; color: var(--faint); max-width: 640px; }
+tbody tr.mover td:first-child { box-shadow:inset 3px 0 0 var(--teal-dim); }
+tbody tr.clickable { cursor:pointer; }
+tbody tr.sel { background:color-mix(in srgb, var(--teal) 12%, transparent); }
+tbody tr.sel:hover { background:color-mix(in srgb, var(--teal) 16%, transparent); }
+
+td.path { white-space:normal; max-width:360px; }
+.path .arr { color:var(--faint); margin:0 5px; font-family:var(--mono); }
+.act { margin-right:8px; font-size:11.5px; }
+.chips { white-space:normal; max-width:240px; }
+.chip { display:inline-block; font-size:10.5px; padding:1px 7px; border-radius:999px; margin:1px 2px 1px 0; background:var(--surface-2); border:1px solid var(--border); color:var(--fg-2); }
+.chip.hit { border-color:var(--teal-dim); color:var(--fg); background:color-mix(in srgb, var(--teal) 16%, var(--surface-2)); }
+.chip.more { color:var(--faint); }
+.linkish { margin-left:8px; padding:2px 9px; }
 </style>

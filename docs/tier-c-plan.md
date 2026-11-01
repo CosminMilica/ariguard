@@ -9,7 +9,7 @@ incidents.
 
 **Status: C1, C2 and C3 shipped.** Autonomous workload isolation is implemented and wired end to
 end (agent responder → RBAC → console); actor correlation (`GET /api/actors`, Actors page) and the
-lateral-movement graph (`GET /api/lateral`, Lateral page) are implemented console-side. Still next:
+lateral-movement trails view (`GET /api/lateral`, Lateral page) are implemented console-side. Still next:
 B3 (observed values — argv/path/connect dst IP:port), which will add the C2 dst IP as an extra IOC.
 
 ## Design constraints
@@ -32,11 +32,11 @@ deploy/k8s/base/rbac.yaml            # C1 Role: networkpolicies create/get, pods
 deploy/helm/.../templates/rbac.yaml  # C1 same, Helm
 console/backend/api/
   actors.go           # C2 GET /api/actors: cluster incidents by shared IOC
-  lateral.go          # C3 GET /api/lateral: ns->ns spread edges over time
+  lateral.go          # C3 GET /api/lateral: per-actor movement trails (ns path over time)
   quarantine.go       # C1 GET /api/quarantine: what was isolated, when, how
 console/frontend/src/pages/
   Actors.vue          # C2 one row per actor (shared image/comm/dst), its incidents + spread
-  Lateral.vue         # C3 movement graph (nodes = namespaces, edges = time-ordered spread)
+  Lateral.vue         # C3 actor-centric trails list + filters + focused path diagram
 console/frontend/src/components/
   QuarantineBadge.vue # C1 isolation status on Triage/Incident rows
 ```
@@ -45,7 +45,7 @@ console/frontend/src/components/
 |---|---------|---------|-------|------|
 | C1 | **Autonomous workload isolation** | "Kill stopped the process — is the pod contained?" | agent responder + k8s client + RBAC; console status | **shipped** |
 | C2 | **Actor correlation (IOC)** | "Is this one attacker across many pods?" | `GET /api/actors` clustering by image digest (+ dst IP once B3 lands) + Actors page | **shipped** |
-| C3 | **Lateral-movement graph** | "Watch the spread ns→ns over time" | `GET /api/lateral` edges from per-actor time-ordered namespaces + graph page | **shipped** |
+| C3 | **Lateral-movement trails** | "Watch the spread ns→ns over time" | `GET /api/lateral` per-actor namespace trails + actor-centric Lateral page | **shipped** |
 
 ## C1 — autonomous workload isolation (detail, shipped)
 ```
@@ -91,18 +91,25 @@ wide-spread rows accented. Builds on the image + digest captured in Tier B1 and 
 group materialization (now carrying `image_id`/`image`/`comm`); no kernel/agent change. Tested by
 `TestActors`. Gains the connect dst IP:port as an extra IOC once B3 lands.
 
-## C3 — lateral-movement graph (detail, shipped)
+## C3 — lateral-movement trails (detail, shipped)
 `GET /api/lateral` (`console/backend/api/lateral.go`, `Lateral.vue`) reconstructs attacker
-movement: for each actor (image digest) the **time-ordered sequence of namespaces** it reached
-becomes directed edges A→B. It returns `nodes` (namespaces with incidents/pods) and `edges` (`from`,
-`to`, `count`, `images[]`). The frontend **Lateral** page renders a hand-authored inline-SVG
-directed graph — namespace nodes sized by incidents, directed edges with arrowheads + counts — plus
-a precision edge table. Console-only, on existing incident data. Tested by `TestLateral`.
+movement as **per-actor trails**: for each actor (container image digest) it returns the distinct
+namespaces that actor reached in first-seen order (`path`, earliest-first), `hops` (= len(path) − 1;
+0 = no lateral movement), plus its namespaces, pods, incidents, killed/blocked counts, the `rules[]`
+it triggered and first/last seen. Actors sort movers-first. The response is `{ actors: [...],
+namespaces: [...] }`, the namespace list feeding the filter. The frontend **Lateral** page is an
+actor-centric, filterable, scalable view (not a single graph, which was a hairball at scale): an
+explainer intro; Actor + Namespace dropdowns and a "Moved only" toggle (default on, hops ≥ 1); a
+list of actors, each row showing the actor image and its namespace path rendered as chips with
+arrows (ns-a → ns-b → ns-c) alongside hops/namespaces/pods/incidents, killed/blocked badges, rules
+and first/last seen; and a focused inline-SVG path diagram (a clean left→right line of the
+namespaces) shown only when a single actor is selected. Console-only, on existing incident data.
+Tested by `TestLateral`.
 
 ## Recommended order
 **C1 first** — highest impact on the "1000-service compromise" scenario, pure control-plane
 (zero kernel/verifier risk), and it closes the process-kill ≠ pod-isolation gap. **C2** next
-(image/comm IOC already captured; gains dst IP when B3 lands). **C3** last (graph on existing
+(image/comm IOC already captured; gains dst IP when B3 lands). **C3** last (trails on existing
 incident data).
 
 ## Honest caveats
