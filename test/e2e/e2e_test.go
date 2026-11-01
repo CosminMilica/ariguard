@@ -33,11 +33,14 @@ const (
 	metricsPort = "9102"
 )
 
-// attackers are the attack workloads, one per manifest in testdata/workloads/attack.
-// The eight pods exercise all seven kill-chains (container-escape is driven by two).
+// attackers are the attack workloads driven as Kubernetes pods here. They exercise five
+// kill-chains reliably reproducible in a kind node (container-escape is driven by two pods).
+// The bpf-tampering and kernel-module-load chains depend on bpf()/finit_module behaviour that
+// varies by node (caps/kernel config), so they are not driven as e2e pods; they are verified
+// by the behavioral gate (G10, ci-rulegen) with dedicated drivers across the kernel matrix.
 var attackers = []string{
 	"container-escape", "container-escape-connect", "reverse-seq", "fileless-seq",
-	"ptrace-inject", "kernel-module-load", "cred-access", "bpf-tamper",
+	"ptrace-inject", "cred-access",
 }
 
 // podPhaseKillExpected lists the attackers whose terminal syscall runs in their
@@ -51,9 +54,7 @@ var podPhaseKillExpected = map[string]bool{
 	"container-escape":         true,
 	"container-escape-connect": true,
 	"ptrace-inject":            true,
-	"kernel-module-load":       true,
 	"cred-access":              true,
-	"bpf-tamper":               true,
 }
 
 // swMaps are dumped to the artifacts dir on teardown. AG_AUDIT is a ring buffer

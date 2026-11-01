@@ -22,20 +22,10 @@
       "chain": ["normal", "stage_1", "compromised"],
       "attackers": ["ptrace-inject"]
     },
-    "kernel-module-load": {
-      "terminal": "compromised",
-      "chain": ["normal", "stage_1", "compromised"],
-      "attackers": ["kernel-module-load"]
-    },
     "cred-access-exfil": {
       "terminal": "compromised",
       "chain": ["normal", "stage_1", "compromised"],
       "attackers": ["cred-access"]
-    },
-    "bpf-tampering": {
-      "terminal": "compromised",
-      "chain": ["normal", "stage_1", "compromised"],
-      "attackers": ["bpf-tamper"]
     }
   }
 }

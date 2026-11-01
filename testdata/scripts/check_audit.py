@@ -192,9 +192,11 @@ def check(records, exp, enforce=False, deny=False, soak=False):
                     )
     for (rule, pid), recs in groups.items():
         spec = rules.get(rule)
-        attacker = (
-            bool(spec) and pid[0] == ns and any(pod_matches(pid[1], b) for b in spec["attackers"])
-        )
+        if spec is None:
+            # A loaded rule not listed in these expectations (e.g. one verified by the
+            # behavioral gate instead); not asserted here.
+            continue
+        attacker = pid[0] == ns and any(pod_matches(pid[1], b) for b in spec["attackers"])
         if spec and not attacker and any(r["to"] == spec["terminal"] for r in recs):
             failures.append(
                 (
