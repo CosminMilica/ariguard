@@ -85,9 +85,7 @@ def load(path):
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
-                print(
-                    f"warning: {path}:{lineno}: skipping non-JSON line", file=sys.stderr
-                )
+                print(f"warning: {path}:{lineno}: skipping non-JSON line", file=sys.stderr)
                 continue
             if not isinstance(rec, dict) or any(k not in rec for k in REQUIRED):
                 raise BadInput(f"{path}:{lineno}: not a v3 audit record")
@@ -154,17 +152,13 @@ def check(records, exp, enforce=False, deny=False, soak=False):
                 if r == rule and pid[0] == ns and pod_matches(pid[1], base)
             ]
             if not instances:
-                failures.append(
-                    ("A1", "missing", f"{rule}: attacker {base} has no records")
-                )
+                failures.append(("A1", "missing", f"{rule}: attacker {base} has no records"))
                 continue
             if soak:
                 # Under sustained load with pruning, individual instances may be cut short;
                 # require that at least one instance completed the chain (and was enforced in
                 # enforce mode). The false-positive guarantees (A2/A3/A4 below) stay strict.
-                completed = [
-                    recs for _, recs in instances if follows_chain(recs, chain)
-                ]
+                completed = [recs for _, recs in instances if follows_chain(recs, chain)]
                 if not completed:
                     failures.append(
                         (
@@ -199,9 +193,7 @@ def check(records, exp, enforce=False, deny=False, soak=False):
     for (rule, pid), recs in groups.items():
         spec = rules.get(rule)
         attacker = (
-            bool(spec)
-            and pid[0] == ns
-            and any(pod_matches(pid[1], b) for b in spec["attackers"])
+            bool(spec) and pid[0] == ns and any(pod_matches(pid[1], b) for b in spec["attackers"])
         )
         if spec and not attacker and any(r["to"] == spec["terminal"] for r in recs):
             failures.append(
@@ -252,9 +244,7 @@ def check(records, exp, enforce=False, deny=False, soak=False):
             d = deny_spec(spec)
             if d:
                 if not any(
-                    r["to"] == d["terminal"]
-                    and r["action"] == d["action"]
-                    and is_enforced(r)
+                    r["to"] == d["terminal"] and r["action"] == d["action"] and is_enforced(r)
                     for r in recs
                 ):
                     failures.append(
@@ -287,9 +277,7 @@ def check(records, exp, enforce=False, deny=False, soak=False):
 
 def summary(groups, rules):
     rows = [("rule", "pod", "max_state", "actions", "enforced")]
-    for (rule, pid), recs in sorted(
-        groups.items(), key=lambda kv: (kv[0][0], pod_label(kv[0][1]))
-    ):
+    for (rule, pid), recs in sorted(groups.items(), key=lambda kv: (kv[0][0], pod_label(kv[0][1]))):
         chain = rules.get(rule, {}).get("chain", [])
         rank = {s: i for i, s in enumerate(chain)}
         top = max((r["to"] for r in recs), key=lambda s: rank.get(s, -1))
@@ -297,9 +285,7 @@ def summary(groups, rules):
         enforced = f"{sum(is_enforced(r) for r in recs)}/{len(recs)}"
         rows.append((rule, pod_label(pid), top, actions, enforced))
     widths = [max(len(row[i]) for row in rows) for i in range(5)]
-    return "\n".join(
-        "  ".join(c.ljust(w) for c, w in zip(row, widths)).rstrip() for row in rows
-    )
+    return "\n".join("  ".join(c.ljust(w) for c, w in zip(row, widths)).rstrip() for row in rows)
 
 
 def mode_label(enforce, deny):
