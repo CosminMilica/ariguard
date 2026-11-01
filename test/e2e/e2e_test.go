@@ -57,16 +57,20 @@ var (
 	imageErr  error
 )
 
+// wantDeployedRules is the rule count the agent image ships (the full deploy bundle,
+// testdata/golden/policy-full.bin), kept in sync with `make bundle`.
+const wantDeployedRules = 7
+
 func TestDetectMode(t *testing.T) {
 	dir, agentPod := setupMode(t, "detect", "detect")
 
-	// AG_POLICY: detect-only, three rules loaded.
+	// AG_POLICY: detect-only, the full rule library loaded.
 	numRules, enforce := readPolicy(t)
 	if enforce != 0 {
 		t.Errorf("AG_POLICY.enforce = %d, want 0 in detect mode", enforce)
 	}
-	if numRules != 3 {
-		t.Errorf("AG_POLICY.num_rules = %d, want 3", numRules)
+	if numRules != wantDeployedRules {
+		t.Errorf("AG_POLICY.num_rules = %d, want %d", numRules, wantDeployedRules)
 	}
 	assertMapNonEmpty(t, "AG_RULES")
 	assertMapNonEmpty(t, "AG_TRANSITIONS")
@@ -101,13 +105,13 @@ func TestDetectMode(t *testing.T) {
 func TestEnforceMode(t *testing.T) {
 	dir, agentPod := setupMode(t, "enforce", "enforce")
 
-	// AG_POLICY: enforcing, three rules loaded.
+	// AG_POLICY: enforcing, the full rule library loaded.
 	numRules, enforce := readPolicy(t)
 	if enforce != 1 {
 		t.Errorf("AG_POLICY.enforce = %d, want 1 in enforce mode", enforce)
 	}
-	if numRules != 3 {
-		t.Errorf("AG_POLICY.num_rules = %d, want 3", numRules)
+	if numRules != wantDeployedRules {
+		t.Errorf("AG_POLICY.num_rules = %d, want %d", numRules, wantDeployedRules)
 	}
 	assertMapNonEmpty(t, "AG_RULES")
 	assertMapNonEmpty(t, "AG_TRANSITIONS")

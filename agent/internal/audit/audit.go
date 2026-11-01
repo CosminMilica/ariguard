@@ -17,7 +17,7 @@ import (
 )
 
 // RecordSize is the wire size of fsm.AuditRecord.
-const RecordSize = 72
+const RecordSize = 64
 
 var actionNames = [...]string{
 	fsm.ActionObserve:  "observe",
@@ -121,7 +121,6 @@ func NewEvent(r fsm.AuditRecord, meta *fsm.Meta, pod podmeta.Info) Event {
 		TsNs:      r.TsNs,
 		CgroupID:  r.CgroupID,
 		Pid:       r.Pid,
-		Ppid:      r.Ppid,
 		Comm:      comm(r.Comm),
 		Hook:      hooks.Name(r.Hook),
 		Rule:      number(r.Rule),

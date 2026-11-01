@@ -177,12 +177,11 @@ type Policy struct {
 	Enforce  uint32
 }
 
-// AuditRecord is emitted to AG_AUDIT on a state change or a non-observe action. 72 bytes.
+// AuditRecord is emitted to AG_AUDIT on a state change or a non-observe action. 64 bytes.
 type AuditRecord struct {
 	CgroupID  uint64
 	TsNs      uint64
 	Pid       uint32
-	Ppid      uint32
 	Hook      uint32
 	Rule      uint32
 	Event     uint32

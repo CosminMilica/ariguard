@@ -46,15 +46,14 @@ func sample() []byte {
 	le.PutUint64(b[0:], 0x1122334455667788)
 	le.PutUint64(b[8:], 123456789)
 	le.PutUint32(b[16:], 4242)
-	le.PutUint32(b[20:], 0) // ppid
-	le.PutUint32(b[24:], fsm.HookOpenat)
+	le.PutUint32(b[20:], fsm.HookOpenat)
+	le.PutUint32(b[24:], 0)
 	le.PutUint32(b[28:], 0)
 	le.PutUint32(b[32:], 0)
-	le.PutUint32(b[36:], 0)
-	le.PutUint32(b[40:], 1)
-	le.PutUint32(b[44:], fsm.ActionObserve)
-	le.PutUint32(b[48:], 0)
-	copy(b[52:], "cat")
+	le.PutUint32(b[36:], 1)
+	le.PutUint32(b[40:], fsm.ActionObserve)
+	le.PutUint32(b[44:], 0)
+	copy(b[48:], "cat")
 	return b
 }
 

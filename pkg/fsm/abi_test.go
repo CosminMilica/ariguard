@@ -19,7 +19,7 @@ func TestStructSizes(t *testing.T) {
 		{"HookBindings", unsafe.Sizeof(HookBindings{}), 840},
 		{"Rule", unsafe.Sizeof(Rule{}), 32},
 		{"Policy", unsafe.Sizeof(Policy{}), 8},
-		{"AuditRecord", unsafe.Sizeof(AuditRecord{}), 72},
+		{"AuditRecord", unsafe.Sizeof(AuditRecord{}), 64},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
@@ -45,10 +45,9 @@ func TestFieldOffsets(t *testing.T) {
 		{"Rule.TerminalFrom", unsafe.Offsetof(Rule{}.TerminalFrom), 16},
 		{"Rule.WindowNs", unsafe.Offsetof(Rule{}.WindowNs), 24},
 		{"AuditRecord.Pid", unsafe.Offsetof(AuditRecord{}.Pid), 16},
-		{"AuditRecord.Ppid", unsafe.Offsetof(AuditRecord{}.Ppid), 20},
-		{"AuditRecord.Rule", unsafe.Offsetof(AuditRecord{}.Rule), 28},
-		{"AuditRecord.Action", unsafe.Offsetof(AuditRecord{}.Action), 44},
-		{"AuditRecord.Comm", unsafe.Offsetof(AuditRecord{}.Comm), 52},
+		{"AuditRecord.Rule", unsafe.Offsetof(AuditRecord{}.Rule), 24},
+		{"AuditRecord.Action", unsafe.Offsetof(AuditRecord{}.Action), 40},
+		{"AuditRecord.Comm", unsafe.Offsetof(AuditRecord{}.Comm), 48},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
