@@ -60,9 +60,9 @@ contract, console, helm, security, bpf, the kernel matrix 5.15→stable, and the
 - [x] **Phase 2** — synchronous mitigation: the attacker is **killed** at the terminal step
   (`bpf_send_signal`), gated per pod; benign workloads and the node runtime are untouched.
 - [x] **Console** — a full incident-investigation tool (agent → sink → SQLite → Vue): Triage,
-  Campaigns (blast-radius), Timeline, Coverage (ATT&CK × hooks), Performance, per-incident JSON
-  export, a process tree built from `ppid`, and the quarantine status (an `ISOLATED` badge) of
-  autonomously isolated workloads.
+  Campaigns (blast-radius), Timeline, Coverage (ATT&CK × hooks), Performance, Actors (actor
+  correlation), Lateral (lateral-movement graph), per-incident JSON export, a process tree built
+  from `ppid`, and the quarantine status (an `ISOLATED` badge) of autonomously isolated workloads.
 - [x] **Phase 2b** — LSM `-EPERM` deny: the host mount is refused via a BPF LSM hook
   (`sb_mount`/`move_mount`), with a `kill` fallback where no LSM hook exists.
 - [x] **Phase 3** — Sigma `temporal_ordered` → FSM compiler plus automated rule generation
@@ -74,8 +74,13 @@ contract, console, helm, security, bpf, the kernel matrix 5.15→stable, and the
 - [x] **Tier C (C1)** — autonomous workload isolation: on a confirmed terminal mitigation the
   agent quarantines the pod (`ariguard.io/quarantine` label + a deny-all NetworkPolicy), gated
   `off|dryrun|on` (`--isolate`), idempotent, never touching system namespaces. Actual network
-  enforcement needs a NetworkPolicy-enforcing CNI (Cilium/Calico). Actor correlation (C2) and the
-  lateral-movement graph (C3) are next.
+  enforcement needs a NetworkPolicy-enforcing CNI (Cilium/Calico).
+- [x] **Tier C (C2)** — actor correlation: `GET /api/actors` clusters incident groups by container
+  image digest, so the same compromised image across many pods/namespaces is one actor (a campaign
+  by payload, not by rule), widest-spread first; surfaced on an **Actors** page. Console-only.
+- [x] **Tier C (C3)** — lateral-movement graph: `GET /api/lateral` reconstructs each actor's
+  time-ordered namespace sequence into directed edges A→B; a **Lateral** page renders an inline-SVG
+  directed graph plus an edge table. Console-only.
 
 ## Academic context
 

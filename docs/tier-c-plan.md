@@ -7,9 +7,10 @@ offending process in-kernel, but the pod keeps running** — the product must al
 workload autonomously, and the console must let an SRE reason about *the actor*, not just single
 incidents.
 
-**Status: C1 shipped.** Autonomous workload isolation is implemented and wired end to end
-(agent responder → RBAC → console). C2 (actor correlation) and C3 (lateral-movement graph) are
-still planned.
+**Status: C1, C2 and C3 shipped.** Autonomous workload isolation is implemented and wired end to
+end (agent responder → RBAC → console); actor correlation (`GET /api/actors`, Actors page) and the
+lateral-movement graph (`GET /api/lateral`, Lateral page) are implemented console-side. Still next:
+B3 (observed values — argv/path/connect dst IP:port), which will add the C2 dst IP as an extra IOC.
 
 ## Design constraints
 - **Autonomous, not operator-driven.** Isolation is the product's action on a confirmed terminal
@@ -43,8 +44,8 @@ console/frontend/src/components/
 | # | Feature | Answers | Needs | Tier |
 |---|---------|---------|-------|------|
 | C1 | **Autonomous workload isolation** | "Kill stopped the process — is the pod contained?" | agent responder + k8s client + RBAC; console status | **shipped** |
-| C2 | Actor correlation (IOC) | "Is this one attacker across many pods?" | backend grouping by image/comm (+ dst IP once B3 lands) + Actors page | next |
-| C3 | Lateral-movement graph | "Watch the spread ns→ns over time" | backend edges from incidents + graph page | deferred |
+| C2 | **Actor correlation (IOC)** | "Is this one attacker across many pods?" | `GET /api/actors` clustering by image digest (+ dst IP once B3 lands) + Actors page | **shipped** |
+| C3 | **Lateral-movement graph** | "Watch the spread ns→ns over time" | `GET /api/lateral` edges from per-actor time-ordered namespaces + graph page | **shipped** |
 
 ## C1 — autonomous workload isolation (detail, shipped)
 ```
@@ -78,6 +79,25 @@ console/frontend/src/components/
   test; a backend quarantine ingest/api test; and an e2e `TestIsolation` (asserts the quarantine
   label + deny-all NetworkPolicy on attackers, and zero benign false positives) via the isolate
   overlay.
+
+## C2 — actor correlation (detail, shipped)
+`GET /api/actors` (`console/backend/api/actors.go`, `Actors.vue`) clusters the existing incident
+groups by **container image digest** (`image_id`): the same compromised image across many
+pods/namespaces is **one actor** — a campaign by payload, not by rule — sorted widest-spread (most
+pods) first. Each actor returns its image + digest, incidents, pods, namespaces, nodes, the
+killed/blocked/detected counts, the `rules[]` it triggered, the `comms[]`, and
+`affected_namespaces[]`. The frontend **Actors** page is a table, one row per actor, with
+wide-spread rows accented. Builds on the image + digest captured in Tier B1 and reuses the incident-
+group materialization (now carrying `image_id`/`image`/`comm`); no kernel/agent change. Tested by
+`TestActors`. Gains the connect dst IP:port as an extra IOC once B3 lands.
+
+## C3 — lateral-movement graph (detail, shipped)
+`GET /api/lateral` (`console/backend/api/lateral.go`, `Lateral.vue`) reconstructs attacker
+movement: for each actor (image digest) the **time-ordered sequence of namespaces** it reached
+becomes directed edges A→B. It returns `nodes` (namespaces with incidents/pods) and `edges` (`from`,
+`to`, `count`, `images[]`). The frontend **Lateral** page renders a hand-authored inline-SVG
+directed graph — namespace nodes sized by incidents, directed edges with arrowheads + counts — plus
+a precision edge table. Console-only, on existing incident data. Tested by `TestLateral`.
 
 ## Recommended order
 **C1 first** — highest impact on the "1000-service compromise" scenario, pure control-plane

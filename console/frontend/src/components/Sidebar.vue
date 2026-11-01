@@ -9,6 +9,8 @@ const items: { page: Page; label: string; icon: string }[] = [
   { page: 'events', label: 'Events', icon: '<path d="M4 18V9m5 9V5m5 13v-6m5 6V8"/>' },
   { page: 'incidents', label: 'Incidents', icon: '<path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 10v4m0 3v.01"/>' },
   { page: 'campaigns', label: 'Campaigns', icon: '<circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10"/>' },
+  { page: 'actors', label: 'Actors', icon: '<circle cx="12" cy="8" r="3.5"/><circle cx="12" cy="12" r="9"/><path d="M6 19a6 6 0 0 1 12 0"/>' },
+  { page: 'lateral', label: 'Lateral', icon: '<circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M7.3 7.3 16 16.5M15.5 6h-8M6 8.3 17 16"/>' },
   { page: 'timeline', label: 'Timeline', icon: '<path d="M3 12h18"/><circle cx="7" cy="12" r="1.6"/><circle cx="13" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>' },
   { page: 'coverage', label: 'Coverage', icon: '<path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/>' },
   { page: 'rules', label: 'Rules', icon: '<path d="M4 6h16M4 12h16M4 18h10"/>' },

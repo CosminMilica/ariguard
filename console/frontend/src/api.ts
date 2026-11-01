@@ -4,7 +4,7 @@ const BASE: string = (import.meta.env.VITE_API_BASE as string) || 'http://localh
 const POLL_MS = 3000
 
 export type Range = '15m' | '1h' | '24h'
-export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'triage' | 'campaigns' | 'timeline' | 'coverage' | 'rules' | 'nodes' | 'performance' | 'settings'
+export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'triage' | 'campaigns' | 'actors' | 'lateral' | 'timeline' | 'coverage' | 'rules' | 'nodes' | 'performance' | 'settings'
 
 export interface Point { t: number; v: number }
 export interface Overview {
@@ -43,6 +43,12 @@ export interface CampaignNs {
   affected_rules: string[]
 }
 export interface Campaigns { by_rule: CampaignRule[]; by_namespace: CampaignNs[] }
+export interface Actor {
+  image_id: string; image: string; incidents: number; pods: number; namespaces: number; nodes: number
+  killed: number; blocked: number; detected: number
+  rules: string[]; comms: string[]; affected_namespaces: string[]
+  first_ts_ns: number; last_ts_ns: number
+}
 export interface Containment {
   total: number; killed: number; blocked: number; observed_only: number
   by_action: { kill: number; deny: number; throttle: number; observe: number }
@@ -52,6 +58,9 @@ export interface CoverageHook {
   hook: string; attached: boolean; rules: string[]; techniques: string[]; events: number
 }
 export interface Coverage { attached: number; total: number; hooks: CoverageHook[] }
+export interface LatNode { namespace: string; incidents: number; pods: number }
+export interface LatEdge { from: string; to: string; count: number; images: string[] }
+export interface Lateral { nodes: LatNode[]; edges: LatEdge[] }
 
 export const store = reactive({
   page: 'overview' as Page,
@@ -72,8 +81,10 @@ export const store = reactive({
   incidents: [] as Incident[],
   triage: [] as TriageRow[],
   campaigns: null as Campaigns | null,
+  actors: [] as Actor[],
   containment: null as Containment | null,
   coverage: null as Coverage | null,
+  lateral: null as Lateral | null,
   muted: [] as string[],
   overview: null as Overview | null,
   allWorkloads: [] as Workload[],
@@ -169,7 +180,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -184,8 +195,10 @@ export async function refresh() {
       get<Campaigns>('/api/campaigns'),
       get<Containment>('/api/containment'),
       get<Coverage>('/api/coverage'),
+      get<Actor[]>('/api/actors'),
+      get<Lateral>('/api/lateral'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -199,6 +212,8 @@ export async function refresh() {
     if (cmp.status === 'fulfilled') store.campaigns = cmp.value
     if (cnt.status === 'fulfilled') store.containment = cnt.value
     if (cov.status === 'fulfilled') store.coverage = cov.value
+    if (act.status === 'fulfilled') store.actors = arr(act.value)
+    if (lat.status === 'fulfilled') store.lateral = lat.value
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()
@@ -261,7 +276,7 @@ export function closeRuleModal() { store.selectedRule = null }
 
 export function startPolling() {
   const fromHash = location.hash.replace('#/', '') as Page
-  if (['overview', 'workloads', 'events', 'incidents', 'triage', 'campaigns', 'timeline', 'coverage', 'rules', 'nodes', 'performance', 'settings'].includes(fromHash)) store.page = fromHash
+  if (['overview', 'workloads', 'events', 'incidents', 'triage', 'campaigns', 'actors', 'lateral', 'timeline', 'coverage', 'rules', 'nodes', 'performance', 'settings'].includes(fromHash)) store.page = fromHash
   watch(() => store.page, p => { location.hash = '#/' + p; window.scrollTo(0, 0) })
   watch(() => [store.range, store.customFrom, store.customTo, store.evAll, store.wlFilter, store.wlQ, store.evSev, store.evQ, store.chainPod], () => refresh())
   refresh()

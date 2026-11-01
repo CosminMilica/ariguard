@@ -7,6 +7,8 @@ import Events from './pages/Events.vue'
 import Incidents from './pages/Incidents.vue'
 import Triage from './pages/Triage.vue'
 import Campaigns from './pages/Campaigns.vue'
+import Actors from './pages/Actors.vue'
+import Lateral from './pages/Lateral.vue'
 import Timeline from './pages/Timeline.vue'
 import Coverage from './pages/Coverage.vue'
 import ChainModal from './components/ChainModal.vue'
@@ -29,6 +31,8 @@ import { store } from './api'
       <Incidents v-else-if="store.page === 'incidents'" />
       <Triage v-else-if="store.page === 'triage'" />
       <Campaigns v-else-if="store.page === 'campaigns'" />
+      <Actors v-else-if="store.page === 'actors'" />
+      <Lateral v-else-if="store.page === 'lateral'" />
       <Timeline v-else-if="store.page === 'timeline'" />
       <Coverage v-else-if="store.page === 'coverage'" />
       <Rules v-else-if="store.page === 'rules'" />
