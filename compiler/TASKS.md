@@ -30,6 +30,7 @@ Contract: [docs/architecture.md](../docs/architecture.md#rule-file-schema-v3).
 | `[ ]` CMP-3.2 | `mine.py`: sequence mining from labeled syscall traces (ML) | EVAL-1.*, CMP-1.1 | learned chain detects held-out attacks |
 | `[x]` CMP-3.3 | LLM path: NL/ATT&CK → FSM (co-author, no API key) + MITRE ingester + behavioral gate | CMP-3.1, CMP-3.4 | generated rule detects its attack, not its benign twin |
 | `[x]` CMP-3.4 | `validate.py`: round-trip + kernel map size limits | CMP-1.2 | oversized/invalid tables rejected |
+| `[ ]` CMP-3.5 | Rule-library expansion: more hooks + chains (persistence/cron, more MITRE techniques) to shrink the Coverage-page blind spots (new hooks land in `bpf`) (backlog F8) | CMP-3.3 | library covers more MITRE techniques; Coverage page gaps reduced |
 
 CMP-3.1 done: Sigma `temporal_ordered` → FSM incl. multi-selection OR (all three hand-written
 rules reproduced). CMP-3.3 done: the automated pipeline — MITRE ATT&CK ingester
@@ -40,3 +41,6 @@ generated+tested library in `rules/sigma/generated/` (ptrace-injection, kernel-m
 cred-access-exfil, bpf-tampering) joins the three native rules for a 7-chain library.
 Control-plane / CRD fleet distribution remains deferred.
 See [docs/phase-3-rulegen-plan.md](../docs/phase-3-rulegen-plan.md).
+
+Backlog F9 (ML sequence mining for rule generation, the ML half of the AI bridge) is the existing
+`CMP-3.2` (`mine.py`) stub — still todo, not a new task. See [docs/backlog.md](../docs/backlog.md).

@@ -15,7 +15,8 @@ image/digest) are now captured and shown**; a Process Tree is built from `ppid`.
 (autonomous workload isolation, C1), #10 (actor correlation, C2) and #12 (lateral-movement graph, C3)
 are now shipped** — the agent quarantines the pod on a confirmed terminal (`ISOLATED` badge), an
 Actors page clusters incidents by container image digest (`GET /api/actors`), and a Lateral page
-renders the per-actor ns→ns spread as a directed graph (`GET /api/lateral`). Still open: #8 (observed
+shows per-actor ns→ns movement as filterable trails — an actor-centric list with a focused path
+diagram (`GET /api/lateral`). Still open: #8 (observed
 argv/path/dst), which will add the C2 dst IP as an extra IOC.
 
 ## Enforcement model: process-kill vs pod-isolation (closed by C1)
@@ -84,7 +85,7 @@ agent/internal/podmeta/podmeta.go                           # T9 read image/dige
 | 10 | **Actor correlation (shared IOC)** (shipped, C2) | "Is this the same attacker across pods?" | C | `GET /api/actors` clusters by image digest (built on #9; gains #8 dst IP) + Actors page |
 | 11 | **Autonomous workload isolation** (shipped, C1) | "Kill stops the process — also quarantine the pod" (deny-all NetworkPolicy / cordon / evict, product-driven) | C | agent k8s responder + RBAC |
 | 11b | Expand autonomous coverage | "Auto-block the chains that only got observed" | C | more hooks/rules + profiles |
-| 12 | **Lateral-movement graph (ns→ns)** (shipped, C3) | "Watch the spread" | C | `GET /api/lateral` edges from per-actor time-ordered namespaces + Lateral page (inline-SVG) |
+| 12 | **Lateral-movement trails (ns→ns)** (shipped, C3) | "Watch the spread" | C | `GET /api/lateral` per-actor namespace trails + actor-centric Lateral page (filters + focused inline-SVG path) |
 
 ## Recommended order
 Tier A (1–6) first — pure UI/backend on existing data, turns the console into a real IR tool.

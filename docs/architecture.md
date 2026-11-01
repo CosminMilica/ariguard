@@ -283,15 +283,21 @@ Console-only, no kernel/agent change: it reuses the incident-group materializati
   the `comms[]`, and `affected_namespaces[]`. The frontend **Actors** page is one row per actor,
   wide-spread rows accented.
 
-## Tier C3 — lateral-movement graph
+## Tier C3 — lateral-movement trails
 
 Also console-only, on existing incident data.
 
-- **`GET /api/lateral`** reconstructs attacker movement: for each actor (image digest) the
-  **time-ordered sequence of namespaces** it reached becomes directed edges A→B. It returns `nodes`
-  (namespaces with incidents/pods) and `edges` (`from`, `to`, `count`, `images[]`). The frontend
-  **Lateral** page renders a hand-authored inline-SVG directed graph (namespace nodes sized by
-  incidents, directed edges with arrowheads + counts) plus an edge table.
+- **`GET /api/lateral`** reconstructs attacker movement as **per-actor trails**: for each actor
+  (container image digest) it returns the distinct namespaces that actor reached in first-seen order
+  (`path`, earliest-first), `hops` (len(path) − 1; 0 = no lateral movement), plus its namespaces,
+  pods, incidents, killed/blocked counts, the `rules[]` it triggered and first/last seen; actors
+  sort movers-first. The response is `{ actors: [...], namespaces: [...] }`, the namespace list
+  feeding the filter. The frontend **Lateral** page is an actor-centric, filterable view (not a
+  single graph): an explainer intro; Actor + Namespace dropdowns and a "Moved only" toggle (default
+  on, hops ≥ 1); a list of actors, each row rendering the actor's namespace path as chips with arrows
+  (ns-a → ns-b → ns-c) with hops/namespaces/pods/incidents, killed/blocked badges, rules and
+  first/last seen; and a focused inline-SVG path diagram (a left→right line of the namespaces) shown
+  only when a single actor is selected.
 
 Still next: B3 (observed values — argv/path/connect dst IP:port), which will add the C2 dst IP as an
 extra IOC.
