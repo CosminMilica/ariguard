@@ -271,4 +271,27 @@ Ingest `POST /api/v1/quarantine` writes a `quarantine` table; read `GET /api/qua
 `quarantined` boolean is added to `/api/triage` and `/api/incidents`, surfaced as an `ISOLATED`
 badge in the Triage and Incidents UI.
 
-Still next/deferred: C2 (actor correlation on shared IOCs) and C3 (lateral-movement graph).
+## Tier C2 — actor correlation
+
+Console-only, no kernel/agent change: it reuses the incident-group materialization (now carrying
+`image_id`/`image`/`comm`) and the container image + digest captured in Tier B1.
+
+- **`GET /api/actors`** clusters incident groups by **container image digest** (`image_id`): the
+  same compromised image seen across many pods and namespaces is one actor — a campaign by payload,
+  not by rule — sorted widest-spread (most pods) first. Each actor carries its image + digest,
+  incidents, pods, namespaces, nodes, killed/blocked/detected counts, the `rules[]` it triggered,
+  the `comms[]`, and `affected_namespaces[]`. The frontend **Actors** page is one row per actor,
+  wide-spread rows accented.
+
+## Tier C3 — lateral-movement graph
+
+Also console-only, on existing incident data.
+
+- **`GET /api/lateral`** reconstructs attacker movement: for each actor (image digest) the
+  **time-ordered sequence of namespaces** it reached becomes directed edges A→B. It returns `nodes`
+  (namespaces with incidents/pods) and `edges` (`from`, `to`, `count`, `images[]`). The frontend
+  **Lateral** page renders a hand-authored inline-SVG directed graph (namespace nodes sized by
+  incidents, directed edges with arrowheads + counts) plus an edge table.
+
+Still next: B3 (observed values — argv/path/connect dst IP:port), which will add the C2 dst IP as an
+extra IOC.

@@ -43,7 +43,7 @@ and the per-workload state gauge. Open the console and watch it fill live.
 
 | Path | Purpose |
 |---|---|
-| `backend/` | Go API: ingest (`/api/v1/register`, `/api/v1/audit`, `/api/v1/quarantine`), scraper, read API (`/api/*`, incl. `/api/triage`, `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`, `/api/quarantine`, and rule/namespace/node filters on `/api/events`), SQLite |
-| `frontend/` | Vue dashboard (Overview, Triage, Campaigns, Workloads, Events, Timeline, Coverage, Performance, Rules, Nodes, Settings); an `ISOLATED` badge marks quarantined pods on the Triage and Incidents rows |
+| `backend/` | Go API: ingest (`/api/v1/register`, `/api/v1/audit`, `/api/v1/quarantine`), scraper, read API (`/api/*`, incl. `/api/triage`, `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`, `/api/quarantine`, `/api/actors`, `/api/lateral`, and rule/namespace/node filters on `/api/events`), SQLite |
+| `frontend/` | Vue dashboard (Overview, Triage, Campaigns, Workloads, Events, Timeline, Coverage, Performance, Actors, Lateral, Rules, Nodes, Settings); an `ISOLATED` badge marks quarantined pods on the Triage and Incidents rows |
 | `Dockerfile` | multi-stage build → one image serving frontend + API |
 | `docker-compose.yml` | one service, a volume for the SQLite file |

@@ -168,8 +168,16 @@ See [docs/phase-4-eval-plan.md](docs/phase-4-eval-plan.md).
   (`enforced=1`, action `kill`/`deny`) the agent's responder quarantines the offending pod with no
   operator — a `ariguard.io/quarantine` label/annotations plus a namespace-scoped deny-all
   NetworkPolicy (`ariguard-quarantine`) — gated `--isolate=off|dryrun|on`, idempotent, never
-  touching system namespaces. Closes the process-kill ≠ pod-isolation gap. Actor correlation (C2)
-  and the lateral-movement graph (C3) are next. See [docs/tier-c-plan.md](docs/tier-c-plan.md).
+  touching system namespaces. Closes the process-kill ≠ pod-isolation gap.
+  See [docs/tier-c-plan.md](docs/tier-c-plan.md).
+- **Actor correlation — shipped (Tier C2):** `GET /api/actors` clusters incident groups by
+  container image digest — the same compromised image across many pods/namespaces is one actor (a
+  campaign by payload, not by rule), sorted widest-spread first; shown on an **Actors** page.
+  Console-only. See [docs/tier-c-plan.md](docs/tier-c-plan.md).
+- **Lateral-movement graph — shipped (Tier C3):** `GET /api/lateral` turns each actor's
+  time-ordered namespace sequence into directed edges A→B (`nodes` + `edges`); a **Lateral** page
+  renders an inline-SVG directed graph plus an edge table. Console-only.
+  See [docs/tier-c-plan.md](docs/tier-c-plan.md).
 
 ## Critical path
 

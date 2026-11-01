@@ -41,6 +41,8 @@ Transport: **push** for audit + register (captures SIGHUP reloads promptly),
 | Timeline page | audit over time |
 | Coverage page | `/api/coverage` (rules × audit) |
 | Performance page | agent `ariguard_program_run_time_ns_total` / `ariguard_program_runs_total` / `ariguard_bpf_map_bytes` + events/sec |
+| Actors page (actor correlation) | `/api/actors` (incident groups clustered by container image digest, widest-spread first) |
+| Lateral page (lateral-movement graph) | `/api/lateral` (per-actor time-ordered namespace edges → `nodes` + `edges`, inline-SVG graph) |
 | Per-incident Export | `/api/export` |
 | Rule detail: FSM diagram, syscall + predicate per transition, enforcement mix | register bundle (per-rule transition table + actions) |
 | Analysis: attack chain (comm/pid/hook) + Process Tree | push audit (`ppid`) |
@@ -68,7 +70,9 @@ Read API (all accept `?range=15m|1h|24h`): `/api/overview`, `/api/workloads`,
 `/api/events` (also `?rule=&namespace=&node=` filters), `/api/rules`,
 `/api/nodes`, `/api/settings`, `/api/chain?pod=`, `/api/triage`,
 `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`,
-`/api/quarantine` (window-filtered, newest first). `/api/triage` and
+`/api/quarantine` (window-filtered, newest first), `/api/actors` (incident
+groups clustered by container image digest, widest-spread first), `/api/lateral`
+(per-actor time-ordered namespace `nodes` + `edges`). `/api/triage` and
 `/api/incidents` rows carry a `quarantined` boolean.
 
 SQLite tables: `nodes`, `rules`, `audit_events`, `metric_samples`,
@@ -84,12 +88,12 @@ console/
   backend/
     main.go                   # http server: ingest + scraper + api
     store/ (sqlite.go, schema.sql)
-    api/   (overview.go, workloads.go, events.go, rules.go, nodes.go, chain.go)
+    api/   (overview.go, workloads.go, events.go, rules.go, nodes.go, chain.go, actors.go, lateral.go)
     ingest/(register.go, audit.go, quarantine.go)
     scrape/(scraper.go, prom.go)
   frontend/
     index.html, vite.config.ts, package.json
-    src/ (App.vue, api.ts, pages/{Overview,Triage,Campaigns,Workloads,Events,Timeline,Coverage,Performance,Rules,Nodes,Settings}.vue,
+    src/ (App.vue, api.ts, pages/{Overview,Triage,Campaigns,Workloads,Events,Timeline,Coverage,Performance,Actors,Lateral,Rules,Nodes,Settings}.vue,
           components/{Sidebar,Topbar,StatTiles,Chart,Table,Chip,RowMenu,Chain,Feed,QuarantineBadge}.vue)
 ```
 

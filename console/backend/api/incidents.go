@@ -26,7 +26,8 @@ const stateRank = `CASE to_state WHEN 'compromised' THEN 5 WHEN 'breakout_immine
 const incidentGroupsSQL = `SELECT pod, namespace, node, rule,
 		MAX(enforced = 1 AND action = 'kill') AS killed,
 		MAX(enforced = 1 AND action = 'deny') AS blocked,
-		MIN(ts_ns) AS first_ns, MAX(ts_ns) AS last_ns
+		MIN(ts_ns) AS first_ns, MAX(ts_ns) AS last_ns,
+		MAX(image_id) AS image_id, MAX(image) AS image, MAX(comm) AS comm
 	FROM audit_events
 	WHERE ts_ns >= ? AND ts_ns <= ? AND pod != ''
 	GROUP BY pod, namespace, node, rule
