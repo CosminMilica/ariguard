@@ -42,7 +42,7 @@ Transport: **push** for audit + register (captures SIGHUP reloads promptly),
 | Coverage page | `/api/coverage` (rules × audit) |
 | Performance page | agent `ariguard_program_run_time_ns_total` / `ariguard_program_runs_total` / `ariguard_bpf_map_bytes` + events/sec |
 | Actors page (actor correlation) | `/api/actors` (incident groups clustered by container image digest, widest-spread first) |
-| Lateral page (lateral-movement graph) | `/api/lateral` (per-actor time-ordered namespace edges → `nodes` + `edges`, inline-SVG graph) |
+| Lateral page (lateral-movement trails) | `/api/lateral` (per-actor namespace trails → `actors` + `namespaces`; actor-centric list + focused inline-SVG path diagram) |
 | Per-incident Export | `/api/export` |
 | Rule detail: FSM diagram, syscall + predicate per transition, enforcement mix | register bundle (per-rule transition table + actions) |
 | Analysis: attack chain (comm/pid/hook) + Process Tree | push audit (`ppid`) |
@@ -72,7 +72,7 @@ Read API (all accept `?range=15m|1h|24h`): `/api/overview`, `/api/workloads`,
 `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`,
 `/api/quarantine` (window-filtered, newest first), `/api/actors` (incident
 groups clustered by container image digest, widest-spread first), `/api/lateral`
-(per-actor time-ordered namespace `nodes` + `edges`). `/api/triage` and
+(per-actor namespace trails: `actors` + `namespaces`). `/api/triage` and
 `/api/incidents` rows carry a `quarantined` boolean.
 
 SQLite tables: `nodes`, `rules`, `audit_events`, `metric_samples`,

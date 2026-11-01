@@ -64,3 +64,11 @@ Note: AGT-2.1/2.2/2.3 code complete (podsync, metrics, `--enforce`, `--metrics-a
 AGT-4.1: per-program run-time + BPF map bytes exposed under `--bpf-stats`
 (`ariguard_program_run_time_ns_total`, `ariguard_program_runs_total`,
 `ariguard_bpf_map_bytes`); `ariguard-bench` CLI drives latency / memory-curve / throughput.
+
+## Phase 5 — Observed values & response (see [docs/backlog.md](../docs/backlog.md))
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[ ]` AGT-5.1 | Decode and surface the B3 observed values (argv, opened path, `connect` dst IP:port) in the audit event stream (backlog F1) | BPF-5.1 | audit lines carry argv / path / dst IP:port |
+| `[ ]` AGT-5.2 | True lateral movement: map `connect` dst IP → target pod identity (IP→pod from podmeta / k8s) and emit real pod→pod edges, not image-correlation inference (backlog F2) | AGT-5.1 | observed pod→pod edges from real network pivots |
+| `[ ]` AGT-5.3 | Agent-side mutes/allowlist for the responder: push the console mute list to the agent so quarantine/kill honor it (`muted` is currently nil) (backlog F5) | — | quarantine/kill skip muted/allowlisted workloads |
+| `[ ]` AGT-5.4 | Quarantine lifecycle: release/un-quarantine action, optional escalation (cordon/evict), and a cordon/evict fallback where the CNI can't enforce NetworkPolicy (backlog F6) | AGT-2.1 | isolation is reversible; cordon/evict fallback on kindnet |

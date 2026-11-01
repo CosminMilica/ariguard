@@ -47,3 +47,16 @@ memory curve from RSS + BPF map bytes vs process count, throughput from events/s
 `audit_dropped`); efficacy from the behavioral gate (detects the attack, no benign false
 positive). Observed: flat memory ~938 KiB, ~790k ev/s with 0 drops, ~1–5 µs/hook.
 EVAL-4.4 (Falco/Tetragon comparison) is deferred.
+
+## Phase 5 — Real-attack testbed (see [docs/backlog.md](../docs/backlog.md))
+Credible evaluation on real exploits, not synthetic syscall drivers.
+| ID | Task | Depends | Done when |
+|---|---|---|---|
+| `[ ]` EVAL-5.1 | Vulnerable-app targets: deploy deliberately-vulnerable apps in an isolated test cluster — a web RCE entry point (command-injection / deserialization / Log4Shell-class), a multi-service app (frontend→backend→db) so lateral movement has a target, and a misconfigured/privileged pod for escape (backlog T1) | — | targets deployed; attack surface for RCE + pivot + escape |
+| `[ ]` EVAL-5.2 | Real exploit → payload scenarios: known public exploits against EVAL-5.1 to get RCE, then the real post-exploit chain (recon → reverse shell/C2 → creds/escape → pivot to the next service's pod) (backlog T2) | EVAL-5.1 | the FSM is driven by real behavior incl. a real network pivot |
+| `[ ]` EVAL-5.3 | Efficacy harness on real attacks: detection rate, false-positive rate, time-to-mitigate measured on EVAL-5.2 scenarios (not synthetic), reported as numbers (backlog T3) | EVAL-5.1, EVAL-5.2 | efficacy numbers for the thesis claim from real attacks |
+| `[ ]` EVAL-5.4 | Falco / Tetragon comparison on the real scenarios: same attacks against Falco+Tetragon; compare detection, latency, overhead (the deferred EVAL-4.4, now on real attacks) (backlog T4) | EVAL-5.2, EVAL-5.3 | head-to-head detection/latency/overhead on real attacks |
+| `[ ]` EVAL-5.5 | Realistic-scale soak: many services + background benign load to back the "1000 services" claim (backlog T6) | EVAL-5.1 | flat-memory / no-FP claim holds under realistic density |
+
+> Note (backlog T5): the synthetic drivers (`drivers`/e2e/soak) stay as the fast, deterministic
+> CI gate; the testbed above is the efficacy evidence, not a per-PR gate — real exploits stay out of CI.
