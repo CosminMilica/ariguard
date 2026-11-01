@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/CosminMilica/ariguard/agent/internal/audit"
+	"github.com/CosminMilica/ariguard/agent/internal/hooks"
 	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
@@ -37,11 +38,24 @@ const (
 
 // Rule is the per-rule metadata of the active bundle.
 type Rule struct {
-	Name           string `json:"name"`
-	Scope          string `json:"scope"`
-	NumStates      uint32 `json:"num_states"`
-	WindowNs       uint64 `json:"window_ns"`
-	TerminalAction string `json:"terminal_action"`
+	Name           string           `json:"name"`
+	Scope          string           `json:"scope"`
+	NumStates      uint32           `json:"num_states"`
+	WindowNs       uint64           `json:"window_ns"`
+	TerminalAction string           `json:"terminal_action"`
+	States         []string         `json:"states"`
+	Events         []string         `json:"events"`
+	TerminalFrom   uint32           `json:"terminal_from"`
+	Transitions    []RuleTransition `json:"transitions"`
+}
+
+// RuleTransition is one meaningful cell of a rule's state machine.
+type RuleTransition struct {
+	From     string   `json:"from"`
+	Event    string   `json:"event"`
+	To       string   `json:"to"`
+	Action   string   `json:"action"`
+	Syscalls []string `json:"syscalls"`
 }
 
 // Bundle is the policy summary carried by a registration.
@@ -308,10 +322,11 @@ func RulesFromBundle(b fsm.Bundle) []Rule {
 	rules := make([]Rule, len(b.Rules))
 	for i, r := range b.Rules {
 		out := Rule{
-			Name:      fmt.Sprintf("%d", i),
-			Scope:     map[uint32]string{fsm.ScopeCgroup: "cgroup", fsm.ScopeProcess: "process"}[r.Scope],
-			NumStates: r.NumStates,
-			WindowNs:  r.WindowNs,
+			Name:         fmt.Sprintf("%d", i),
+			Scope:        map[uint32]string{fsm.ScopeCgroup: "cgroup", fsm.ScopeProcess: "process"}[r.Scope],
+			NumStates:    r.NumStates,
+			WindowNs:     r.WindowNs,
+			TerminalFrom: r.TerminalFrom,
 		}
 		if i < len(b.Meta.Rules) {
 			if m := b.Meta.Rules[i]; m.Name != "" {
@@ -320,17 +335,103 @@ func RulesFromBundle(b fsm.Bundle) []Rule {
 			if m := b.Meta.Rules[i]; m.Scope != "" {
 				out.Scope = m.Scope
 			}
+			if m := b.Meta.Rules[i]; len(m.States) > 0 {
+				out.States = m.States
+			}
+			if m := b.Meta.Rules[i]; len(m.Events) > 0 {
+				out.Events = m.Events
+			}
+		}
+		if out.States == nil {
+			out.States = make([]string, r.NumStates)
+			for s := range out.States {
+				out.States[s] = fmt.Sprintf("state%d", s)
+			}
+		}
+		if out.Events == nil {
+			out.Events = make([]string, r.NumEvents)
+			for e := range out.Events {
+				out.Events[e] = fmt.Sprintf("event%d", e)
+			}
 		}
 		var top uint32
-		lo := uint64(r.TransBase)
-		hi := min(lo+uint64(r.NumStates)*uint64(r.NumEvents), uint64(len(b.Transitions)))
-		for j := lo; j < hi; j++ {
-			top = max(top, b.Transitions[j].Action)
+		for s := uint32(0); s < r.NumStates; s++ {
+			for e := uint32(0); e < r.NumEvents; e++ {
+				j := uint64(r.TransBase) + uint64(s)*uint64(r.NumEvents) + uint64(e)
+				if j >= uint64(len(b.Transitions)) {
+					continue
+				}
+				cell := b.Transitions[j]
+				top = max(top, cell.Action)
+				if cell.NextState == s && cell.Action == fsm.ActionObserve {
+					continue
+				}
+				if int(cell.NextState) >= len(out.States) || int(s) >= len(out.States) || int(e) >= len(out.Events) {
+					continue
+				}
+				out.Transitions = append(out.Transitions, RuleTransition{
+					From:     out.States[s],
+					Event:    out.Events[e],
+					To:       out.States[cell.NextState],
+					Action:   audit.ActionName(cell.Action),
+					Syscalls: bindingSyscalls(b.Bindings, uint32(i), e),
+				})
+			}
 		}
 		out.TerminalAction = audit.ActionName(top)
 		rules[i] = out
 	}
 	return rules
+}
+
+// bindingSyscalls returns the human-readable descriptions of every binding that
+// raises event e in rule, in binding order, with duplicates removed.
+func bindingSyscalls(bindings []fsm.Binding, rule, event uint32) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, bd := range bindings {
+		if bd.Rule != rule || bd.Event != event {
+			continue
+		}
+		desc := hooks.Name(bd.Hook) + bindingPredicate(bd)
+		if !seen[desc] {
+			seen[desc] = true
+			out = append(out, desc)
+		}
+	}
+	return out
+}
+
+// bindingPredicate renders the leading-space predicate of a binding, or "" when
+// the binding matches any argument.
+func bindingPredicate(bd fsm.Binding) string {
+	switch bd.PathKind {
+	case fsm.PathPrefix:
+		return " path^=" + patternString(bd.Pattern[:])
+	case fsm.PathSunPrefix:
+		return " sun_path^=" + patternString(bd.Pattern[:])
+	}
+	if bd.ArgOp == fsm.ArgAny {
+		return ""
+	}
+	switch bd.ArgOp {
+	case fsm.ArgEq:
+		return fmt.Sprintf(" arg%d == %d", bd.ArgIndex, bd.ArgValue)
+	case fsm.ArgLe:
+		return fmt.Sprintf(" arg%d <= %d", bd.ArgIndex, bd.ArgValue)
+	case fsm.ArgMaskAny:
+		return fmt.Sprintf(" arg%d & 0x%x != 0", bd.ArgIndex, bd.ArgValue)
+	case fsm.ArgMaskNone:
+		return fmt.Sprintf(" arg%d & 0x%x == 0", bd.ArgIndex, bd.ArgValue)
+	}
+	return ""
+}
+
+func patternString(p []byte) string {
+	if i := bytes.IndexByte(p, 0); i >= 0 {
+		p = p[:i]
+	}
+	return string(p)
 }
 
 // NodeName returns NODE_NAME, else the hostname.

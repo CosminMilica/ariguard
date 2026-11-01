@@ -77,7 +77,11 @@ Makefile                      ci ci-hygiene ci-unit ci-contract ci-bpf ci-kernel
 pkg/fsm/btf_test.go           G3: ABI vs object BTF
 agent/internal/loader/object_test.go       G3: program contract + insn budget
 agent/internal/integration/chain_test.go   G4: chains in a child cgroup, asserts AG_AUDIT
+compiler/tests/test_bundle.py              G2: committed full rule bundle (testdata/golden/policy-full.bin, 7 rules, `make bundle`) matches the rule files
 ```
+
+The agent image ships the full rule library (`testdata/golden/policy-full.bin`, 7 rules);
+`testdata/golden/policy.bin` (3 native rules) stays the cross-language parity golden.
 
 Object tests skip when `bin/ariguard.bpf.o` is missing; CI sets `ARIGUARD_REQUIRE_OBJECT=1`
 so they fail instead.

@@ -15,3 +15,15 @@ kernel. Runs **offline, at compile time** — never on the data path.
 pip install -e .
 ariguard-compile --rules-dir rules --out policies/policy.bin   # or repeat --input FILE
 ```
+
+## Bundles
+
+Two bundles are produced from the same compiler:
+
+- **Deploy bundle** — `make bundle` → `testdata/golden/policy-full.bin`, the full
+  rule library (7 rules); this is what the agent image ships.
+- **Golden parity fixture** — `testdata/golden/policy.bin`, the 3 native rules,
+  kept as the byte-for-byte parity fixture.
+
+A guard test (`compiler/tests/test_bundle.py`) fails on drift between the bundle
+and the rule library.

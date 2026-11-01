@@ -1,5 +1,7 @@
 package fsm
 
+import "unsafe"
+
 // Mirror of bpf/ariguard-common (ABI v3). Struct and field names must match the
 // Rust ones (case and underscores aside): btf_test.go compares them with the object.
 
@@ -75,6 +77,36 @@ const (
 	MaxTransitions      uint32 = 1024
 	MaxTrackedWorkloads uint32 = 16384
 )
+
+// AuditRingBytes is the byte size of AG_AUDIT; mirrors AUDIT_RING_BYTES in bpf/ariguard-ebpf.
+const AuditRingBytes = 256 * 1024
+
+// BPFMapBytes is the pre-allocated, constant memory budget of the AG_* contract
+// maps: for each map, max_entries * (key_size + value_size), from the fixed specs
+// here (plus the audit ring's byte size). It does not vary with the number of
+// tracked workloads.
+func BPFMapBytes() uint64 {
+	const u32 = 4 // array map key width
+	var (
+		fsmKey       = uint64(unsafe.Sizeof(FsmKey{}))
+		fsmState     = uint64(unsafe.Sizeof(FsmState{}))
+		transition   = uint64(unsafe.Sizeof(Transition{}))
+		hookBindings = uint64(unsafe.Sizeof(HookBindings{}))
+		rule         = uint64(unsafe.Sizeof(Rule{}))
+		policy       = uint64(unsafe.Sizeof(Policy{}))
+	)
+	total := uint64(0)
+	total += uint64(MaxTrackedWorkloads) * (fsmKey + fsmState) // AG_STATE
+	total += uint64(MaxTransitions) * (u32 + transition)       // AG_TRANSITIONS
+	total += uint64(NumHooks) * (u32 + hookBindings)           // AG_BINDINGS
+	total += uint64(MaxRules) * (u32 + rule)                   // AG_RULES
+	total += 1 * (u32 + policy)                                // AG_POLICY
+	total += uint64(MaxTrackedWorkloads) * (8 + 1)             // AG_PODS (u64 -> u8)
+	total += uint64(NumMetrics) * (u32 + 8)                    // AG_METRICS (u64 per index)
+	total += 1 * (u32 + uint64(PatternLen))                    // AG_SCRATCH ([u8; PatternLen])
+	total += AuditRingBytes                                    // AG_AUDIT
+	return total
+}
 
 // AG_METRICS per-CPU counter indices.
 const (

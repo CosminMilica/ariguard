@@ -114,7 +114,7 @@ argument predicates, more hooks. It replaces the phase 1 ABI (v2) and bundle (v2
 | map | `AG_TRANSITIONS` | `ARRAY`, `MAX_TRANSITIONS` | `trans_base + state * num_events + event` → `Transition` |
 | map | `AG_BINDINGS` | `ARRAY`, `NUM_HOOKS` | hook → `HookBindings` (up to 8) |
 | map | `AG_STATE` | `LRU_HASH`, `MAX_TRACKED_WORKLOADS` | `FsmKey` → `FsmState` |
-| map | `AG_AUDIT` | `RINGBUF`, 256 KiB | `AuditRecord` (64 B) |
+| map | `AG_AUDIT` | `RINGBUF`, 256 KiB | `AuditRecord` (72 B, see Tier B capture) |
 | map | `AG_SCRATCH` | `PERCPU_ARRAY`, 1 | `0` → `[u8; PATTERN_LEN]` |
 
 Hooks, in id order: `openat setns unshare mount execve ptrace connect dup2 dup3
@@ -214,3 +214,17 @@ After the committed transition (F4): if `policy.enforce == 1`, `action == ACTION
 the audit record; bump the `AG_METRICS` kill counter. Everything else is unchanged from
 Phase 1.5 — detection, audit and the dry-run path are identical whether or not enforcement
 is on.
+
+## Tier B capture — process ancestry and container image
+
+Added for the incident-investigation console (see
+[docs/incident-investigation-plan.md](incident-investigation-plan.md)):
+
+- **`ppid` (process ancestry).** `AuditRecord` gains a `ppid: u32`, growing the record from
+  **64 to 72 bytes**. The kernel reads `task_struct->real_parent->tgid` via CO-RE, using
+  `vmlinux` bindings generated from the kernel's BTF (`bpf/ariguard-ebpf/src/vmlinux.rs`,
+  committed, auto-generated with `aya-tool`). The agent builds a process tree from it.
+- **Container image + digest.** Agent-only, no kernel change: the agent resolves the image from
+  the pod object and emits `image` / `image_id` per event, which the sink stores.
+
+Mirrored in `pkg/fsm`; the size/offset checks extend to the new `ppid` field.

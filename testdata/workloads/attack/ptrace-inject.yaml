@@ -1,0 +1,19 @@
+# Attack: ptrace process injection (T1055.008). ptrace(ATTACH) then ptrace(POKETEXT).
+apiVersion: v1
+kind: Pod
+metadata: {name: ptrace-inject, namespace: ariguard-eval, labels: {app.kubernetes.io/part-of: ariguard-eval}}
+spec:
+  restartPolicy: Never
+  containers:
+    - name: attacker
+      image: python:3.12-slim
+      securityContext: {privileged: true}
+      command: ["python3","-c"]
+      args:
+        - |
+          import ctypes, time
+          time.sleep(8)
+          libc = ctypes.CDLL(None, use_errno=True)
+          libc.ptrace(16, 0, 0, 0)   # PTRACE_ATTACH
+          libc.ptrace(4, 0, 0, 0)    # PTRACE_POKETEXT  (terminal -> kill)
+          time.sleep(10)

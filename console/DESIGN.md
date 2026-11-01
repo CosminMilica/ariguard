@@ -36,6 +36,14 @@ Transport: **push** for audit + register (captures SIGHUP reloads promptly),
 | Events feed, Attack chain per pod | push audit (rule/state/syscall/comm/enforced/ts) |
 | Severity timeline | audit bucketed by severity over time |
 | Settings (metrics addr, bundle, ring buffer, kernel, enforce) | register |
+| Triage queue, Campaigns, Containment | `/api/triage`, `/api/campaigns`, `/api/containment` over audit |
+| Timeline page | audit over time |
+| Coverage page | `/api/coverage` (rules × audit) |
+| Performance page | agent `ariguard_program_run_time_ns_total` / `ariguard_program_runs_total` / `ariguard_bpf_map_bytes` + events/sec |
+| Per-incident Export | `/api/export` |
+| Rule detail: FSM diagram, syscall + predicate per transition, enforcement mix | register bundle (per-rule transition table + actions) |
+| Analysis: attack chain (comm/pid/hook) + Process Tree | push audit (`ppid`) |
+| Container image / digest per event | push audit (podmeta image / image_id) |
 | Filters / search / row menu / time-range / nav | frontend over the API |
 
 Settings **Enforce/Detect toggle is read-only** (reflects register); live
@@ -54,7 +62,9 @@ control (backend→agent) is a later, separate addition.
 Ingest: `POST /api/v1/register`, `POST /api/v1/audit`.
 Scraper: polls each agent's `/metrics` every ~3s.
 Read API (all accept `?range=15m|1h|24h`): `/api/overview`, `/api/workloads`,
-`/api/events`, `/api/rules`, `/api/nodes`, `/api/settings`, `/api/chain?pod=`.
+`/api/events` (also `?rule=&namespace=&node=` filters), `/api/rules`,
+`/api/nodes`, `/api/settings`, `/api/chain?pod=`, `/api/triage`,
+`/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`.
 
 SQLite tables: `nodes`, `rules`, `audit_events`, `metric_samples`,
 `workloads`, `mutes`.
@@ -73,7 +83,7 @@ console/
     scrape/(scraper.go, prom.go)
   frontend/
     index.html, vite.config.ts, package.json
-    src/ (App.vue, api.ts, pages/{Overview,Workloads,Events,Rules,Nodes,Settings}.vue,
+    src/ (App.vue, api.ts, pages/{Overview,Triage,Campaigns,Workloads,Events,Timeline,Coverage,Performance,Rules,Nodes,Settings}.vue,
           components/{Sidebar,Topbar,StatTiles,Chart,Table,Chip,RowMenu,Chain,Feed}.vue)
 ```
 

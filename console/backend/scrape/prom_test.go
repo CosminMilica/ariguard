@@ -40,3 +40,30 @@ unterminated{a="b 1
 		t.Errorf("brace in label value: %+v", got[3])
 	}
 }
+
+func TestExtractPerf(t *testing.T) {
+	in := `# HELP ariguard_bpf_map_bytes BPF map budget.
+# TYPE ariguard_bpf_map_bytes gauge
+ariguard_bpf_map_bytes 1048576
+ariguard_program_runs_total{program="sw_openat"} 400
+ariguard_program_run_time_ns_total{program="sw_openat"} 20000
+ariguard_program_runs_total{program="sw_connect"} 0
+ariguard_program_run_time_ns_total{program="sw_connect"} 0
+ariguard_events_total 99
+`
+	perf := ExtractPerf(ParseProm(strings.NewReader(in)))
+	if perf.BPFMapBytes != 1048576 {
+		t.Errorf("bpf_map_bytes: got %v", perf.BPFMapBytes)
+	}
+	if len(perf.Programs) != 2 {
+		t.Fatalf("programs: %+v", perf.Programs)
+	}
+	openat := perf.Programs["sw_openat"]
+	if openat.Runs != 400 || openat.RunTimeNS != 20000 {
+		t.Errorf("sw_openat: %+v", openat)
+	}
+	connect := perf.Programs["sw_connect"]
+	if connect.Runs != 0 || connect.RunTimeNS != 0 {
+		t.Errorf("sw_connect: %+v", connect)
+	}
+}

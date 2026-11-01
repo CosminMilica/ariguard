@@ -6,12 +6,22 @@ import (
 	_ "embed"
 	"fmt"
 	"net/url"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
 //go:embed schema.sql
 var schema string
+
+// migrations add columns to tables that may already exist with data. Each runs
+// after the schema is applied; "duplicate column" errors are ignored so existing
+// databases migrate in place without dropping rows.
+var migrations = []string{
+	`ALTER TABLE audit_events ADD COLUMN image TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE audit_events ADD COLUMN image_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE audit_events ADD COLUMN ppid INTEGER NOT NULL DEFAULT 0`,
+}
 
 // Open opens (creating if needed) the SQLite file at path and applies the schema.
 func Open(path string) (*sql.DB, error) {
@@ -25,6 +35,12 @@ func Open(path string) (*sql.DB, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("apply migration %q: %w", m, err)
+		}
 	}
 	return db, nil
 }

@@ -4,7 +4,7 @@ const BASE: string = (import.meta.env.VITE_API_BASE as string) || 'http://localh
 const POLL_MS = 3000
 
 export type Range = '15m' | '1h' | '24h'
-export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'rules' | 'nodes' | 'settings'
+export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'triage' | 'campaigns' | 'timeline' | 'coverage' | 'rules' | 'nodes' | 'performance' | 'settings'
 
 export interface Point { t: number; v: number }
 export interface Overview {
@@ -14,12 +14,43 @@ export interface Overview {
   state_breakdown: Record<string, number>
 }
 export interface Workload { pod: string; namespace: string; node: string; comm: string; rule: string; state: string; action: string }
-export interface AEvent { ts_ns: number; severity: string; pod: string; namespace: string; rule: string; event: string; node: string; action: string; enforced: boolean }
-export interface Rule { name: string; scope: string; num_states: number; window_ns: number; terminal_action: string; hits: number }
+export interface AEvent { ts_ns: number; severity: string; pod: string; namespace: string; rule: string; event: string; node: string; action: string; enforced: boolean; comm?: string; pid?: number; ppid?: number; hook?: string; image?: string; image_id?: string }
+export interface Rule {
+  name: string; scope: string; num_states: number; window_ns: number; terminal_action: string; hits: number
+  states?: string[]; events?: string[]; terminal_from?: number
+  transitions?: { from: string; event: string; to: string; action: string; syscalls?: string[] }[]
+}
 export interface NodeInfo { node: string; kernel: string; hooks_attached: number; hooks_total: number; status: string; events_per_sec: number }
 export interface Settings { enforce: boolean; metrics_addr: string; bundle: { rules: unknown }; audit_ring_bytes: number; kernel: string }
 export interface Incident { pod: string; namespace: string; node: string; rule: string; started_ts_ns: number; ended_ts_ns: number; max_state: string; outcome: string; steps: number }
-export interface ChainStep { ts_ns: number; state: string; event: string; action: string; enforced: boolean }
+export interface ChainStep { ts_ns: number; state: string; event: string; action: string; enforced: boolean; comm?: string; pid?: number; ppid?: number; hook?: string }
+export interface PerfProgram { program: string; runs: number; ns_per_run: number }
+export interface Perf { bpf_map_bytes: number; events_per_sec: number; audit_dropped: number; programs: PerfProgram[] }
+export interface TriageRow {
+  pod: string; namespace: string; node: string; rule: string
+  started_ts_ns: number; last_ts_ns: number; max_state: string; max_action: string
+  outcome: string; steps: number; active: boolean
+}
+export interface CampaignRule {
+  rule: string; incidents: number; pods: number; namespaces: number; nodes: number
+  killed: number; blocked: number; detected: number; first_ts_ns: number; last_ts_ns: number
+  affected_namespaces: string[]; affected_nodes: string[]
+}
+export interface CampaignNs {
+  namespace: string; incidents: number; pods: number; rules: number; nodes: number
+  killed: number; blocked: number; detected: number; first_ts_ns: number; last_ts_ns: number
+  affected_rules: string[]
+}
+export interface Campaigns { by_rule: CampaignRule[]; by_namespace: CampaignNs[] }
+export interface Containment {
+  total: number; killed: number; blocked: number; observed_only: number
+  by_action: { kill: number; deny: number; throttle: number; observe: number }
+  gaps: { rule: string; observed_only: number }[]
+}
+export interface CoverageHook {
+  hook: string; attached: boolean; rules: string[]; techniques: string[]; events: number
+}
+export interface Coverage { attached: number; total: number; hooks: CoverageHook[] }
 
 export const store = reactive({
   page: 'overview' as Page,
@@ -38,6 +69,10 @@ export const store = reactive({
   chainModalPod: '',
   modalChain: [] as ChainStep[],
   incidents: [] as Incident[],
+  triage: [] as TriageRow[],
+  campaigns: null as Campaigns | null,
+  containment: null as Containment | null,
+  coverage: null as Coverage | null,
   muted: [] as string[],
   overview: null as Overview | null,
   allWorkloads: [] as Workload[],
@@ -47,7 +82,9 @@ export const store = reactive({
   rules: [] as Rule[],
   nodes: [] as NodeInfo[],
   settings: null as Settings | null,
+  perf: null as Perf | null,
   chain: [] as ChainStep[],
+  selectedRule: null as Rule | null,
 })
 
 async function req<T>(method: string, path: string, params: Record<string, string> = {}, body?: unknown): Promise<T> {
@@ -131,7 +168,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -141,8 +178,13 @@ export async function refresh() {
       get<NodeInfo[]>('/api/nodes'),
       get<Settings>('/api/settings'),
       get<Incident[]>('/api/incidents'),
+      get<Perf>('/api/perf'),
+      get<TriageRow[]>('/api/triage'),
+      get<Campaigns>('/api/campaigns'),
+      get<Containment>('/api/containment'),
+      get<Coverage>('/api/coverage'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -151,6 +193,11 @@ export async function refresh() {
     if (nd.status === 'fulfilled') store.nodes = arr(nd.value)
     if (se.status === 'fulfilled') store.settings = se.value
     if (inc.status === 'fulfilled') store.incidents = arr(inc.value)
+    if (pf.status === 'fulfilled') store.perf = pf.value
+    if (tr.status === 'fulfilled') store.triage = arr(tr.value)
+    if (cmp.status === 'fulfilled') store.campaigns = cmp.value
+    if (cnt.status === 'fulfilled') store.containment = cnt.value
+    if (cov.status === 'fulfilled') store.coverage = cov.value
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()
@@ -195,9 +242,25 @@ export function openChainModal(pod: string) {
 export function closeChainModal() { store.chainModalPod = ''; store.modalChain = [] }
 export const inspectChain = openChainModal
 
+export async function exportIncident(pod: string) {
+  const bundle = await get<unknown>('/api/export', { pod })
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `ariguard-incident-${pod}.json`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+export function openRuleModal(r: Rule) { store.selectedRule = r }
+export function closeRuleModal() { store.selectedRule = null }
+
 export function startPolling() {
   const fromHash = location.hash.replace('#/', '') as Page
-  if (['overview', 'workloads', 'events', 'incidents', 'rules', 'nodes', 'settings'].includes(fromHash)) store.page = fromHash
+  if (['overview', 'workloads', 'events', 'incidents', 'triage', 'campaigns', 'timeline', 'coverage', 'rules', 'nodes', 'performance', 'settings'].includes(fromHash)) store.page = fromHash
   watch(() => store.page, p => { location.hash = '#/' + p; window.scrollTo(0, 0) })
   watch(() => [store.range, store.customFrom, store.customTo, store.evAll, store.wlFilter, store.wlQ, store.evSev, store.evQ, store.chainPod], () => refresh())
   refresh()
@@ -241,3 +304,20 @@ export function actLabel(a: string, enforced: boolean): { text: string; cls: str
   return { text: 'observe', cls: 'dim' }
 }
 export function nodeOk(s: string) { return ['ready', 'healthy', 'up', 'ok', 'online'].includes((s || '').toLowerCase()) }
+
+/* short image: last path segment + tag, e.g. "docker.io/library/nginx:1.25" -> "nginx:1.25" */
+export function shortImage(image?: string): string {
+  const s = (image || '').trim()
+  if (!s) return ''
+  const at = s.indexOf('@')
+  const ref = at >= 0 ? s.slice(0, at) : s
+  const slash = ref.lastIndexOf('/')
+  return slash >= 0 ? ref.slice(slash + 1) : ref
+}
+
+/* process context: "comm[pid]", or "comm", or "[pid]", or '' when both missing */
+export function procLabel(comm?: string, pid?: number): string {
+  const c = (comm || '').trim()
+  const p = pid != null && !isNaN(pid) ? `[${pid}]` : ''
+  return c ? c + p : p
+}

@@ -19,6 +19,18 @@ var maxStateOf = map[int]string{5: "compromised", 4: "breakout_imminent", 3: "es
 
 const stateRank = `CASE to_state WHEN 'compromised' THEN 5 WHEN 'breakout_imminent' THEN 4 WHEN 'escalating' THEN 3 WHEN 'suspicious' THEN 2 ELSE 1 END`
 
+// incidentGroupsSQL materializes one row per incident group (pod,namespace,node,rule)
+// with its enforced-kill/deny flags and ts bounds; reused as a subquery by campaigns
+// and containment. Takes two bind params: window from/to in ns.
+const incidentGroupsSQL = `SELECT pod, namespace, node, rule,
+		MAX(enforced = 1 AND action = 'kill') AS killed,
+		MAX(enforced = 1 AND action = 'deny') AS blocked,
+		MIN(ts_ns) AS first_ns, MAX(ts_ns) AS last_ns
+	FROM audit_events
+	WHERE ts_ns >= ? AND ts_ns <= ? AND pod != ''
+	GROUP BY pod, namespace, node, rule
+	HAVING MAX(to_state IN ('compromised','breakout_imminent','escalating') OR action != 'observe') = 1`
+
 // incidents aggregates audit events per (pod, namespace, node, rule) within the window.
 func (a *API) incidents(w http.ResponseWriter, r *http.Request) {
 	win := windowOf(r)

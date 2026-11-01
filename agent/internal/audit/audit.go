@@ -90,6 +90,7 @@ type Event struct {
 	TsNs      uint64 `json:"ts_ns"`
 	CgroupID  uint64 `json:"cgroup_id"`
 	Pid       uint32 `json:"pid"`
+	Ppid      uint32 `json:"ppid"`
 	Comm      string `json:"comm"`
 	Hook      string `json:"hook"`
 	Rule      string `json:"rule"`
@@ -101,6 +102,8 @@ type Event struct {
 	Namespace string `json:"namespace"`
 	Pod       string `json:"pod"`
 	Container string `json:"container"`
+	Image     string `json:"image"`
+	ImageID   string `json:"image_id"`
 }
 
 func number(v uint32) string { return strconv.FormatUint(uint64(v), 10) }
@@ -129,6 +132,8 @@ func NewEvent(r fsm.AuditRecord, meta *fsm.Meta, pod podmeta.Info) Event {
 		Namespace: pod.Namespace,
 		Pod:       pod.Pod,
 		Container: pod.Container,
+		Image:     pod.Image,
+		ImageID:   pod.ImageID,
 	}
 	if meta != nil && int(r.Rule) < len(meta.Rules) {
 		rm := meta.Rules[r.Rule]

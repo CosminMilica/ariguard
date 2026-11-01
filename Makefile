@@ -45,7 +45,10 @@ proto: ## Generate Go + gRPC from proto/ (needs: buf, protoc-gen-go, protoc-gen-
 	buf generate proto
 
 golden: ## Regenerate the cross-language golden transition table
-	cd compiler && python -m ariguard_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
+	cd compiler && $(PYTHON) -m ariguard_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
+
+bundle: ## Regenerate the full deploy bundle (all rules) baked into the agent image
+	cd compiler && $(PYTHON) -m ariguard_compiler.cli --rules-dir rules --sigma-dir rules/sigma/generated --out ../testdata/golden/policy-full.bin
 
 ingest: ## Fetch MITRE ATT&CK and regenerate the Linux technique catalog
 	cd compiler && $(PYTHON) -m ariguard_compiler.ingest_attack --out ../compiler/techniques/attack-linux.yml
@@ -99,7 +102,7 @@ ci-hygiene: ## G0: format + lint
 PYTHON ?= python
 COVER_MIN := 80.0
 # Linux-only kernel glue, covered by ci-kernel; "[no statements]" packages are skipped too.
-COVER_EXCLUDE := agent/cmd/ariguard-agent agent/internal/loader \
+COVER_EXCLUDE := agent/cmd/ariguard-agent agent/cmd/ariguard-bench agent/internal/loader \
 	agent/internal/audit/ringbuf agent/internal/policy/kmap \
 	agent/internal/metrics/metricmap agent/internal/podsync/podmap
 COVER_DIR := bin/cover
@@ -144,7 +147,7 @@ GEN_BUNDLE    := $(CURDIR)/bin/gen.bin
 # directory holds none yet (the behavioral gate then no-ops on the missing bundle).
 compile-gen:
 	@mkdir -p $(CURDIR)/bin
-	@if ls $(GEN_SIGMA_DIR)/*.yml $(GEN_SIGMA_DIR)/*.yaml >/dev/null 2>&1; then \
+	@if ls $(GEN_SIGMA_DIR)/*.yml >/dev/null 2>&1 || ls $(GEN_SIGMA_DIR)/*.yaml >/dev/null 2>&1; then \
 		cd compiler && $(PYTHON) -m ariguard_compiler.cli --sigma-dir rules/sigma/generated --out $(GEN_BUNDLE); \
 	else \
 		echo "compile-gen: no rules in $(GEN_SIGMA_DIR), skipping bundle compile"; \
@@ -159,6 +162,10 @@ ci-rulegen-host: compile-gen ## G10: compile generated Sigma rules, then run the
 
 ci-e2e: build-bpf build-agent golden ## G5: detect + enforce end-to-end on the kind cluster (in the VM; needs a kill-capable BPF object)
 	ARIGUARD_REQUIRE_E2E=1 go test -tags e2e -count=1 -v -timeout 40m ./test/e2e
+
+SOAK_SECONDS ?= 300
+ci-soak: build-bpf build-agent golden ## G5+: e2e exit check + sustained concurrent soak (flat memory, no drops, no false positives under load)
+	ARIGUARD_REQUIRE_E2E=1 ARIGUARD_SOAK_SECONDS=$(SOAK_SECONDS) go test -tags e2e -count=1 -v -timeout 40m ./test/e2e
 
 ci-security: ## G6: vulnerability, license and secret scans
 	govulncheck ./...

@@ -16,7 +16,9 @@ import (
 )
 
 // Reader reads AG_METRICS, summing the per-CPU values. Pods, State, Names and
-// Resolver are optional and enable the per-workload state gauge.
+// Resolver are optional and enable the per-workload state gauge. Progs is
+// optional and enables the per-program BPF run-time stats (needs BPF statistics
+// enabled process-wide, see --bpf-stats).
 type Reader struct {
 	M        *ebpf.Map
 	Pods     *ebpf.Map
@@ -24,6 +26,7 @@ type Reader struct {
 	Names    *audit.Names
 	Resolver audit.Pods
 	Node     string
+	Progs    map[string]*ebpf.Program
 }
 
 func (r Reader) Read() (metrics.Counters, error) {
@@ -43,6 +46,32 @@ func (r Reader) Read() (metrics.Counters, error) {
 		Denies:       out[fsm.MetricDenies],
 		AuditDropped: out[fsm.MetricAuditDropped],
 	}, nil
+}
+
+// MapBytes returns the constant pre-allocated BPF map byte budget.
+func (r Reader) MapBytes() uint64 { return fsm.BPFMapBytes() }
+
+// Programs returns per-program BPF run-time stats for every loaded ariguard
+// program. It is empty unless Progs is set (BPF statistics enabled). Reading a
+// program's stats requires BPF_STATS_RUN_TIME to be enabled process-wide.
+func (r Reader) Programs() ([]metrics.ProgramStat, error) {
+	if len(r.Progs) == 0 {
+		return nil, nil
+	}
+	out := make([]metrics.ProgramStat, 0, len(r.Progs))
+	for name, p := range r.Progs {
+		st, err := p.Stats()
+		if err != nil {
+			return nil, fmt.Errorf("stats for program %s: %w", name, err)
+		}
+		out = append(out, metrics.ProgramStat{
+			Name:      name,
+			Runs:      st.RunCount,
+			RuntimeNs: uint64(st.Runtime.Nanoseconds()),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 // Workloads joins AG_PODS with the cgroup-scoped entries of AG_STATE. It is

@@ -33,8 +33,15 @@ const (
 	metricsPort = "9102"
 )
 
-// attackers are the four attack workloads; order matches testdata/workloads/attack.
-var attackers = []string{"container-escape", "container-escape-connect", "reverse-seq", "fileless-seq"}
+// attackers are the attack workloads driven as Kubernetes pods here. They exercise five
+// kill-chains reliably reproducible in a kind node (container-escape is driven by two pods).
+// The bpf-tampering and kernel-module-load chains depend on bpf()/finit_module behaviour that
+// varies by node (caps/kernel config), so they are not driven as e2e pods; they are verified
+// by the behavioral gate (G10, ci-rulegen) with dedicated drivers across the kernel matrix.
+var attackers = []string{
+	"container-escape", "container-escape-connect", "reverse-seq", "fileless-seq",
+	"ptrace-inject", "cred-access",
+}
 
 // podPhaseKillExpected lists the attackers whose terminal syscall runs in their
 // main process, so a SIGKILL takes the pod to Failed. reverse-seq and
@@ -46,6 +53,8 @@ var attackers = []string{"container-escape", "container-escape-connect", "revers
 var podPhaseKillExpected = map[string]bool{
 	"container-escape":         true,
 	"container-escape-connect": true,
+	"ptrace-inject":            true,
+	"cred-access":              true,
 }
 
 // swMaps are dumped to the artifacts dir on teardown. AG_AUDIT is a ring buffer
@@ -57,16 +66,20 @@ var (
 	imageErr  error
 )
 
+// wantDeployedRules is the rule count the agent image ships (the full deploy bundle,
+// testdata/golden/policy-full.bin), kept in sync with `make bundle`.
+const wantDeployedRules = 7
+
 func TestDetectMode(t *testing.T) {
 	dir, agentPod := setupMode(t, "detect", "detect")
 
-	// AG_POLICY: detect-only, three rules loaded.
+	// AG_POLICY: detect-only, the full rule library loaded.
 	numRules, enforce := readPolicy(t)
 	if enforce != 0 {
 		t.Errorf("AG_POLICY.enforce = %d, want 0 in detect mode", enforce)
 	}
-	if numRules != 3 {
-		t.Errorf("AG_POLICY.num_rules = %d, want 3", numRules)
+	if numRules != wantDeployedRules {
+		t.Errorf("AG_POLICY.num_rules = %d, want %d", numRules, wantDeployedRules)
 	}
 	assertMapNonEmpty(t, "AG_RULES")
 	assertMapNonEmpty(t, "AG_TRANSITIONS")
@@ -101,13 +114,13 @@ func TestDetectMode(t *testing.T) {
 func TestEnforceMode(t *testing.T) {
 	dir, agentPod := setupMode(t, "enforce", "enforce")
 
-	// AG_POLICY: enforcing, three rules loaded.
+	// AG_POLICY: enforcing, the full rule library loaded.
 	numRules, enforce := readPolicy(t)
 	if enforce != 1 {
 		t.Errorf("AG_POLICY.enforce = %d, want 1 in enforce mode", enforce)
 	}
-	if numRules != 3 {
-		t.Errorf("AG_POLICY.num_rules = %d, want 3", numRules)
+	if numRules != wantDeployedRules {
+		t.Errorf("AG_POLICY.num_rules = %d, want %d", numRules, wantDeployedRules)
 	}
 	assertMapNonEmpty(t, "AG_RULES")
 	assertMapNonEmpty(t, "AG_TRANSITIONS")

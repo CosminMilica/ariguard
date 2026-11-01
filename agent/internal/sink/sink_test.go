@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -112,15 +113,96 @@ func TestNilSinkAndUnreachable(t *testing.T) {
 }
 
 func TestRulesFromBundle(t *testing.T) {
+	var etc [fsm.PatternLen]byte
+	copy(etc[:], "/etc/")
 	b := fsm.Bundle{
-		Rules:       []fsm.Rule{{NumStates: 2, NumEvents: 2, TransBase: 0, Scope: fsm.ScopeProcess, WindowNs: 7}},
-		Transitions: []fsm.Transition{{}, {Action: fsm.ActionDeny}, {}, {Action: fsm.ActionKill}},
-		Meta:        fsm.Meta{Rules: []fsm.RuleMeta{{Name: "escape"}}},
+		Rules: []fsm.Rule{{NumStates: 2, NumEvents: 2, TransBase: 0, Scope: fsm.ScopeProcess, TerminalFrom: 1, WindowNs: 7}},
+		Transitions: []fsm.Transition{
+			{NextState: 0, Action: fsm.ActionObserve}, // s0,e0: identity observe, omitted
+			{NextState: 1, Action: fsm.ActionDeny},    // s0,e1: deny -> tripped
+			{NextState: 1, Action: fsm.ActionObserve}, // s1,e0: identity observe, omitted
+			{NextState: 1, Action: fsm.ActionKill},    // s1,e1: kill, stays tripped
+		},
+		Bindings: []fsm.Binding{
+			// event 1 ("exec"): a ptrace arg predicate and an openat path prefix.
+			{Hook: fsm.HookPtrace, Rule: 0, Event: 1, PathArg: fsm.NoArg, PathKind: fsm.PathAny, ArgIndex: 0, ArgOp: fsm.ArgEq, ArgValue: 16},
+			{Hook: fsm.HookOpenat, Rule: 0, Event: 1, PathArg: 0, PathKind: fsm.PathPrefix, PathLen: 5, ArgIndex: fsm.NoArg, ArgOp: fsm.ArgAny, Pattern: etc},
+		},
+		Meta: fsm.Meta{Rules: []fsm.RuleMeta{{Name: "escape", States: []string{"ok", "tripped"}, Events: []string{"open", "exec"}}}},
 	}
 	got := RulesFromBundle(b)[0]
-	want := Rule{Name: "escape", Scope: "process", NumStates: 2, WindowNs: 7, TerminalAction: "kill"}
-	if got != want {
+	exec := []string{"ptrace arg0 == 16", "openat path^=/etc/"}
+	want := Rule{
+		Name:           "escape",
+		Scope:          "process",
+		NumStates:      2,
+		WindowNs:       7,
+		TerminalAction: "kill",
+		States:         []string{"ok", "tripped"},
+		Events:         []string{"open", "exec"},
+		TerminalFrom:   1,
+		Transitions: []RuleTransition{
+			{From: "ok", Event: "exec", To: "tripped", Action: "deny", Syscalls: exec},
+			{From: "tripped", Event: "exec", To: "tripped", Action: "kill", Syscalls: exec},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v want %+v", got, want)
+	}
+}
+
+func TestBindingPredicate(t *testing.T) {
+	var sun [fsm.PatternLen]byte
+	copy(sun[:], "/run/x")
+	var etc [fsm.PatternLen]byte
+	copy(etc[:], "/etc/")
+	cases := []struct {
+		name string
+		bd   fsm.Binding
+		want string
+	}{
+		{"path_prefix", fsm.Binding{PathKind: fsm.PathPrefix, Pattern: etc}, " path^=/etc/"},
+		{"sun_prefix", fsm.Binding{PathKind: fsm.PathSunPrefix, Pattern: sun}, " sun_path^=/run/x"},
+		{"arg_any", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgAny}, ""},
+		{"arg_eq", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgEq, ArgIndex: 0, ArgValue: 16}, " arg0 == 16"},
+		{"arg_le", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgLe, ArgIndex: 1, ArgValue: 2}, " arg1 <= 2"},
+		{"mask_any", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgMaskAny, ArgIndex: 3, ArgValue: 0x10000}, " arg3 & 0x10000 != 0"},
+		{"mask_none", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgMaskNone, ArgIndex: 3, ArgValue: 0x1e0000}, " arg3 & 0x1e0000 == 0"},
+		{"unknown_op", fsm.Binding{PathKind: fsm.PathAny, ArgOp: 99}, ""},
+	}
+	for _, c := range cases {
+		if got := bindingPredicate(c.bd); got != c.want {
+			t.Errorf("%s: bindingPredicate = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestRulesFromBundleNoMeta(t *testing.T) {
+	// No Meta: states/events fall back to generated names, scope from the numeric map;
+	// duplicate bindings for the same (rule,event) collapse to one syscall description.
+	b := fsm.Bundle{
+		Rules: []fsm.Rule{{NumStates: 2, NumEvents: 1, TransBase: 0, Scope: fsm.ScopeCgroup, TerminalFrom: 1}},
+		Transitions: []fsm.Transition{
+			{NextState: 1, Action: fsm.ActionKill}, // s0,e0 -> kill
+			{NextState: 1, Action: fsm.ActionObserve},
+		},
+		Bindings: []fsm.Binding{
+			{Hook: fsm.HookExecve, Rule: 0, Event: 0, PathArg: fsm.NoArg, PathKind: fsm.PathAny, ArgIndex: fsm.NoArg, ArgOp: fsm.ArgAny},
+			{Hook: fsm.HookExecve, Rule: 0, Event: 0, PathArg: fsm.NoArg, PathKind: fsm.PathAny, ArgIndex: fsm.NoArg, ArgOp: fsm.ArgAny},
+		},
+	}
+	got := RulesFromBundle(b)[0]
+	if got.Name != "0" || got.Scope != "cgroup" {
+		t.Errorf("name/scope fallback: got name=%q scope=%q", got.Name, got.Scope)
+	}
+	if len(got.States) != 2 || got.States[0] != "state0" || got.Events[0] != "event0" {
+		t.Errorf("generated names: states=%v events=%v", got.States, got.Events)
+	}
+	if len(got.Transitions) != 1 || got.Transitions[0].To != "state1" {
+		t.Fatalf("transitions = %+v", got.Transitions)
+	}
+	if sys := got.Transitions[0].Syscalls; len(sys) != 1 || sys[0] != "execve" {
+		t.Errorf("dedup syscalls = %v, want [execve]", sys)
 	}
 }
 

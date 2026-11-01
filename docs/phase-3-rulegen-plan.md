@@ -1,6 +1,11 @@
 # Phase 3 — Automated rule generation + validation pipeline (A3 + A4 + behavioral gate)
 
-Status: planned. Goal: stop hand-writing rules. Generate kill-chain rules from threat
+Status: implemented (control-plane fleet distribution, wave 5, still deferred). The Sigma
+`temporal_ordered` → FSM compiler (`sigma.py`, multi-selection OR), the MITRE ATT&CK ingester
+(`ingest_attack.py` → `compiler/techniques/attack-linux.yml`), A4 validation (`validate.py`) and
+the behavioral gate are in place; the committed rule library is now 7 kill-chains (container-escape,
+reverse-shell, fileless-exec native + bpf-tampering, cred-access-exfil, kernel-module-load,
+ptrace-injection generated). Goal: stop hand-writing rules. Generate kill-chain rules from threat
 intelligence (ATT&CK/Sigma, NL descriptions) with an LLM, and **trust nothing until it is
 validated** — structurally and behaviorally. The output is a committed, validated rule
 library; the generator runs offline, CI/kernel only re-verify the committed artifacts.

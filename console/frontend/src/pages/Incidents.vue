@@ -18,14 +18,12 @@ const key = (i: Incident) => i.pod + i.started_ts_ns
             <div class="inc-rule">{{ i.rule }}</div>
             <div class="inc-meta mono">{{ i.namespace }} · {{ i.node }}</div>
           </div>
-          <div class="inc-mid">
-            <span class="outcome" :class="outcomeCls(i.outcome)">{{ i.outcome || 'detected' }}</span>
+          <span class="outcome" :class="outcomeCls(i.outcome)">{{ i.outcome || 'detected' }}</span>
+          <div class="inc-max">
             <span class="st-max">max: {{ stateLabel(i.max_state) }}</span>
+            <span class="inc-steps">{{ i.steps }} steps</span>
           </div>
-          <div class="inc-time mono">
-            {{ clockNs(i.started_ts_ns) }} → {{ clockNs(i.ended_ts_ns) }}
-            <span class="dim">{{ i.steps }} steps</span>
-          </div>
+          <div class="inc-time mono">{{ clockNs(i.started_ts_ns) }} → {{ clockNs(i.ended_ts_ns) }}</div>
           <button class="btn" @click="openChainModal(i.pod)">View chain</button>
         </article>
       </div>

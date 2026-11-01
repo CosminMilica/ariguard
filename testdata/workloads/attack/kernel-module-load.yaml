@@ -1,0 +1,19 @@
+# Attack: kernel module load (T1547.006). open a module, then finit_module.
+apiVersion: v1
+kind: Pod
+metadata: {name: kernel-module-load, namespace: ariguard-eval, labels: {app.kubernetes.io/part-of: ariguard-eval}}
+spec:
+  restartPolicy: Never
+  containers:
+    - name: attacker
+      image: python:3.12-slim
+      securityContext: {privileged: true}
+      command: ["python3","-c"]
+      args:
+        - |
+          import ctypes, os, time
+          time.sleep(8)
+          try: os.open("/lib/modules/evil.ko", os.O_RDONLY)
+          except OSError: pass
+          ctypes.CDLL(None).syscall(273, -1, b"", 0)   # finit_module (arm64) (terminal -> kill)
+          time.sleep(10)

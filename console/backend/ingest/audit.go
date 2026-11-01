@@ -9,6 +9,7 @@ type auditEvent struct {
 	TsNS      int64  `json:"ts_ns"`
 	CgroupID  int64  `json:"cgroup_id"`
 	PID       int64  `json:"pid"`
+	Ppid      int64  `json:"ppid"`
 	Comm      string `json:"comm"`
 	Hook      string `json:"hook"`
 	Rule      string `json:"rule"`
@@ -20,6 +21,8 @@ type auditEvent struct {
 	Namespace string `json:"namespace"`
 	Pod       string `json:"pod"`
 	Container string `json:"container"`
+	Image     string `json:"image"`
+	ImageID   string `json:"image_id"`
 	Node      string `json:"node"`
 }
 
@@ -50,9 +53,9 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 		if e.Enforced {
 			enforced = 1
 		}
-		if _, err = tx.Exec(`INSERT INTO audit_events(ts_ns,node,pod,namespace,comm,rule,event,from_state,to_state,action,enforced,cgroup_id)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-			e.TsNS, e.Node, e.Pod, e.Namespace, e.Comm, e.Rule, e.Event, e.From, e.To, e.Action, enforced, e.CgroupID); err != nil {
+		if _, err = tx.Exec(`INSERT INTO audit_events(ts_ns,node,pod,namespace,comm,rule,event,from_state,to_state,action,enforced,cgroup_id,pid,ppid,hook,image,image_id)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			e.TsNS, e.Node, e.Pod, e.Namespace, e.Comm, e.Rule, e.Event, e.From, e.To, e.Action, enforced, e.CgroupID, e.PID, e.Ppid, e.Hook, e.Image, e.ImageID); err != nil {
 			break
 		}
 		if e.Pod == "" || e.Rule == "" || e.To == "" {

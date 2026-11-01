@@ -1,1 +1,31 @@
-{"namespace":"ariguard-eval","rules":{"container-escape":{"terminal":"compromised","chain":["normal","suspicious","escalating","breakout_imminent","compromised"],"attackers":["container-escape","container-escape-connect"],"deny":{"terminal":"breakout_imminent","action":"deny"}},"reverse-shell":{"terminal":"compromised","chain":["normal","connected","stdio_redirected","compromised"],"attackers":["reverse-seq"]},"fileless-exec":{"terminal":"compromised","chain":["normal","memfd_created","compromised"],"attackers":["fileless-seq"]}}}
+{
+  "namespace": "ariguard-eval",
+  "rules": {
+    "container-escape": {
+      "terminal": "compromised",
+      "chain": ["normal", "suspicious", "escalating", "breakout_imminent", "compromised"],
+      "attackers": ["container-escape", "container-escape-connect"],
+      "deny": {"terminal": "breakout_imminent", "action": "deny"}
+    },
+    "reverse-shell": {
+      "terminal": "compromised",
+      "chain": ["normal", "connected", "stdio_redirected", "compromised"],
+      "attackers": ["reverse-seq"]
+    },
+    "fileless-exec": {
+      "terminal": "compromised",
+      "chain": ["normal", "memfd_created", "compromised"],
+      "attackers": ["fileless-seq"]
+    },
+    "ptrace-injection": {
+      "terminal": "compromised",
+      "chain": ["normal", "stage_1", "compromised"],
+      "attackers": ["ptrace-inject"]
+    },
+    "cred-access-exfil": {
+      "terminal": "compromised",
+      "chain": ["normal", "stage_1", "compromised"],
+      "attackers": ["cred-access"]
+    }
+  }
+}

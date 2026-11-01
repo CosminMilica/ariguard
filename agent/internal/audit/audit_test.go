@@ -87,26 +87,28 @@ func line(t *testing.T, r fsm.AuditRecord, m *fsm.Meta, pod podmeta.Info) string
 func TestWriteLine(t *testing.T) {
 	r, _ := Decode(sample())
 	m := meta()
-	pod := podmeta.Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker"}
-	want := `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"openat",` +
+	pod := podmeta.Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker",
+		Image: "docker.io/library/alpine:3.19", ImageID: "docker.io/library/alpine@sha256:abc"}
+	want := `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"ppid":0,"comm":"cat","hook":"openat",` +
 		`"rule":"container-escape","event":"runtime_socket_open","from":"normal","to":"suspicious","action":"observe","enforced":false,` +
-		`"namespace":"ariguard-eval","pod":"container-escape","container":"attacker"}` + "\n"
+		`"namespace":"ariguard-eval","pod":"container-escape","container":"attacker",` +
+		`"image":"docker.io/library/alpine:3.19","image_id":"docker.io/library/alpine@sha256:abc"}` + "\n"
 	if got := line(t, r, &m, pod); got != want {
 		t.Fatalf("line = %s\nwant   %s", got, want)
 	}
 
 	r.Hook, r.Event, r.ToState, r.Action = 99, 9, 11, 13
-	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"99",` +
+	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"ppid":0,"comm":"cat","hook":"99",` +
 		`"rule":"container-escape","event":"9","from":"normal","to":"11","action":"13","enforced":false,` +
-		`"namespace":"","pod":"","container":""}` + "\n"
+		`"namespace":"","pod":"","container":"","image":"","image_id":""}` + "\n"
 	if got := line(t, r, &m, podmeta.Info{}); got != want {
 		t.Fatalf("line = %s\nwant   %s", got, want)
 	}
 
 	r.Rule = 3
-	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"99",` +
+	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"ppid":0,"comm":"cat","hook":"99",` +
 		`"rule":"3","event":"9","from":"0","to":"11","action":"13","enforced":false,` +
-		`"namespace":"","pod":"","container":""}` + "\n"
+		`"namespace":"","pod":"","container":"","image":"","image_id":""}` + "\n"
 	if got := line(t, r, &m, podmeta.Info{}); got != want {
 		t.Fatalf("unknown rule: line = %s\nwant   %s", got, want)
 	}

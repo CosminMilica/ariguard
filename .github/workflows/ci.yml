@@ -220,9 +220,10 @@ jobs:
         with:
           cluster_name: ariguard-dev
           config: deploy/kind/cluster.yaml
-      - name: Phase 1 exit check
+      - name: Exit check + soak (all 7 chains, concurrency, flat-memory/no-drop/no-FP under load)
         env:
           TMPDIR: ${{ runner.temp }}/exit-check
+          ARIGUARD_SOAK_SECONDS: "300"
         run: |
           mkdir -p "$TMPDIR"
           make ci-e2e

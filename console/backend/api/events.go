@@ -16,11 +16,17 @@ type event struct {
 	Node      string `json:"node"`
 	Action    string `json:"action"`
 	Enforced  bool   `json:"enforced"`
+	Comm      string `json:"comm"`
+	Pid       int    `json:"pid"`
+	Ppid      int    `json:"ppid"`
+	Hook      string `json:"hook"`
+	Image     string `json:"image"`
+	ImageID   string `json:"image_id"`
 }
 
 func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	win := windowOf(r)
-	query := `SELECT ts_ns,to_state,pod,namespace,rule,event,node,action,enforced FROM audit_events WHERE ts_ns >= ? AND ts_ns <= ?`
+	query := `SELECT ts_ns,to_state,pod,namespace,rule,event,node,action,enforced,comm,pid,ppid,hook,image,image_id FROM audit_events WHERE ts_ns >= ? AND ts_ns <= ?`
 	args := []any{win.fromNS(), win.toNS()}
 	switch r.URL.Query().Get("severity") {
 	case "crit":
@@ -38,6 +44,18 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 		l := like(q)
 		args = append(args, l, l, l, l, l)
 	}
+	if v := r.URL.Query().Get("rule"); v != "" {
+		query += ` AND rule = ?`
+		args = append(args, v)
+	}
+	if v := r.URL.Query().Get("namespace"); v != "" {
+		query += ` AND namespace = ?`
+		args = append(args, v)
+	}
+	if v := r.URL.Query().Get("node"); v != "" {
+		query += ` AND node = ?`
+		args = append(args, v)
+	}
 	query += ` ORDER BY ts_ns DESC, id DESC LIMIT ?`
 	args = append(args, eventLimit)
 
@@ -52,7 +70,7 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 		var e event
 		var to string
 		var enforced int
-		if err := rows.Scan(&e.TsNS, &to, &e.Pod, &e.Namespace, &e.Rule, &e.Event, &e.Node, &e.Action, &enforced); err != nil {
+		if err := rows.Scan(&e.TsNS, &to, &e.Pod, &e.Namespace, &e.Rule, &e.Event, &e.Node, &e.Action, &enforced, &e.Comm, &e.Pid, &e.Ppid, &e.Hook, &e.Image, &e.ImageID); err != nil {
 			fail(w, err)
 			return
 		}

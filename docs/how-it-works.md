@@ -36,8 +36,9 @@ A single `mount` or `setns` is normal in many workloads. The **ordered sequence*
 trips the machine. Each rule is one such chain; AriGuard runs **several at once**, each
 scoped to a container (cgroup) or a single process, and a syscall can advance more than one
 rule. Bindings carry predicates on the syscall arguments (a path prefix, a flag mask) so a
-rule fires on the real step, not its benign look-alike. Three rules ship today: container
-escape, reverse shell, fileless execution.
+rule fires on the real step, not its benign look-alike. Seven kill-chains ship today:
+container-escape, reverse-shell, fileless-exec (hand-written) plus bpf-tampering,
+cred-access-exfil, kernel-module-load and ptrace-injection (generated from Sigma).
 
 ## 2. Dynamic, escalating mitigation
 
@@ -58,9 +59,11 @@ node's own container runtime.
 
 The in-kernel transition table is produced offline and loaded into a BPF map:
 
-- **Sigma path** — rules can be authored as MITRE-ATT&CK-tagged Sigma `temporal_ordered`
-  correlations and compiled straight to the in-kernel FSM (Phase 3, in progress: single-selection
-  sub-rules today).
+- **Sigma path** — rules are authored as MITRE-ATT&CK-tagged Sigma `temporal_ordered`
+  correlations (multi-selection OR) and compiled straight to the in-kernel FSM; a MITRE ATT&CK
+  ingester builds the technique catalog that drives generation. Automated rule generation (an
+  offline, in-session LLM co-author; outputs committed, CI never calls an LLM) is gated by
+  schema/round-trip validation and a behavioral attack-vs-benign check (Phase 3, implemented).
 - **ML path** — mine malicious subsequences from labeled syscall traces (ADFA-LD / LID-DS +
   synthetic attacks) and emit FSM transitions.
 - **LLM path** — translate ATT&CK technique / Sigma descriptions into the formal

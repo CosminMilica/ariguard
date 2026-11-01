@@ -125,8 +125,10 @@ LSM the chain halts at `breakout_imminent` (execve/kill never reached); without 
 programs are dropped at load time and the `kill` fallback fires. New metric
 `ariguard_denies_total`. Design in [docs/phase-2b-lsm-deny.md](docs/phase-2b-lsm-deny.md).
 
-**Status: implemented.** In-kernel integration test drives the chain to the mount step and
-asserts `EPERM` + an enforced deny record; it skips where BPF LSM is absent.
+**Status: done, merged.** `lsm/*` on `sb_mount`/`move_mount` return `-EPERM`, keyed off an
+`AG_DENY` token (by `pid_tgid`); new metric `ariguard_denies_total`. An in-kernel integration
+test drives the chain to the mount step and asserts `EPERM` + an enforced deny record; it skips
+where BPF LSM is absent.
 
 ### Phase 3 — Rule compiler + fleet management
 The AI bridge and the cluster story.
@@ -134,19 +136,34 @@ The AI bridge and the cluster story.
 - Control plane: CRD, manager, reconciler, gRPC server, registry, audit sink (`CP-3.*`).
 - Agent gRPC client (`AGT-3.1`); finalize proto (`PROTO-3.1`).
 
-**Status: started.** The AI-bridge work is underway: `CMP-3.1` (Sigma `temporal_ordered` →
-FSM) is in progress for single-selection sub-rules; see [docs/phase-3-plan.md](docs/phase-3-plan.md).
+**Status: implemented** (control-plane CRD / fleet distribution still deferred). The Sigma
+`temporal_ordered` → FSM compiler (`compiler/ariguard_compiler/sigma.py`, multi-selection OR)
+and a MITRE ATT&CK ingester (`ingest_attack.py` → `compiler/techniques/attack-linux.yml`) are
+in place. The automated pipeline co-authors rules offline (Claude in-session; outputs committed,
+CI never calls an LLM), gated by A4 validation (`validate.py`: schema + binary round-trip +
+kernel limits) and a behavioral check (must detect the attack and not fire on a benign twin).
+The rule library is now **7 kill-chains**: container-escape, reverse-shell, fileless-exec
+(native) + bpf-tampering, cred-access-exfil, kernel-module-load, ptrace-injection (generated
+Sigma). See [docs/phase-3-rulegen-plan.md](docs/phase-3-rulegen-plan.md).
 
 ### Phase 4 — Evaluation
 The evidence that earns the grade.
+
+**Status: implemented** (our-metrics-first; Falco/Tetragon comparison still deferred). The
+`ariguard-bench` CLI (`agent/cmd/ariguard-bench`) measures per-hook latency (BPF run-time stats),
+the flat memory curve (agent RSS + BPF map bytes vs N workloads) and throughput (events/sec +
+`audit_dropped`); the agent exposes per-program run-time and BPF map bytes (`--bpf-stats`).
+See [docs/phase-4-eval-plan.md](docs/phase-4-eval-plan.md).
+
 - Benchmark harness: latency, throughput, **flat memory-vs-process curve** (`EVAL-4.1`, `EVAL-4.2`, `BPF-4.1`).
 - Efficacy: detection + false-positive rates (`EVAL-4.3`).
-- Comparison vs Falco/Tetragon (`EVAL-4.4`, `DEP-4.1`).
+- Comparison vs Falco/Tetragon (`EVAL-4.4`, `DEP-4.1`) — deferred.
 - Results tables & plots; thesis write-up mapping (`EVAL-4.5`, `DOC-3`).
-- **Reporting UI (deferred, Vue):** custom web dashboard — live FSM state per pod
-  (normal → … → compromised), attack chain stepping through, kill moments, metrics.
-  Reads the agent's Prometheus `/metrics` + JSON audit stream (both already emitted).
-  Demo/presentation artifact; not core to the thesis contribution.
+- **Reporting UI — built (Vue):** a full incident-investigation console (agent → sink → SQLite →
+  Vue) with Triage, Campaigns (blast-radius), Timeline, Coverage (ATT&CK × hooks), Performance,
+  per-incident JSON export, interactive per-rule FSM diagrams and a process tree from `ppid`.
+  Reads the agent's Prometheus `/metrics` + the audit stream. See
+  [docs/incident-investigation-plan.md](docs/incident-investigation-plan.md).
 
 ## Critical path
 

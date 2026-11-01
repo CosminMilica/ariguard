@@ -144,7 +144,16 @@ func (s *Scraper) store(node string, samples []Sample) error {
 		now, node, int64(events), int64(kills), int64(denies), int64(dropped)); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE nodes SET last_seen=? WHERE node=?`, now, node); err != nil {
+
+	perf := ExtractPerf(samples)
+	for prog, st := range perf.Programs {
+		if _, err := tx.Exec(`INSERT INTO program_stats(node,program,runs,run_time_ns,updated) VALUES(?,?,?,?,?)
+			ON CONFLICT(node,program) DO UPDATE SET runs=excluded.runs, run_time_ns=excluded.run_time_ns, updated=excluded.updated`,
+			node, prog, int64(st.Runs), int64(st.RunTimeNS), now); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`UPDATE nodes SET last_seen=?, bpf_map_bytes=? WHERE node=?`, now, int64(perf.BPFMapBytes), node); err != nil {
 		return err
 	}
 	return tx.Commit()

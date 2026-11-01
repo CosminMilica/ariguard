@@ -123,4 +123,8 @@ Decisions F1–F7 and the v3.1 ABI additions: [docs/architecture.md](../docs/arc
 ## Phase 4 — Evaluation support
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` BPF-4.1 | Fixed memory budget: expose map sizes; prove O(1) per event | BPF-1.* | memory independent of process count |
+| `[x]` BPF-4.1 | Fixed memory budget: expose map sizes; prove O(1) per event | BPF-1.* | memory independent of process count |
+
+> BPF-4.1: map bytes exposed as `ariguard_bpf_map_bytes` (agent `--bpf-stats`); the
+> memory curve (RSS + BPF map bytes vs process count) is flat at ~938 KiB, independent
+> of process count.

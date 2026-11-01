@@ -111,6 +111,24 @@ struct DenyToken {
 #[btf_map]
 static AG_DENY: LruHashMap<u64, DenyToken, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
 
+// child tgid -> parent tgid, populated synchronously on fork. The agent reads it to attach
+// process ancestry (ppid) to audit events — no task_struct walk, so this stays verifier-cheap
+// on older kernels and the record ABI is unchanged.
+#[btf_map]
+static AG_PPID: LruHashMap<u32, u32, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
+
+// sched_process_fork format: common(8) + parent_comm[16]@8 + parent_pid@24 + child_comm[16]@28
+// + child_pid@44. Records child -> parent so the agent can resolve ppid for any later event.
+#[tracepoint(category = "sched", name = "sched_process_fork")]
+pub fn trace_fork(ctx: TracePointContext) -> u32 {
+    let parent_pid = unsafe { ctx.read_at::<i32>(24) }.unwrap_or(0) as u32;
+    let child_pid = unsafe { ctx.read_at::<i32>(44) }.unwrap_or(0) as u32;
+    if child_pid != 0 {
+        let _ = AG_PPID.insert(&child_pid, &parent_pid, 0);
+    }
+    0
+}
+
 #[tracepoint(category = "syscalls", name = "sys_enter_openat")]
 pub fn sw_openat(ctx: TracePointContext) -> u32 {
     handle(&ctx, HOOK_OPENAT)

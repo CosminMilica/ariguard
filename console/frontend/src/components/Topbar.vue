@@ -10,14 +10,19 @@ const meta = computed(() => {
   const w = store.allWorkloads.length, n = store.nodes.length
   const m: Record<string, [string, string]> = {
     overview: ['Overview', `${n} nodes · ${w} workloads monitored`],
+    triage: ['Triage', 'live threats · what is mid-attack now'],
     workloads: ['Workloads', `${w} pods · live cgroup FSM state (current)`],
     events: ['Events', 'terminal states & mitigations'],
     incidents: ['Incidents', 'attack history · what happened'],
+    campaigns: ['Campaigns', 'blast radius · spread across pods & namespaces'],
+    timeline: ['Timeline', 'global cross-workload event stream'],
+    coverage: ['Coverage', 'detection sensors · ATT&CK × hooks'],
     rules: ['Rules', `compiled bundle · ${store.rules.length} rules`],
     nodes: ['Nodes', `DaemonSet · ${n} agents`],
+    performance: ['Performance', 'in-kernel overhead · zero-allocation budget'],
     settings: ['Settings', 'agent configuration'],
   }
-  return m[store.page]
+  return m[store.page] ?? [store.page, '']
 })
 const enforce = computed(() => !!store.settings?.enforce)
 

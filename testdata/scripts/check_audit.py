@@ -11,6 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXPECTATIONS = ROOT / "expectations.json"
 FIXTURES = ROOT / "fixtures"
+# The self-test fixtures cover a fixed three-rule set; they use their own expectations so the
+# deployed expectations.json can grow (more rules) without breaking the checker's self-test.
+FIXTURE_EXPECTATIONS = FIXTURES / "expectations.json"
 REQUIRED = ("ts_ns", "rule", "from", "to", "action", "namespace", "pod")
 
 # (enforce, deny) mode markers.
@@ -52,6 +55,12 @@ SELF_TESTS = [
 
 class BadInput(Exception):
     pass
+
+
+def pod_matches(pod, base):
+    """A pod is an instance of attacker `base` when it equals it or is a generateName
+    instance of it (`<base>-<suffix>`), so concurrent/soak instances are recognized."""
+    return pod == base or pod.startswith(base + "-")
 
 
 def load_expectations(path):
@@ -109,7 +118,7 @@ def is_enforced(rec):
     return rec.get("enforced", False) is True
 
 
-def check(records, exp, enforce=False, deny=False):
+def check(records, exp, enforce=False, deny=False, soak=False):
     ns = exp["namespace"]
     rules = exp["rules"]
     groups = defaultdict(list)
@@ -136,21 +145,58 @@ def check(records, exp, enforce=False, deny=False):
     failures = []
     for rule, spec in rules.items():
         chain = rule_chain(spec)
-        for pod in spec["attackers"]:
-            recs = groups.get((rule, (ns, pod)), [])
-            if not recs:
-                failures.append(("A1", "missing", f"{rule}: attacker {pod} has no records"))
-            elif not follows_chain(recs, chain):
-                failures.append(
-                    (
-                        "A1",
-                        "order",
-                        f"{rule}: {pod} did not follow {' -> '.join(chain)} in order",
+        for base in spec["attackers"]:
+            instances = [
+                (pid, recs)
+                for (r, pid), recs in groups.items()
+                if r == rule and pid[0] == ns and pod_matches(pid[1], base)
+            ]
+            if not instances:
+                failures.append(("A1", "missing", f"{rule}: attacker {base} has no records"))
+                continue
+            if soak:
+                # Under sustained load with pruning, individual instances may be cut short;
+                # require that at least one instance completed the chain (and was enforced in
+                # enforce mode). The false-positive guarantees (A2/A3/A4 below) stay strict.
+                completed = [recs for _, recs in instances if follows_chain(recs, chain)]
+                if not completed:
+                    failures.append(
+                        (
+                            "A1",
+                            "soak-none",
+                            f"{rule}: no {base} instance completed {' -> '.join(chain)} under load",
+                        )
                     )
-                )
+                elif enforce and not any(
+                    is_enforced(r)
+                    for recs in completed
+                    for r in recs
+                    if r["to"] == spec["terminal"]
+                ):
+                    failures.append(
+                        (
+                            "A4",
+                            "soak-unenforced",
+                            f"{rule}: no {base} instance was enforced at {spec['terminal']} under load",
+                        )
+                    )
+                continue
+            for pid, recs in instances:
+                if not follows_chain(recs, chain):
+                    failures.append(
+                        (
+                            "A1",
+                            "order",
+                            f"{rule}: {pid[1]} did not follow {' -> '.join(chain)} in order",
+                        )
+                    )
     for (rule, pid), recs in groups.items():
         spec = rules.get(rule)
-        attacker = bool(spec) and pid[0] == ns and pid[1] in spec["attackers"]
+        if spec is None:
+            # A loaded rule not listed in these expectations (e.g. one verified by the
+            # behavioral gate instead); not asserted here.
+            continue
+        attacker = pid[0] == ns and any(pod_matches(pid[1], b) for b in spec["attackers"])
         if spec and not attacker and any(r["to"] == spec["terminal"] for r in recs):
             failures.append(
                 (
@@ -163,7 +209,11 @@ def check(records, exp, enforce=False, deny=False):
             bad = next((r for r in recs if r["action"] != "observe"), None)
             if bad:
                 failures.append(
-                    ("A3", "action", f"{rule}: {pod_label(pid)} got action {bad['action']}")
+                    (
+                        "A3",
+                        "action",
+                        f"{rule}: {pod_label(pid)} got action {bad['action']}",
+                    )
                 )
         for r in recs:
             if not is_enforced(r):
@@ -186,7 +236,11 @@ def check(records, exp, enforce=False, deny=False):
                 )
             if not enforce:
                 failures.append(
-                    ("A4", "dryrun", f"{rule}: {pod_label(pid)} has enforced=true in dry-run")
+                    (
+                        "A4",
+                        "dryrun",
+                        f"{rule}: {pod_label(pid)} has enforced=true in dry-run",
+                    )
                 )
         if enforce and attacker:
             d = deny_spec(spec)
@@ -210,7 +264,7 @@ def check(records, exp, enforce=False, deny=False):
                             f"{rule}: {pod_label(pid)} reached {spec['terminal']} despite deny",
                         )
                     )
-            else:
+            elif not soak:
                 for r in recs:
                     if r["to"] == spec["terminal"] and not is_enforced(r):
                         failures.append(
@@ -240,23 +294,26 @@ def mode_label(enforce, deny):
     return "deny" if deny else "enforce" if enforce else "dry-run"
 
 
-def run(path, exp_path, enforce, deny=False):
+def run(path, exp_path, enforce, deny=False, soak=False):
     exp = load_expectations(exp_path)
     records = load(path)
-    groups, failures = check(records, exp, enforce, deny)
+    groups, failures = check(records, exp, enforce, deny, soak)
     print(summary(groups, exp["rules"]))
     if failures:
         for a, _, msg in failures:
             print(f"FAIL ({a}): {msg}")
         return 1
-    print(
-        f"PASS ({mode_label(enforce, deny)}): every rule's attackers followed their chain; nothing else reached a terminal state, got a non-observe action; enforcement only hit attackers"
+    tail = (
+        "every rule had >=1 attacker complete + be enforced under load; nothing else reached a terminal state, got a non-observe action, or was enforced"
+        if soak
+        else "every rule's attackers followed their chain; nothing else reached a terminal state, got a non-observe action; enforcement only hit attackers"
     )
+    print(f"PASS ({mode_label(enforce, deny)}{', soak' if soak else ''}): {tail}")
     return 0
 
 
-def self_test(exp_path):
-    exp = load_expectations(exp_path)
+def self_test(_exp_path):
+    exp = load_expectations(FIXTURE_EXPECTATIONS)
     failed = 0
     for name, (enforce, deny), expected in SELF_TESTS:
         _, failures = check(load(FIXTURES / name), exp, enforce, deny)
@@ -277,7 +334,9 @@ def main():
         "--expectations", default=str(DEFAULT_EXPECTATIONS), help="expectations JSON"
     )
     parser.add_argument(
-        "--self-test", action="store_true", help="run against testdata/fixtures in both modes"
+        "--self-test",
+        action="store_true",
+        help="run against testdata/fixtures in both modes",
     )
     parser.add_argument(
         "--enforce",
@@ -289,6 +348,11 @@ def main():
         action="store_true",
         help="deny-mode run (implies --enforce): deny-spec rules must be mitigated with an enforced deny at their deny terminal and must not reach the rule terminal; other rules still require an enforced kill",
     )
+    parser.add_argument(
+        "--soak",
+        action="store_true",
+        help="soak/load run: tolerate instances cut short under load (require >=1 completed + enforced per rule), keep the false-positive guarantees strict",
+    )
     args = parser.parse_args()
     if not args.self_test and not args.audit:
         parser.error("audit file or --self-test required")
@@ -296,7 +360,7 @@ def main():
     try:
         if args.self_test:
             return self_test(args.expectations)
-        return run(args.audit, args.expectations, enforce, args.deny)
+        return run(args.audit, args.expectations, enforce, args.deny, args.soak)
     except (OSError, BadInput) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
