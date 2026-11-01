@@ -33,8 +33,12 @@ const (
 	metricsPort = "9102"
 )
 
-// attackers are the four attack workloads; order matches testdata/workloads/attack.
-var attackers = []string{"container-escape", "container-escape-connect", "reverse-seq", "fileless-seq"}
+// attackers are the attack workloads, one per manifest in testdata/workloads/attack.
+// The eight pods exercise all seven kill-chains (container-escape is driven by two).
+var attackers = []string{
+	"container-escape", "container-escape-connect", "reverse-seq", "fileless-seq",
+	"ptrace-inject", "kernel-module-load", "cred-access", "bpf-tamper",
+}
 
 // podPhaseKillExpected lists the attackers whose terminal syscall runs in their
 // main process, so a SIGKILL takes the pod to Failed. reverse-seq and
@@ -46,6 +50,10 @@ var attackers = []string{"container-escape", "container-escape-connect", "revers
 var podPhaseKillExpected = map[string]bool{
 	"container-escape":         true,
 	"container-escape-connect": true,
+	"ptrace-inject":            true,
+	"kernel-module-load":       true,
+	"cred-access":              true,
+	"bpf-tamper":               true,
 }
 
 // swMaps are dumped to the artifacts dir on teardown. AG_AUDIT is a ring buffer

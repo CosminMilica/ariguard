@@ -45,10 +45,10 @@ proto: ## Generate Go + gRPC from proto/ (needs: buf, protoc-gen-go, protoc-gen-
 	buf generate proto
 
 golden: ## Regenerate the cross-language golden transition table
-	cd compiler && python -m ariguard_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
+	cd compiler && $(PYTHON) -m ariguard_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
 
 bundle: ## Regenerate the full deploy bundle (all rules) baked into the agent image
-	cd compiler && python -m ariguard_compiler.cli --rules-dir rules --sigma-dir rules/sigma/generated --out ../testdata/golden/policy-full.bin
+	cd compiler && $(PYTHON) -m ariguard_compiler.cli --rules-dir rules --sigma-dir rules/sigma/generated --out ../testdata/golden/policy-full.bin
 
 ingest: ## Fetch MITRE ATT&CK and regenerate the Linux technique catalog
 	cd compiler && $(PYTHON) -m ariguard_compiler.ingest_attack --out ../compiler/techniques/attack-linux.yml
@@ -162,6 +162,10 @@ ci-rulegen-host: compile-gen ## G10: compile generated Sigma rules, then run the
 
 ci-e2e: build-bpf build-agent golden ## G5: detect + enforce end-to-end on the kind cluster (in the VM; needs a kill-capable BPF object)
 	ARIGUARD_REQUIRE_E2E=1 go test -tags e2e -count=1 -v -timeout 40m ./test/e2e
+
+SOAK_SECONDS ?= 300
+ci-soak: build-bpf build-agent golden ## G5+: e2e exit check + sustained concurrent soak (flat memory, no drops, no false positives under load)
+	ARIGUARD_REQUIRE_E2E=1 ARIGUARD_SOAK_SECONDS=$(SOAK_SECONDS) go test -tags e2e -count=1 -v -timeout 40m ./test/e2e
 
 ci-security: ## G6: vulnerability, license and secret scans
 	govulncheck ./...
