@@ -147,7 +147,7 @@ GEN_BUNDLE    := $(CURDIR)/bin/gen.bin
 # directory holds none yet (the behavioral gate then no-ops on the missing bundle).
 compile-gen:
 	@mkdir -p $(CURDIR)/bin
-	@if ls $(GEN_SIGMA_DIR)/*.yml $(GEN_SIGMA_DIR)/*.yaml >/dev/null 2>&1; then \
+	@if ls $(GEN_SIGMA_DIR)/*.yml >/dev/null 2>&1 || ls $(GEN_SIGMA_DIR)/*.yaml >/dev/null 2>&1; then \
 		cd compiler && $(PYTHON) -m ariguard_compiler.cli --sigma-dir rules/sigma/generated --out $(GEN_BUNDLE); \
 	else \
 		echo "compile-gen: no rules in $(GEN_SIGMA_DIR), skipping bundle compile"; \
