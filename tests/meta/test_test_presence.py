@@ -5,6 +5,7 @@ GO_ROOTS = ["agent", "pkg"]
 # Package dir (repo-relative) -> reason it may have no _test.go.
 GO_NO_TEST_ALLOWLIST = {
     "agent/cmd/ariguard-agent": "main package: flag parsing and wiring only, logic lives in internal/*",
+    "agent/cmd/ariguard-bench": "benchmark CLI: linux-only eBPF stats/load glue, run manually (Phase 4), not in unit CI",
     # TODO: add unit tests for the mitigator decision logic.
     "agent/internal/mitigator": "no tests yet; behaviour covered only by kind e2e (testdata)",
     "agent/internal/audit/ringbuf": "linux-only eBPF ring buffer glue; exercised by ci-kernel/ci-e2e",
