@@ -34,8 +34,9 @@ print(yaml.safe_dump(d))' "$1" "$2"
 }
 
 spawn() { # file ns
-  rewrite "$1" "$2" | kc create -f - >/dev/null 2>&1 \
-    && log "spawned $(basename "$1" .yaml) in $2" || true
+  if rewrite "$1" "$2" | kc create -f - >/dev/null 2>&1; then
+    log "spawned $(basename "$1" .yaml) in $2"
+  fi
 }
 
 prune() { # remove finished pods so the node does not fill up

@@ -9,7 +9,11 @@ The in-kernel part of AriGuard. Two crates:
   LSM), the zero-allocation FSM engine, and the map definitions.
 
 All kernel code is `no_std` and performs **no dynamic allocation**. State lives in
-pre-allocated maps sized at load time.
+pre-allocated maps sized at load time. The 16 syscall hooks are unchanged.
+
+`AuditRecord` gained a `ppid` field (64 → 72 bytes). `ppid` is read via CO-RE from
+`task_struct->real_parent->tgid`, using `vmlinux` bindings generated from the
+kernel BTF (`ariguard-ebpf/src/vmlinux.rs`, committed, generated with `aya-tool`).
 
 ## Build
 

@@ -26,7 +26,8 @@ use aya_ebpf::{
     programs::{LsmContext, TracePointContext},
 };
 
-#[allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
+// Auto-generated kernel type bindings (aya-tool from BTF); suppress lints on generated code.
+#[allow(warnings, clippy::all)]
 mod vmlinux;
 
 // Reads the parent thread-group id (ppid) of the current task via CO-RE: the task_struct

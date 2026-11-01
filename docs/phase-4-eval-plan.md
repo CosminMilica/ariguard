@@ -1,6 +1,13 @@
 # Phase 4 — Evaluation (our-metrics-first)
 
-Status: in progress. Goal: produce the **evidence** for AriGuard's claims with a reproducible
+Status: implemented (our-metrics-first; Falco/Tetragon comparison deferred). The
+`ariguard-bench` CLI (`agent/cmd/ariguard-bench`) measures per-hook latency (BPF run-time stats),
+the memory curve (agent RSS + BPF map bytes vs N workloads) and throughput (events/sec +
+`audit_dropped`); the agent exposes per-program run-time and BPF map bytes (`ariguard_program_run_time_ns_total`,
+`ariguard_program_runs_total`, `ariguard_bpf_map_bytes`; `--bpf-stats` flag). Observed so far:
+flat memory ~938 KiB constant, ~790k ev/s with 0 drops, ~1–5 µs/hook.
+
+Goal: produce the **evidence** for AriGuard's claims with a reproducible
 harness that measures **our own system** — overhead, the flat memory curve, throughput, and
 efficacy. Comparison vs Falco/Tetragon is deferred (hooks for it are left open). The harness
 doubles as a **stress/soak test**, so it also strengthens the test suite.

@@ -59,4 +59,8 @@ Note: AGT-2.1/2.2/2.3 code complete (podsync, metrics, `--enforce`, `--metrics-a
 ## Phase 4 — Evaluation support
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` AGT-4.1 | pprof / overhead instrumentation for benchmarks | AGT-1.1 | CPU/mem profiles collectable |
+| `[x]` AGT-4.1 | pprof / overhead instrumentation for benchmarks | AGT-1.1 | CPU/mem profiles collectable |
+
+AGT-4.1: per-program run-time + BPF map bytes exposed under `--bpf-stats`
+(`ariguard_program_run_time_ns_total`, `ariguard_program_runs_total`,
+`ariguard_bpf_map_bytes`); `ariguard-bench` CLI drives latency / memory-curve / throughput.

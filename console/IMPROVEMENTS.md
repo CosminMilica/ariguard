@@ -10,7 +10,7 @@ Grounded in a live run against the real agent. Status: `[~]` in progress · `[ ]
 
 ## P1 — real-data fidelity + UX (timeline is here)
 - `[~]` Grafana-style time brush: drag on the events / severity charts to select a window; all views filter to it; reset to preset. Backend accepts `?from=&to=`.
-- `[ ]` Incidents view: one persistent card per detected attack — pod, rule, chain steps, outcome (killed/blocked), time, node. The durable "what happened" (also covers process-scoped attacks that never show in the cgroup Workloads gauge).
+- `[x]` Incidents view: one persistent card per detected attack — pod, rule, chain steps, outcome (killed/blocked), time, node. The durable "what happened" (also covers process-scoped attacks that never show in the cgroup Workloads gauge). Shipped as the Triage / Campaigns pages (`/api/triage`, `/api/campaigns`).
 - `[ ]` "Inspect attack chain" opens a modal with the pod's full chain (and from an Events row), instead of navigating to Overview.
 - `[ ]` Workloads: subtitle "live cgroup FSM state"; badge "recently compromised" from audit so process-scoped attackers are visible there too.
 - `[ ]` Real `comm` from the last audit event per cgroup (today it is the container name).
@@ -22,8 +22,8 @@ Grounded in a live run against the real agent. Status: `[~]` in progress · `[ ]
 - `[ ]` (optional) resource requests/limits on console pods.
 
 ## P3 — dissertation value
-- `[ ]` Overhead/latency panel (events/sec, enforcement latency) for the evaluation chapter.
-- `[ ]` Export incidents (CSV / screenshot / report).
+- `[x]` Overhead/latency panel (events/sec, enforcement latency) for the evaluation chapter — the Performance page, backed by the agent run-time / BPF map-bytes metrics and events/sec.
+- `[x]` Export incidents (CSV / screenshot / report) — per-incident Export via `/api/export`.
 - `[ ]` Comparison hooks (Falco/Tetragon).
 
 ## Known real-data facts (not bugs)

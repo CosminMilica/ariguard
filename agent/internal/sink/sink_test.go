@@ -151,6 +151,61 @@ func TestRulesFromBundle(t *testing.T) {
 	}
 }
 
+func TestBindingPredicate(t *testing.T) {
+	var sun [fsm.PatternLen]byte
+	copy(sun[:], "/run/x")
+	var etc [fsm.PatternLen]byte
+	copy(etc[:], "/etc/")
+	cases := []struct {
+		name string
+		bd   fsm.Binding
+		want string
+	}{
+		{"path_prefix", fsm.Binding{PathKind: fsm.PathPrefix, Pattern: etc}, " path^=/etc/"},
+		{"sun_prefix", fsm.Binding{PathKind: fsm.PathSunPrefix, Pattern: sun}, " sun_path^=/run/x"},
+		{"arg_any", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgAny}, ""},
+		{"arg_eq", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgEq, ArgIndex: 0, ArgValue: 16}, " arg0 == 16"},
+		{"arg_le", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgLe, ArgIndex: 1, ArgValue: 2}, " arg1 <= 2"},
+		{"mask_any", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgMaskAny, ArgIndex: 3, ArgValue: 0x10000}, " arg3 & 0x10000 != 0"},
+		{"mask_none", fsm.Binding{PathKind: fsm.PathAny, ArgOp: fsm.ArgMaskNone, ArgIndex: 3, ArgValue: 0x1e0000}, " arg3 & 0x1e0000 == 0"},
+		{"unknown_op", fsm.Binding{PathKind: fsm.PathAny, ArgOp: 99}, ""},
+	}
+	for _, c := range cases {
+		if got := bindingPredicate(c.bd); got != c.want {
+			t.Errorf("%s: bindingPredicate = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestRulesFromBundleNoMeta(t *testing.T) {
+	// No Meta: states/events fall back to generated names, scope from the numeric map;
+	// duplicate bindings for the same (rule,event) collapse to one syscall description.
+	b := fsm.Bundle{
+		Rules: []fsm.Rule{{NumStates: 2, NumEvents: 1, TransBase: 0, Scope: fsm.ScopeCgroup, TerminalFrom: 1}},
+		Transitions: []fsm.Transition{
+			{NextState: 1, Action: fsm.ActionKill}, // s0,e0 -> kill
+			{NextState: 1, Action: fsm.ActionObserve},
+		},
+		Bindings: []fsm.Binding{
+			{Hook: fsm.HookExecve, Rule: 0, Event: 0, PathArg: fsm.NoArg, PathKind: fsm.PathAny, ArgIndex: fsm.NoArg, ArgOp: fsm.ArgAny},
+			{Hook: fsm.HookExecve, Rule: 0, Event: 0, PathArg: fsm.NoArg, PathKind: fsm.PathAny, ArgIndex: fsm.NoArg, ArgOp: fsm.ArgAny},
+		},
+	}
+	got := RulesFromBundle(b)[0]
+	if got.Name != "0" || got.Scope != "cgroup" {
+		t.Errorf("name/scope fallback: got name=%q scope=%q", got.Name, got.Scope)
+	}
+	if len(got.States) != 2 || got.States[0] != "state0" || got.Events[0] != "event0" {
+		t.Errorf("generated names: states=%v events=%v", got.States, got.Events)
+	}
+	if len(got.Transitions) != 1 || got.Transitions[0].To != "state1" {
+		t.Fatalf("transitions = %+v", got.Transitions)
+	}
+	if sys := got.Transitions[0].Syscalls; len(sys) != 1 || sys[0] != "execve" {
+		t.Errorf("dedup syscalls = %v, want [execve]", sys)
+	}
+}
+
 func TestEnvHelpers(t *testing.T) {
 	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 	if got := NodeName(env(map[string]string{"NODE_NAME": "a"})); got != "a" {

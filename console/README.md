@@ -2,7 +2,9 @@
 
 A lightweight web console to watch AriGuard with **real data**: workloads and
 their FSM state, attack chains as they unfold, mitigations (kills), events,
-rules and agent health. See [DESIGN.md](DESIGN.md) for the full design.
+rules and agent health. It doubles as an incident-investigation tool: triage,
+campaigns, a timeline, coverage, a performance panel and per-incident export.
+See [DESIGN.md](DESIGN.md) for the full design.
 
 Backend: Go + SQLite (pure-Go, no cgo). Frontend: Vue 3 + Vite. One small image.
 
@@ -40,7 +42,7 @@ the per-workload state gauge. Open the console and watch it fill live.
 
 | Path | Purpose |
 |---|---|
-| `backend/` | Go API: ingest (`/api/v1/register`, `/api/v1/audit`), scraper, read API (`/api/*`), SQLite |
-| `frontend/` | Vue dashboard (Overview, Workloads, Events, Rules, Nodes, Settings) |
+| `backend/` | Go API: ingest (`/api/v1/register`, `/api/v1/audit`), scraper, read API (`/api/*`, incl. `/api/triage`, `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`, and rule/namespace/node filters on `/api/events`), SQLite |
+| `frontend/` | Vue dashboard (Overview, Triage, Campaigns, Workloads, Events, Timeline, Coverage, Performance, Rules, Nodes, Settings) |
 | `Dockerfile` | multi-stage build → one image serving frontend + API |
 | `docker-compose.yml` | one service, a volume for the SQLite file |

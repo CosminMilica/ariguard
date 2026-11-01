@@ -6,6 +6,14 @@ one and is trying to spread. AriGuard **already blocked the lethal steps autonom
 hand. The console's job is therefore **forensics + blast-radius + coverage**: show what the product
 stopped, how far each chain got, where else the same pattern appears, and what we are blind to.
 
+**Status: Tier A shipped** — the console (Go + SQLite backend, Vue 3 frontend) ships Triage,
+Campaigns (blast-radius), Timeline, Coverage (ATT&CK × 16 hooks + blind spots), Performance and
+per-incident JSON export (#1–6), with interactive per-rule FSM diagrams and enforcement mix, plus
+read endpoints `/api/triage`, `/api/campaigns`, `/api/containment`, `/api/coverage`, `/api/export`
+and rule/namespace/node filters on `/api/events`. **Tier B #7 (ppid ancestry) and #9 (container
+image/digest) are now captured and shown**; a Process Tree is built from `ppid`. Still open: #8
+(observed argv/path/dst) and Tier C (#10–12).
+
 ## Enforcement model: process-kill vs pod-isolation (gap)
 AriGuard enforces at **process granularity**: `bpf_send_signal(SIGKILL)` kills the task that
 triggered the terminal transition, and LSM `-EPERM` fails the offending syscall. This is instant
@@ -27,14 +35,16 @@ agent, never by an operator clicking.
   separate "data already end-to-end" from "needs new kernel capture".
 
 ## Data we already have end-to-end (no new capture)
-`ts_ns, node, namespace, pod, container-name, comm, pid(tgid), hook/syscall, rule, event,
-from_state→to_state, action, enforced` + per-rule predicate metadata (`transitions[].syscalls[]`).
+`ts_ns, node, namespace, pod, container-name, comm, pid(tgid), ppid, hook/syscall, rule, event,
+from_state→to_state, action, enforced` + per-rule predicate metadata (`transitions[].syscalls[]`)
++ `image` / `image_id` (agent-resolved from the pod). `ppid` is captured in-kernel via CO-RE
+(`task_struct->real_parent->tgid`, `vmlinux` bindings in `bpf/ariguard-ebpf/src/vmlinux.rs`) and
+feeds the Process Tree view.
 
 ## Data we do NOT capture yet
-`parent pid / ancestry`, `argv`, `opened path`, `connect dst IP:port` → all need new
-`AuditRecord` fields (`bpf/ariguard-common/src/lib.rs` + mirror `agent/pkg/fsm/abi.go`, then
-plumb agent→sink→schema→api→ts). `container image/digest` is the exception — agent-only
-(`agent/internal/podmeta/podmeta.go` already lists the pod object), no kernel change.
+`argv`, `opened path`, `connect dst IP:port` → all still need new `AuditRecord` fields
+(`bpf/ariguard-common/src/lib.rs` + mirror `agent/pkg/fsm/abi.go`, then plumb
+agent→sink→schema→api→ts).
 
 ## Plan (tiered)
 

@@ -102,7 +102,7 @@ ci-hygiene: ## G0: format + lint
 PYTHON ?= python
 COVER_MIN := 80.0
 # Linux-only kernel glue, covered by ci-kernel; "[no statements]" packages are skipped too.
-COVER_EXCLUDE := agent/cmd/ariguard-agent agent/internal/loader \
+COVER_EXCLUDE := agent/cmd/ariguard-agent agent/cmd/ariguard-bench agent/internal/loader \
 	agent/internal/audit/ringbuf agent/internal/policy/kmap \
 	agent/internal/metrics/metricmap agent/internal/podsync/podmap
 COVER_DIR := bin/cover

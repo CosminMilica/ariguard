@@ -58,12 +58,17 @@ contract, console, helm, security, bpf, the kernel matrix 5.15→stable, and the
   *ordered sequence* of syscalls, per pod, across kernels 5.15→stable.
 - [x] **Phase 2** — synchronous mitigation: the attacker is **killed** at the terminal step
   (`bpf_send_signal`), gated per pod; benign workloads and the node runtime are untouched.
-- [x] **Console** — a live web console (agent → sink → SQLite → Vue) showing workloads, FSM
-  state, attack chains, mitigations and incidents.
+- [x] **Console** — a full incident-investigation tool (agent → sink → SQLite → Vue): Triage,
+  Campaigns (blast-radius), Timeline, Coverage (ATT&CK × hooks), Performance, per-incident JSON
+  export, and a process tree built from `ppid`.
 - [x] **Phase 2b** — LSM `-EPERM` deny: the host mount is refused via a BPF LSM hook
   (`sb_mount`/`move_mount`), with a `kill` fallback where no LSM hook exists.
-- [ ] **Phase 3** — rule compiler (ML, then LLM) + cluster distribution.
-- [ ] **Phase 4** — evaluation: efficacy, latency, the flat memory curve vs. Falco.
+- [x] **Phase 3** — Sigma `temporal_ordered` → FSM compiler plus automated rule generation
+  (Claude co-authored in-session, offline; outputs committed, CI never calls an LLM), gated by
+  schema/round-trip validation and a behavioral attack-vs-benign check. The rule library is now
+  **7 kill-chains**. Control-plane / CRD fleet distribution is deferred.
+- [x] **Phase 4** — evaluation (our-metrics-first): the `ariguard-bench` harness measures
+  per-hook latency, the flat memory curve and throughput. Falco/Tetragon comparison is deferred.
 
 ## Academic context
 
