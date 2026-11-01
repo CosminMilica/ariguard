@@ -26,14 +26,35 @@ type registerReq struct {
 	MetricsAddr    string `json:"metrics_addr"`
 	Bundle         struct {
 		Rules []struct {
-			Name           string `json:"name"`
-			Scope          string `json:"scope"`
-			NumStates      int    `json:"num_states"`
-			WindowNS       int64  `json:"window_ns"`
-			TerminalAction string `json:"terminal_action"`
+			Name           string           `json:"name"`
+			Scope          string           `json:"scope"`
+			NumStates      int              `json:"num_states"`
+			WindowNS       int64            `json:"window_ns"`
+			TerminalAction string           `json:"terminal_action"`
+			States         []string         `json:"states"`
+			Events         []string         `json:"events"`
+			TerminalFrom   int              `json:"terminal_from"`
+			Transitions    []ruleTransition `json:"transitions"`
 		} `json:"rules"`
 	} `json:"bundle"`
 	TsNS int64 `json:"ts_ns"`
+}
+
+// ruleTransition is one edge of a rule's state machine.
+type ruleTransition struct {
+	From     string   `json:"from"`
+	Event    string   `json:"event"`
+	To       string   `json:"to"`
+	Action   string   `json:"action"`
+	Syscalls []string `json:"syscalls"`
+}
+
+// ruleDetail is the full state machine stored as a JSON blob in rules.detail.
+type ruleDetail struct {
+	States       []string         `json:"states"`
+	Events       []string         `json:"events"`
+	TerminalFrom int              `json:"terminal_from"`
+	Transitions  []ruleTransition `json:"transitions"`
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -81,8 +102,18 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
-		_, err = tx.Exec(`INSERT OR REPLACE INTO rules(node,name,scope,num_states,window_ns,terminal_action) VALUES(?,?,?,?,?,?)`,
-			req.Node, ru.Name, ru.Scope, ru.NumStates, ru.WindowNS, ru.TerminalAction)
+		var detail []byte
+		detail, err = json.Marshal(ruleDetail{
+			States:       ru.States,
+			Events:       ru.Events,
+			TerminalFrom: ru.TerminalFrom,
+			Transitions:  ru.Transitions,
+		})
+		if err != nil {
+			break
+		}
+		_, err = tx.Exec(`INSERT OR REPLACE INTO rules(node,name,scope,num_states,window_ns,terminal_action,detail) VALUES(?,?,?,?,?,?,?)`,
+			req.Node, ru.Name, ru.Scope, ru.NumStates, ru.WindowNS, ru.TerminalAction, string(detail))
 	}
 	if err == nil {
 		err = tx.Commit()

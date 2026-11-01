@@ -174,6 +174,17 @@ func (o *Object) Attach() error {
 // HooksAttached returns the number of attached hook programs.
 func (o *Object) HooksAttached() int { return len(o.links) }
 
+// Programs returns the loaded ariguard programs (sw_/lsm_ prefixes) keyed by name.
+func (o *Object) Programs() map[string]*ebpf.Program {
+	out := map[string]*ebpf.Program{}
+	for name, p := range o.coll.Programs {
+		if strings.HasPrefix(name, ProgramPrefix) || strings.HasPrefix(name, LSMProgramPrefix) {
+			out[name] = p
+		}
+	}
+	return out
+}
+
 // Close detaches all links and releases the collection.
 func (o *Object) Close() error {
 	var errs []error

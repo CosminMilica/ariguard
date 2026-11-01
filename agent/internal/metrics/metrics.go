@@ -38,6 +38,25 @@ type WorkloadReader interface {
 	Workloads() ([]Workload, error)
 }
 
+// ProgramStat is the run-time accounting of one loaded ariguard BPF program.
+type ProgramStat struct {
+	Name      string
+	Runs      uint64
+	RuntimeNs uint64
+}
+
+// ProgramReader is implemented by a Reader that can also list per-program BPF
+// run-time stats. An empty result (BPF statistics disabled) omits the rows.
+type ProgramReader interface {
+	Programs() ([]ProgramStat, error)
+}
+
+// MemoryReader is implemented by a Reader that knows the constant pre-allocated
+// BPF map byte budget.
+type MemoryReader interface {
+	MapBytes() uint64
+}
+
 // Handler serves r at any path in Prometheus text exposition format.
 func Handler(r Reader) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -55,6 +74,17 @@ func Handler(r Reader) http.Handler {
 				return
 			}
 			out += FormatWorkloads(ws)
+		}
+		if mr, ok := r.(MemoryReader); ok {
+			out += FormatMemory(mr.MapBytes())
+		}
+		if pr, ok := r.(ProgramReader); ok {
+			ps, err := pr.Programs()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			out += FormatPrograms(ps)
 		}
 		_, _ = fmt.Fprint(w, out)
 	})
@@ -84,6 +114,29 @@ func FormatWorkloads(ws []Workload) string {
 	for _, w := range ws {
 		fmt.Fprintf(&b, "ariguard_workload_state{pod=%q,namespace=%q,node=%q,comm=%q,rule=%q} %d\n",
 			w.Pod, w.Namespace, w.Node, w.Comm, w.Rule, min(w.State, MaxStateIndex))
+	}
+	return b.String()
+}
+
+// FormatMemory renders the constant pre-allocated BPF map budget as a gauge.
+func FormatMemory(bytes uint64) string {
+	return fmt.Sprintf("# HELP ariguard_bpf_map_bytes Constant pre-allocated byte budget of the AG_* BPF maps.\n# TYPE ariguard_bpf_map_bytes gauge\nariguard_bpf_map_bytes %d\n", bytes)
+}
+
+// FormatPrograms renders ps as per-program BPF run-time counters. An empty slice
+// renders nothing, so the rows are omitted when BPF statistics are disabled.
+func FormatPrograms(ps []ProgramStat) string {
+	if len(ps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("# HELP ariguard_program_run_time_ns_total Cumulative BPF run time of an ariguard program in nanoseconds.\n# TYPE ariguard_program_run_time_ns_total counter\n")
+	for _, p := range ps {
+		fmt.Fprintf(&b, "ariguard_program_run_time_ns_total{program=%q} %d\n", p.Name, p.RuntimeNs)
+	}
+	b.WriteString("# HELP ariguard_program_runs_total Number of times an ariguard program ran.\n# TYPE ariguard_program_runs_total counter\n")
+	for _, p := range ps {
+		fmt.Fprintf(&b, "ariguard_program_runs_total{program=%q} %d\n", p.Name, p.Runs)
 	}
 	return b.String()
 }

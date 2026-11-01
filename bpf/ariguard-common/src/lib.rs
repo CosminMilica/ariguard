@@ -148,6 +148,7 @@ pub struct AuditRecord {
     pub cgroup_id: u64,
     pub ts_ns: u64,
     pub pid: u32,
+    pub ppid: u32,
     pub hook: u32,
     pub rule: u32,
     pub event: u32,

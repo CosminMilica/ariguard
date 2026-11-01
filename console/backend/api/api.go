@@ -24,6 +24,12 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings", a.settings)
 	mux.HandleFunc("GET /api/chain", a.chain)
 	mux.HandleFunc("GET /api/incidents", a.incidents)
+	mux.HandleFunc("GET /api/triage", a.triage)
+	mux.HandleFunc("GET /api/campaigns", a.campaigns)
+	mux.HandleFunc("GET /api/containment", a.containment)
+	mux.HandleFunc("GET /api/coverage", a.coverage)
+	mux.HandleFunc("GET /api/export", a.export)
+	mux.HandleFunc("GET /api/perf", a.perf)
 	mux.HandleFunc("POST /api/mutes", a.mute)
 	mux.HandleFunc("DELETE /api/mutes/{pod}", a.unmute)
 }

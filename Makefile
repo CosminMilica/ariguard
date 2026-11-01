@@ -47,6 +47,9 @@ proto: ## Generate Go + gRPC from proto/ (needs: buf, protoc-gen-go, protoc-gen-
 golden: ## Regenerate the cross-language golden transition table
 	cd compiler && python -m ariguard_compiler.cli --rules-dir rules --out ../testdata/golden/policy.bin
 
+bundle: ## Regenerate the full deploy bundle (all rules) baked into the agent image
+	cd compiler && python -m ariguard_compiler.cli --rules-dir rules --sigma-dir rules/sigma/generated --out ../testdata/golden/policy-full.bin
+
 ingest: ## Fetch MITRE ATT&CK and regenerate the Linux technique catalog
 	cd compiler && $(PYTHON) -m ariguard_compiler.ingest_attack --out ../compiler/techniques/attack-linux.yml
 

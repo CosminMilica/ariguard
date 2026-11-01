@@ -2,3 +2,4 @@
 !bin/ariguard-agent
 !bin/ariguard.bpf.o
 !testdata/golden/policy.bin
+!testdata/golden/policy-full.bin

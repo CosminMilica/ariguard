@@ -30,6 +30,8 @@ type Info struct {
 	Namespace string
 	Pod       string
 	Container string
+	Image     string
+	ImageID   string
 }
 
 // Resolver maps cgroup ids to pod metadata, caching both cgroup paths and pods.
@@ -155,7 +157,7 @@ func (r *Resolver) list(ctx context.Context) {
 		} {
 			for _, s := range statuses {
 				if id := stripRuntime(s.ContainerID); id != "" {
-					containers[id] = Info{Namespace: p.Namespace, Pod: p.Name, Container: s.Name}
+					containers[id] = Info{Namespace: p.Namespace, Pod: p.Name, Container: s.Name, Image: s.Image, ImageID: s.ImageID}
 				}
 			}
 		}

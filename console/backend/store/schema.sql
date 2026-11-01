@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   hooks_total INTEGER NOT NULL DEFAULT 0,
   audit_ring_bytes INTEGER NOT NULL DEFAULT 0,
   metrics_addr TEXT NOT NULL DEFAULT '',
+  bpf_map_bytes INTEGER NOT NULL DEFAULT 0, -- constant pre-allocated BPF map budget
   last_seen INTEGER NOT NULL DEFAULT 0 -- unix ms
 );
 
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS rules (
   num_states INTEGER NOT NULL DEFAULT 0,
   window_ns INTEGER NOT NULL DEFAULT 0,
   terminal_action TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '{}', -- JSON: {states,events,terminal_from,transitions}
   PRIMARY KEY (node, name)
 );
 
@@ -32,7 +34,12 @@ CREATE TABLE IF NOT EXISTS audit_events (
   to_state TEXT NOT NULL DEFAULT '',
   action TEXT NOT NULL DEFAULT '',
   enforced INTEGER NOT NULL DEFAULT 0,
-  cgroup_id INTEGER NOT NULL DEFAULT 0
+  cgroup_id INTEGER NOT NULL DEFAULT 0,
+  pid INTEGER NOT NULL DEFAULT 0,
+  ppid INTEGER NOT NULL DEFAULT 0,
+  hook TEXT NOT NULL DEFAULT '',
+  image TEXT NOT NULL DEFAULT '',
+  image_id TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts_ns);
 CREATE INDEX IF NOT EXISTS idx_audit_pod ON audit_events(pod);
@@ -57,6 +64,15 @@ CREATE TABLE IF NOT EXISTS workloads (
   action TEXT NOT NULL DEFAULT '',
   updated INTEGER NOT NULL DEFAULT 0, -- unix ms
   PRIMARY KEY (node, pod, rule)
+);
+
+CREATE TABLE IF NOT EXISTS program_stats (
+  node TEXT NOT NULL,
+  program TEXT NOT NULL,
+  runs INTEGER NOT NULL DEFAULT 0,
+  run_time_ns INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0, -- unix ms
+  PRIMARY KEY (node, program)
 );
 
 CREATE TABLE IF NOT EXISTS mutes (

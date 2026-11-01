@@ -134,7 +134,8 @@ func TestLookup(t *testing.T) {
 	inoHost := mkdir(t, root, "system.slice/sshd.service")
 
 	p := pod("ariguard-eval", "container-escape",
-		corev1.ContainerStatus{Name: "attacker", ContainerID: "containerd://" + idA})
+		corev1.ContainerStatus{Name: "attacker", ContainerID: "containerd://" + idA,
+			Image: "docker.io/library/alpine:3.19", ImageID: "docker.io/library/alpine@sha256:abc"})
 	p.Status.InitContainerStatuses = []corev1.ContainerStatus{{Name: "init", ContainerID: "containerd://" + idB}}
 	p.Status.EphemeralContainerStatuses = []corev1.ContainerStatus{{Name: "debug", ContainerID: "containerd://" + idC}}
 	r, client, clk := newResolver(t, root, p)
@@ -145,7 +146,8 @@ func TestLookup(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	want := Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker"}
+	want := Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker",
+		Image: "docker.io/library/alpine:3.19", ImageID: "docker.io/library/alpine@sha256:abc"}
 	if got := r.Lookup(ctx, inoA); got != want {
 		t.Fatalf("Lookup = %+v, want %+v", got, want)
 	}

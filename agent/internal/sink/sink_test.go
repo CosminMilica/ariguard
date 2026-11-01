@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -112,14 +113,40 @@ func TestNilSinkAndUnreachable(t *testing.T) {
 }
 
 func TestRulesFromBundle(t *testing.T) {
+	var etc [fsm.PatternLen]byte
+	copy(etc[:], "/etc/")
 	b := fsm.Bundle{
-		Rules:       []fsm.Rule{{NumStates: 2, NumEvents: 2, TransBase: 0, Scope: fsm.ScopeProcess, WindowNs: 7}},
-		Transitions: []fsm.Transition{{}, {Action: fsm.ActionDeny}, {}, {Action: fsm.ActionKill}},
-		Meta:        fsm.Meta{Rules: []fsm.RuleMeta{{Name: "escape"}}},
+		Rules: []fsm.Rule{{NumStates: 2, NumEvents: 2, TransBase: 0, Scope: fsm.ScopeProcess, TerminalFrom: 1, WindowNs: 7}},
+		Transitions: []fsm.Transition{
+			{NextState: 0, Action: fsm.ActionObserve}, // s0,e0: identity observe, omitted
+			{NextState: 1, Action: fsm.ActionDeny},    // s0,e1: deny -> tripped
+			{NextState: 1, Action: fsm.ActionObserve}, // s1,e0: identity observe, omitted
+			{NextState: 1, Action: fsm.ActionKill},    // s1,e1: kill, stays tripped
+		},
+		Bindings: []fsm.Binding{
+			// event 1 ("exec"): a ptrace arg predicate and an openat path prefix.
+			{Hook: fsm.HookPtrace, Rule: 0, Event: 1, PathArg: fsm.NoArg, PathKind: fsm.PathAny, ArgIndex: 0, ArgOp: fsm.ArgEq, ArgValue: 16},
+			{Hook: fsm.HookOpenat, Rule: 0, Event: 1, PathArg: 0, PathKind: fsm.PathPrefix, PathLen: 5, ArgIndex: fsm.NoArg, ArgOp: fsm.ArgAny, Pattern: etc},
+		},
+		Meta: fsm.Meta{Rules: []fsm.RuleMeta{{Name: "escape", States: []string{"ok", "tripped"}, Events: []string{"open", "exec"}}}},
 	}
 	got := RulesFromBundle(b)[0]
-	want := Rule{Name: "escape", Scope: "process", NumStates: 2, WindowNs: 7, TerminalAction: "kill"}
-	if got != want {
+	exec := []string{"ptrace arg0 == 16", "openat path^=/etc/"}
+	want := Rule{
+		Name:           "escape",
+		Scope:          "process",
+		NumStates:      2,
+		WindowNs:       7,
+		TerminalAction: "kill",
+		States:         []string{"ok", "tripped"},
+		Events:         []string{"open", "exec"},
+		TerminalFrom:   1,
+		Transitions: []RuleTransition{
+			{From: "ok", Event: "exec", To: "tripped", Action: "deny", Syscalls: exec},
+			{From: "tripped", Event: "exec", To: "tripped", Action: "kill", Syscalls: exec},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v want %+v", got, want)
 	}
 }

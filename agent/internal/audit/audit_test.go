@@ -46,14 +46,15 @@ func sample() []byte {
 	le.PutUint64(b[0:], 0x1122334455667788)
 	le.PutUint64(b[8:], 123456789)
 	le.PutUint32(b[16:], 4242)
-	le.PutUint32(b[20:], fsm.HookOpenat)
-	le.PutUint32(b[24:], 0)
+	le.PutUint32(b[20:], 0) // ppid
+	le.PutUint32(b[24:], fsm.HookOpenat)
 	le.PutUint32(b[28:], 0)
 	le.PutUint32(b[32:], 0)
-	le.PutUint32(b[36:], 1)
-	le.PutUint32(b[40:], fsm.ActionObserve)
-	le.PutUint32(b[44:], 0)
-	copy(b[48:], "cat")
+	le.PutUint32(b[36:], 0)
+	le.PutUint32(b[40:], 1)
+	le.PutUint32(b[44:], fsm.ActionObserve)
+	le.PutUint32(b[48:], 0)
+	copy(b[52:], "cat")
 	return b
 }
 
@@ -87,26 +88,28 @@ func line(t *testing.T, r fsm.AuditRecord, m *fsm.Meta, pod podmeta.Info) string
 func TestWriteLine(t *testing.T) {
 	r, _ := Decode(sample())
 	m := meta()
-	pod := podmeta.Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker"}
-	want := `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"openat",` +
+	pod := podmeta.Info{Namespace: "ariguard-eval", Pod: "container-escape", Container: "attacker",
+		Image: "docker.io/library/alpine:3.19", ImageID: "docker.io/library/alpine@sha256:abc"}
+	want := `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"ppid":0,"comm":"cat","hook":"openat",` +
 		`"rule":"container-escape","event":"runtime_socket_open","from":"normal","to":"suspicious","action":"observe","enforced":false,` +
-		`"namespace":"ariguard-eval","pod":"container-escape","container":"attacker"}` + "\n"
+		`"namespace":"ariguard-eval","pod":"container-escape","container":"attacker",` +
+		`"image":"docker.io/library/alpine:3.19","image_id":"docker.io/library/alpine@sha256:abc"}` + "\n"
 	if got := line(t, r, &m, pod); got != want {
 		t.Fatalf("line = %s\nwant   %s", got, want)
 	}
 
 	r.Hook, r.Event, r.ToState, r.Action = 99, 9, 11, 13
-	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"99",` +
+	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"ppid":0,"comm":"cat","hook":"99",` +
 		`"rule":"container-escape","event":"9","from":"normal","to":"11","action":"13","enforced":false,` +
-		`"namespace":"","pod":"","container":""}` + "\n"
+		`"namespace":"","pod":"","container":"","image":"","image_id":""}` + "\n"
 	if got := line(t, r, &m, podmeta.Info{}); got != want {
 		t.Fatalf("line = %s\nwant   %s", got, want)
 	}
 
 	r.Rule = 3
-	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"comm":"cat","hook":"99",` +
+	want = `{"ts_ns":123456789,"cgroup_id":1234605616436508552,"pid":4242,"ppid":0,"comm":"cat","hook":"99",` +
 		`"rule":"3","event":"9","from":"0","to":"11","action":"13","enforced":false,` +
-		`"namespace":"","pod":"","container":""}` + "\n"
+		`"namespace":"","pod":"","container":"","image":"","image_id":""}` + "\n"
 	if got := line(t, r, &m, podmeta.Info{}); got != want {
 		t.Fatalf("unknown rule: line = %s\nwant   %s", got, want)
 	}

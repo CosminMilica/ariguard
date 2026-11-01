@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
 
 	"github.com/CosminMilica/ariguard/agent/internal/audit"
@@ -51,6 +52,7 @@ func run(log *slog.Logger) error {
 	enforce := flag.Bool("enforce", false, "kill on matching kill actions in pod cgroups (default: detect only)")
 	deny := flag.Bool("deny", false, "refuse deny-action syscalls with -EPERM via BPF LSM where a hook exists (needs --enforce and a kernel with BPF LSM; falls back to kill otherwise)")
 	metricsAddr := flag.String("metrics-addr", "", `Prometheus listen address such as ":9102" (empty: disabled)`)
+	bpfStats := flag.Bool("bpf-stats", false, "enable BPF_STATS_RUN_TIME and expose per-program run-time metrics (small per-event overhead)")
 	sinkURL := flag.String("sink-url", "", `console base URL such as "http://console:8080" (empty: disabled)`)
 	flag.Parse()
 	if *objectPath == "" || *bundlePath == "" {
@@ -92,6 +94,17 @@ func run(log *slog.Logger) error {
 
 	if err := obj.Attach(); err != nil {
 		return err
+	}
+
+	var progs map[string]*ebpf.Program
+	if *bpfStats {
+		closer, err := ebpf.EnableStats(unix.BPF_STATS_RUN_TIME)
+		if err != nil {
+			return fmt.Errorf("enable BPF run-time stats: %w", err)
+		}
+		defer func() { _ = closer.Close() }()
+		progs = obj.Programs()
+		log.Info("BPF run-time stats enabled", "programs", len(progs))
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -163,7 +176,7 @@ func run(log *slog.Logger) error {
 			log.Info("serving metrics", "addr", *metricsAddr)
 			if err := metrics.Serve(ctx, *metricsAddr, metricmap.Reader{
 				M: obj.Maps.Metrics, Pods: obj.Maps.Pods, State: obj.Maps.State,
-				Names: &names, Resolver: pods, Node: node,
+				Names: &names, Resolver: pods, Node: node, Progs: progs,
 			}); err != nil {
 				log.Error("metrics server", "err", err)
 				stop()

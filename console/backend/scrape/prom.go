@@ -33,6 +33,45 @@ func ParseProm(r io.Reader) []Sample {
 	return out
 }
 
+// ProgramStat holds the lifetime counters for one eBPF program.
+type ProgramStat struct {
+	Runs      float64
+	RunTimeNS float64
+}
+
+// PerfStats holds the per-node agent performance metrics derived from a scrape.
+type PerfStats struct {
+	BPFMapBytes float64
+	// Programs is keyed by the `program` label (e.g. "sw_openat").
+	Programs map[string]ProgramStat
+}
+
+// ExtractPerf pulls the performance metrics out of parsed samples: the single
+// ariguard_bpf_map_bytes gauge and the per-program labeled counters
+// ariguard_program_runs_total{program=...} / ariguard_program_run_time_ns_total{program=...}.
+func ExtractPerf(samples []Sample) PerfStats {
+	ps := PerfStats{Programs: map[string]ProgramStat{}}
+	for _, s := range samples {
+		switch s.Name {
+		case "ariguard_bpf_map_bytes":
+			ps.BPFMapBytes = s.Value
+		case "ariguard_program_runs_total":
+			if p := s.Labels["program"]; p != "" {
+				st := ps.Programs[p]
+				st.Runs = s.Value
+				ps.Programs[p] = st
+			}
+		case "ariguard_program_run_time_ns_total":
+			if p := s.Labels["program"]; p != "" {
+				st := ps.Programs[p]
+				st.RunTimeNS = s.Value
+				ps.Programs[p] = st
+			}
+		}
+	}
+	return ps
+}
+
 func parseLine(line string) (Sample, bool) {
 	s := Sample{Labels: map[string]string{}}
 	i := strings.IndexAny(line, "{ \t")

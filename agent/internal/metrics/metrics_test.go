@@ -112,3 +112,67 @@ func TestHandlerWorkloads(t *testing.T) {
 		t.Fatalf("body %s", rec.Body)
 	}
 }
+
+func TestFormatMemory(t *testing.T) {
+	got := FormatMemory(1234)
+	for _, want := range []string{
+		"# TYPE ariguard_bpf_map_bytes gauge\n",
+		"ariguard_bpf_map_bytes 1234\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+}
+
+func TestFormatPrograms(t *testing.T) {
+	if got := FormatPrograms(nil); got != "" {
+		t.Errorf("empty slice rendered %q, want nothing", got)
+	}
+	got := FormatPrograms([]ProgramStat{
+		{Name: "sw_openat", Runs: 10, RuntimeNs: 500},
+		{Name: "lsm_mount", Runs: 3, RuntimeNs: 120},
+	})
+	for _, want := range []string{
+		"# TYPE ariguard_program_run_time_ns_total counter\n",
+		`ariguard_program_run_time_ns_total{program="sw_openat"} 500` + "\n",
+		`ariguard_program_run_time_ns_total{program="lsm_mount"} 120` + "\n",
+		"# TYPE ariguard_program_runs_total counter\n",
+		`ariguard_program_runs_total{program="sw_openat"} 10` + "\n",
+		`ariguard_program_runs_total{program="lsm_mount"} 3` + "\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+}
+
+type fullReader struct {
+	fakeReader
+	ps []ProgramStat
+}
+
+func (f fullReader) MapBytes() uint64                 { return 4096 }
+func (f fullReader) Programs() ([]ProgramStat, error) { return f.ps, nil }
+
+func TestHandlerMemoryAndPrograms(t *testing.T) {
+	rec := httptest.NewRecorder()
+	r := fullReader{ps: []ProgramStat{{Name: "sw_openat", Runs: 2, RuntimeNs: 9}}}
+	Handler(r).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		"ariguard_bpf_map_bytes 4096\n",
+		`ariguard_program_run_time_ns_total{program="sw_openat"} 9` + "\n",
+		`ariguard_program_runs_total{program="sw_openat"} 2` + "\n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in\n%s", want, body)
+		}
+	}
+	// A plain Reader emits neither memory nor program rows.
+	rec = httptest.NewRecorder()
+	Handler(fakeReader{}).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	if strings.Contains(rec.Body.String(), "ariguard_bpf_map_bytes") || strings.Contains(rec.Body.String(), "ariguard_program_runs_total") {
+		t.Fatalf("plain reader leaked optional rows:\n%s", rec.Body)
+	}
+}
