@@ -18,7 +18,7 @@ import (
 
 // Stream reads AG_AUDIT and writes one JSON line per record to w until ctx is done.
 // Names are read per record, so a reload takes effect on the next line; pods may be nil.
-func Stream(ctx context.Context, m, ppid *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, log *slog.Logger) error {
+func Stream(ctx context.Context, m, ppid *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, reactor audit.Reactor, log *slog.Logger) error {
 	rd, err := cringbuf.NewReader(m)
 	if err != nil {
 		return fmt.Errorf("open audit ring buffer: %w", err)
@@ -56,6 +56,9 @@ func Stream(ctx context.Context, m, ppid *ebpf.Map, w io.Writer, names *audit.Na
 		names.SetComm(ev.CgroupID, ev.Comm)
 		if err := audit.WriteLine(w, ev); err != nil {
 			return fmt.Errorf("write audit event: %w", err)
+		}
+		if reactor != nil {
+			reactor.React(ctx, ev) // autonomous isolation on a confirmed terminal; non-blocking
 		}
 	}
 }

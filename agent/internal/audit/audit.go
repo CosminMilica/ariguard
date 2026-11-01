@@ -68,6 +68,12 @@ func (n *Names) Load() *fsm.Meta {
 	return n.meta.Load()
 }
 
+// Reactor acts on an emitted audit event, e.g. autonomous workload isolation. Optional; the
+// stream ignores a nil reactor. Implementations must be non-blocking and safe for concurrent use.
+type Reactor interface {
+	React(ctx context.Context, e Event)
+}
+
 // Pods resolves a cgroup id to pod metadata.
 type Pods interface {
 	Lookup(ctx context.Context, cgroupID uint64) podmeta.Info
