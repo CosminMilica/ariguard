@@ -34,6 +34,7 @@ type Maps struct {
 	Pods        *ebpf.Map
 	Metrics     *ebpf.Map
 	Ppid        *ebpf.Map
+	ConnDst     *ebpf.Map
 }
 
 // Object is a loaded ariguard collection and its attached links.
@@ -120,6 +121,7 @@ func Load(path string, deny bool, log *slog.Logger) (*Object, error) {
 		{MapPods, &o.Maps.Pods},
 		{MapMetrics, &o.Maps.Metrics},
 		{MapPpid, &o.Maps.Ppid},
+		{MapConnDst, &o.Maps.ConnDst},
 	}
 	for _, r := range refs {
 		m, ok := coll.Maps[r.name]

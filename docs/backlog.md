@@ -24,7 +24,7 @@ is *inferred* (same image across namespaces over time), not *observed* network p
 
 | ID | Task | Why | Depends | Size |
 |----|------|-----|---------|------|
-| F1 | **B3 — observed values in the record**: argv, opened path, and **`connect` dst IP:port** | concrete IOCs, and the input for real lateral movement | — | M (kernel ABI; verifier-safe like the fork map) |
+| F1 | **B3 — observed values**: ~~`connect` dst IP:port~~ **(done — `AG_CONNDST` map; see architecture.md)**; still argv + opened path | concrete IOCs, and the input for real lateral movement | — | M (kernel ABI; verifier-safe like the fork map) |
 | F2 | **True lateral movement** — map `connect` dst IP → target pod identity (IP→pod from podmeta/k8s), emit **real pod→pod edges** | observed pivoting, not image-correlation inference | F1 | M |
 | F3 | **Relabel C3 honestly** — call the current image-correlation view "**actor spread**"; reserve "**lateral movement**" for F2's observed network pivots | don't claim what we don't observe | — | S |
 | F4 | **Richer actor IOCs (C2)** — add dst IP (and later file hash) to the actor key once B3 lands | stronger "same actor" correlation | F1 | S |
@@ -49,3 +49,49 @@ is *inferred* (same image across namespaces over time), not *observed* network p
 - B3 (F1) touches the record ABI; the 5.15/6.1 verifier limit bit us on ppid — keep B3's capture
   minimal and prefer a dedicated program/map over widening the hot-path programs.
 - Until F2, the "lateral" view is actor-spread inference (F3), not observed pivoting.
+
+## Testbed run 1 — findings (2026-11-02)
+
+First real attack through the new testbed ([`tests/testbed/`](../tests/testbed/),
+T1+T2 slice 1): real HTTP command-injection in DVWA → `www-data` shell → recon →
+container-escape chain, detect-only. Full transcript + audit in
+[`tests/testbed/RESULTS.md`](../tests/testbed/RESULTS.md).
+
+- **Detection works on a real attack, attribution is correct.** `container-escape` fired on
+  RCE-driven syscalls (`openat` runtime socket → `suspicious`, `setns` → `escalating`), attributed
+  to the right pod/container several processes below apache.
+- **Chain stopped at `escalating`, by design of the real world:** the web RCE lands as `www-data`,
+  which lacks `CAP_SYS_ADMIN` even in a privileged container. `setns` fired `EPERM` (detected);
+  `mount` was refused by util-linux *before* the syscall (nothing to detect). A real escape needs
+  privesc to root first — our synthetic driver runs as root and skips that.
+  → **new task:** add a privesc step so the full chain is exercised; report "attempt detected" vs
+  "escape completed" separately in T3.
+- **FP evidence for F1/B3:** 19 benign apache/mariadb loopback `connect` calls matched the
+  `reverse-shell` rule (`connected`, observe). Without `connect` dst IP the rule cannot ignore
+  loopback/same-pod traffic. This is concrete motivation to do **F1 (B3)** next, then **F4** (dst IP
+  in the actor key), as already ordered above.
+  - **Update:** the connect-dst half of **B3 is now shipped** — `connect` audit events carry
+    `dst_ip`/`dst_port` (verified: `1.2.3.4:4444` from a real RCE connect). Captured via a dedicated
+    `AG_CONNDST` map so the hot-path handler stays within the verifier budget (see
+    [`docs/architecture.md`](architecture.md)). Remaining B3: argv + opened path. Next: use `dst_ip`
+    to make `reverse-shell` ignore loopback (kills the 19-record FP), then **F4**.
+
+## Testbed run 2 — findings (2026-11-02)
+
+Slice 2 ([`tests/testbed/run-root.sh`](../tests/testbed/run-root.sh)): the same escape chain
+against a **root-running** web app, detect then enforce. Transcript + audit in
+[`tests/testbed/RESULTS-root.md`](../tests/testbed/RESULTS-root.md).
+
+- **Full chain + synchronous kill demonstrated on a real attack.** As root the chain completes to
+  `compromised` (openat → setns → `fsmount` → execve, all attributed to the pod); under `--enforce`
+  the terminal execve is `enforced=true` and the payload never runs (empty step-4 output). The core
+  thesis claim, now shown on a real exploit rather than a synthetic driver.
+- **Privilege spectrum is the honest efficacy framing:** attempt detected at any privilege (slice 1,
+  www-data → `escalating`); completion blocked only once escalated to root (slice 2). T3 should
+  report these two separately.
+- **Tier C1 demonstrated on a real attack.** After rebuilding + kind-loading the agent image to
+  current `main`, the enforce+isolate run quarantined the compromised pod autonomously: label
+  `ariguard.io/quarantine=true` + deny-all `NetworkPolicy/ariguard-quarantine`, off the real kill.
+  The rebuilt image also restored the Tier B record fields (`ppid`, `image`, `image_id`) the stale
+  deployed image lacked. (The dev cluster had been running a pre-C1 image — refresh it after
+  agent changes.)

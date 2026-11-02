@@ -191,3 +191,12 @@ type AuditRecord struct {
 	Enforced  uint32
 	Comm      [CommLen]byte
 }
+
+// ConnDst mirrors the AG_CONNDST value: the observed IPv4 connect destination of a tgid (B3),
+// IP and port in network byte order. The agent reads it to attach dst_ip:dst_port to connect
+// audit events; a dedicated map keeps the kernel capture out of the hot path.
+type ConnDst struct {
+	IP   uint32
+	Port uint16
+	Pad  uint16
+}
