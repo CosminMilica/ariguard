@@ -28,7 +28,7 @@ Contract: [docs/architecture.md](../docs/architecture.md#phase-15-decisions).
 ## Phase 2 — Mitigation (branch `feat/mitigation`)
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` PKG-2.1 | Mirror ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, `AG_PODS`/`AG_METRICS` map names + metric indices; extend size/offset + btf tests | — | `go test ./pkg/...` passes; btf test covers the new fields and maps |
+| `[x]` PKG-2.1 | Mirror ABI v3.1: `Policy.enforce`, `AuditRecord.enforced`, `AG_PODS`/`AG_METRICS` map names + metric indices; extend size/offset + btf tests | — | done; also mirrors `AG_PPID`, `AG_CONNDST`/`ConnDst`, `PathInet`; btf test covers them. `go test ./pkg/...` green |
 
 ## Phase 3 — Generated proto
 | ID | Task | Depends | Done when |
