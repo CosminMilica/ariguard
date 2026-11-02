@@ -314,5 +314,17 @@ the 5.15 verifier's complexity limit; threading the value through `advance` and 
 - Keyed by tgid, so a later connect on the same tgid can overwrite it — acceptable for an IOC, the
   same tradeoff as the `ppid` fork map.
 
-Still next for B3: argv and opened path as observed values; and using `dst_ip` to let `reverse-shell`
-ignore loopback/same-pod connects (the testbed's false-positive finding).
+Still next for B3: argv and opened path as observed values.
+
+### `PATH_INET` — network-connect predicate (FP-killer)
+
+A new path predicate, `PATH_INET` (path kind 3, no pattern), matches a `connect` only when its
+`sockaddr` is **AF_INET and not loopback**. `reverse-shell`'s `outbound_connect` uses it
+(`inet: true` in the rule, `family: inet` in Sigma), so the rule no longer fires on AF_UNIX local
+IPC (a DB client's unix socket) or 127.x — the testbed's false positives (19 → 0), with
+`container-escape`'s AF_UNIX `sun_path` detection unaffected. The kernel reads the family+address in
+the binding match via the same single `bpf_probe_read_user` as B3.
+
+**Tier C2/F4 — actor C2 destinations.** The console stores `dst_ip`/`dst_port` per audit event and
+`GET /api/actors` surfaces each actor's distinct outbound destinations (`dst_ips`) as an extra IOC
+beside the image digest.

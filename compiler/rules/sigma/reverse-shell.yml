@@ -17,6 +17,7 @@ logsource:
 detection:
   sel:
     syscall: connect
+    family: inet   # outbound network connect only (AF_INET, not loopback); ignores AF_UNIX
   condition: sel
 ---
 title: stdio redirected onto a socket

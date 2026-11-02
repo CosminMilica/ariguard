@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"net/http"
+	"sort"
 )
 
 type actor struct {
@@ -20,6 +21,7 @@ type actor struct {
 	Rules              []string `json:"rules"`
 	Comms              []string `json:"comms"`
 	AffectedNamespaces []string `json:"affected_namespaces"`
+	DstIPs             []string `json:"dst_ips"` // observed outbound C2 destinations (B3/F4)
 }
 
 // actors clusters incident groups by container image digest: the same compromised image seen
@@ -32,7 +34,8 @@ func (a *API) actors(w http.ResponseWriter, r *http.Request) {
 			COUNT(DISTINCT namespace), COUNT(DISTINCT node),
 			SUM(killed), SUM(killed = 0 AND blocked = 1), SUM(killed = 0 AND blocked = 0),
 			MIN(first_ns), MAX(last_ns),
-			GROUP_CONCAT(DISTINCT rule), GROUP_CONCAT(DISTINCT comm), GROUP_CONCAT(DISTINCT namespace)
+			GROUP_CONCAT(DISTINCT rule), GROUP_CONCAT(DISTINCT comm), GROUP_CONCAT(DISTINCT namespace),
+			GROUP_CONCAT(dst_ips)
 		FROM (`+incidentGroupsSQL+`)
 		WHERE image_id != ''
 		GROUP BY image_id
@@ -44,15 +47,17 @@ func (a *API) actors(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		var ac actor
-		var rules, comms, ns sql.NullString
+		var rules, comms, ns, dstIPs sql.NullString
 		if err := rows.Scan(&ac.ImageID, &ac.Image, &ac.Incidents, &ac.Pods, &ac.Namespaces, &ac.Nodes,
-			&ac.Killed, &ac.Blocked, &ac.Detected, &ac.FirstNS, &ac.LastNS, &rules, &comms, &ns); err != nil {
+			&ac.Killed, &ac.Blocked, &ac.Detected, &ac.FirstNS, &ac.LastNS, &rules, &comms, &ns, &dstIPs); err != nil {
 			fail(w, err)
 			return
 		}
 		ac.Rules = splitConcat(rules)
 		ac.Comms = splitConcat(comms)
 		ac.AffectedNamespaces = splitConcat(ns)
+		// dst_ips arrives as per-group concats joined again; dedup across groups.
+		ac.DstIPs = uniqueSorted(splitConcat(dstIPs))
 		out = append(out, ac)
 	}
 	if err := rows.Err(); err != nil {
@@ -60,4 +65,19 @@ func (a *API) actors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, out)
+}
+
+// uniqueSorted dedups and sorts a list, dropping empty entries.
+func uniqueSorted(in []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range in {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }

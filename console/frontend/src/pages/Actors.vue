@@ -32,7 +32,7 @@ function chips(list: string[]) {
         <thead>
           <tr>
             <th>Image</th><th>Incidents</th><th>Pods</th><th>Namespaces</th><th>Nodes</th>
-            <th>Rules</th><th>Comms</th><th>Outcomes</th><th>First</th><th>Last</th>
+            <th>Rules</th><th>Comms</th><th>C2</th><th>Outcomes</th><th>First</th><th>Last</th>
           </tr>
         </thead>
         <tbody>
@@ -52,6 +52,11 @@ function chips(list: string[]) {
             <td class="chips">
               <span v-for="c in chips(a.comms).shown" :key="c" class="chip mono">{{ c }}</span>
               <span v-if="chips(a.comms).rest > 0" class="chip more">+{{ chips(a.comms).rest }}</span>
+            </td>
+            <td class="chips">
+              <span v-for="d in chips(a.dst_ips).shown" :key="d" class="chip mono">{{ d }}</span>
+              <span v-if="chips(a.dst_ips).rest > 0" class="chip more">+{{ chips(a.dst_ips).rest }}</span>
+              <span v-if="!(a.dst_ips && a.dst_ips.length)" class="dim">—</span>
             </td>
             <td>
               <span v-if="a.killed" class="act kill">{{ a.killed }} killed</span>

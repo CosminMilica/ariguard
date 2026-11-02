@@ -42,6 +42,9 @@ pub const PATH_ANY: u32 = 0;
 pub const PATH_PREFIX: u32 = 1;
 /// `sockaddr_un.sun_path` at the argument pointer (connect).
 pub const PATH_SUN_PREFIX: u32 = 2;
+/// Match when the `connect` sockaddr is AF_INET and not loopback (no pattern). Lets a rule fire
+/// only on outbound network connects, ignoring AF_UNIX local IPC and loopback (B3/FP-killer).
+pub const PATH_INET: u32 = 3;
 
 /// Argument predicate on the argument `arg_index`.
 pub const ARG_ANY: u32 = 0;
