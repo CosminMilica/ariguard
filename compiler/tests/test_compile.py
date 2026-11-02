@@ -27,6 +27,7 @@ from ariguard_compiler.schema import (
     HOOKS,
     NO_ARG,
     PATH_ANY,
+    PATH_INET,
     PATH_PREFIX,
     PATH_SUN_PREFIX,
     RuleError,
@@ -133,7 +134,7 @@ def test_binding_order_and_padding():
     assert b[14] == (h["execveat"], 1, 1, *no_path, 4, 3, 0x1000, b"\0" * 64)
     assert b[15][:6] == (h["execve"], 1, 1, 0, PATH_PREFIX, len(b"/proc/self/fd/"))
     # reverse-shell
-    assert b[17] == (h["connect"], 2, 0, *no_path, *any_arg, b"\0" * 64)
+    assert b[17] == (h["connect"], 2, 0, 1, PATH_INET, 0, *any_arg, b"\0" * 64)
     assert b[18] == (h["dup2"], 2, 1, *no_path, 1, 2, 2, b"\0" * 64)
     assert b[19] == (h["dup3"], 2, 1, *no_path, 1, 2, 2, b"\0" * 64)
     assert [x[9].rstrip(b"\0") for x in b[20:24]] == [

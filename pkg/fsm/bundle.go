@@ -227,6 +227,13 @@ func (b *Bundle) validateBinding(bd Binding) error {
 		if bd.PathLen == 0 || bd.PathLen > PatternLen-1 {
 			return fmt.Errorf("path_len %d not in 1..%d", bd.PathLen, PatternLen-1)
 		}
+	case PathInet:
+		if bd.PathArg >= MaxSyscallArgs {
+			return fmt.Errorf("path_arg %d out of range", bd.PathArg)
+		}
+		if bd.PathLen != 0 {
+			return fmt.Errorf("PATH_INET needs path_len 0, got %d", bd.PathLen)
+		}
 	default:
 		return fmt.Errorf("unknown path kind %d", bd.PathKind)
 	}

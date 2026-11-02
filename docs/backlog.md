@@ -75,6 +75,12 @@ container-escape chain, detect-only. Full transcript + audit in
     `AG_CONNDST` map so the hot-path handler stays within the verifier budget (see
     [`docs/architecture.md`](architecture.md)). Remaining B3: argv + opened path. Next: use `dst_ip`
     to make `reverse-shell` ignore loopback (kills the 19-record FP), then **F4**.
+  - **Done (FP-killer + F4):** `reverse-shell`'s `outbound_connect` now requires an AF_INET
+    non-loopback connect (new `PATH_INET` binding predicate, `inet: true` in the rule / `family: inet`
+    in Sigma). The testbed's noise dropped **19 → 0** (the FPs were AF_UNIX DB sockets + loopback,
+    not just loopback TCP), with the escape chain unaffected. **F4**: the console now stores
+    `dst_ip`/`dst_port` and `/api/actors` surfaces each actor's C2 destinations (`dst_ips`), shown as
+    chips on the Actors page.
 
 ## Testbed run 2 — findings (2026-11-02)
 

@@ -12,7 +12,7 @@ use ariguard_common::{
     HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE,
     HOOK_FSMOUNT, HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT,
     HOOK_PTRACE, HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRACKED_WORKLOADS,
-    MAX_TRANSITIONS, PATH_ANY, PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS,
+    MAX_TRANSITIONS, PATH_ANY, PATH_INET, PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS,
     STATE_INITIAL,
 };
 use aya_ebpf::{
@@ -568,6 +568,11 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
                     path_read = true;
                 }
                 path_len != 0 && prefix_matches(path_len, &b.pattern, b.path_len)
+            }
+            // AF_INET and not loopback: outbound network connect only (ignores AF_UNIX / 127.x).
+            PATH_INET => {
+                let (ip, _) = read_connect_dst(ctx);
+                ip != 0 && (ip & 0xff) != 127
             }
             _ => false,
         };
