@@ -84,6 +84,29 @@ func TestQuarantine(t *testing.T) {
 	nilS.Quarantine(context.Background(), "x", "y", "z", "on") // nil sink must be a no-op
 }
 
+func TestMutes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/mutes" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`["pod-a","pod-b"]`))
+	}))
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+	got, err := s.Mutes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "pod-a" || got[1] != "pod-b" {
+		t.Fatalf("mutes = %v", got)
+	}
+	var nilS *Sink
+	if pods, err := nilS.Mutes(context.Background()); err != nil || pods != nil {
+		t.Errorf("nil sink Mutes = %v, %v", pods, err)
+	}
+}
+
 func TestAuditBatching(t *testing.T) {
 	rec := &recorder{}
 	srv := httptest.NewServer(rec)

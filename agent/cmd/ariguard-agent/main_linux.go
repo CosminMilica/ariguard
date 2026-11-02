@@ -25,6 +25,7 @@ import (
 	"github.com/CosminMilica/ariguard/agent/internal/loader"
 	"github.com/CosminMilica/ariguard/agent/internal/metrics"
 	"github.com/CosminMilica/ariguard/agent/internal/metrics/metricmap"
+	"github.com/CosminMilica/ariguard/agent/internal/mutes"
 	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
 	"github.com/CosminMilica/ariguard/agent/internal/podsync"
 	"github.com/CosminMilica/ariguard/agent/internal/podsync/podmap"
@@ -36,6 +37,29 @@ import (
 )
 
 const podSyncInterval = 2 * time.Second
+
+// muteInterval is how often the agent refreshes the operator allowlist from the console (F5).
+const muteInterval = 10 * time.Second
+
+// mutedCgroups is a podsync.Source that drops muted pods' cgroups so AG_PODS (the kill-gate)
+// never contains them. src lists the node's pod cgroups; pods resolves cgroup id -> pod name.
+type mutedCgroups struct {
+	src   podsync.Source
+	pods  *podmeta.Resolver
+	muted *mutes.Set
+}
+
+func (m mutedCgroups) PodCgroups() []uint64 {
+	all := m.src.PodCgroups()
+	out := make([]uint64, 0, len(all))
+	for _, c := range all {
+		if m.muted.Has(m.pods.Lookup(context.Background(), c).Pod) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -161,7 +185,15 @@ func run(log *slog.Logger) error {
 		log.Error("invalid --isolate", "err", err)
 		os.Exit(2)
 	}
-	rsp := responder.New(client, isolateMode, nil, func(ns, pod, rule, mode string) {
+
+	// Operator allowlist (F5): polled from the console; muted pods are neither killed (excluded
+	// from AG_PODS below) nor quarantined (responder consults muteSet.Has).
+	muteSet := mutes.New()
+	if snk != nil {
+		go mutes.Poll(ctx, muteSet, muteInterval, snk.Mutes, log)
+	}
+
+	rsp := responder.New(client, isolateMode, muteSet.Has, func(ns, pod, rule, mode string) {
 		snk.Quarantine(context.Background(), ns, pod, rule, mode)
 	}, log)
 	if rsp != nil {
@@ -173,7 +205,12 @@ func run(log *slog.Logger) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		podsync.Run(ctx, podmap.Map{M: obj.Maps.Pods}, pods, podSyncInterval, log)
+		// Kill-gating honors mutes: drop muted pods' cgroups from AG_PODS so no SIGKILL fires.
+		src := podsync.Source(pods)
+		if snk != nil {
+			src = mutedCgroups{src: pods, pods: pods, muted: muteSet}
+		}
+		podsync.Run(ctx, podmap.Map{M: obj.Maps.Pods}, src, podSyncInterval, log)
 	}()
 	if snk != nil {
 		wg.Add(1)
