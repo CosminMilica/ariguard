@@ -1,0 +1,81 @@
+# Slice-2 target: a web app with a command-injection vulnerability that runs AS ROOT in a
+# privileged pod. "Container runs as root" is the single most common real-world container
+# misconfiguration; here it means the web RCE lands as uid 0, so the escape chain can actually
+# complete (unlike the www-data DVWA target in slice 1, which the OS stops at escalating).
+#
+# The vulnerability is a real one: /exec?cmd= is passed straight to a shell. No auth, like many
+# internal tools. NOT part of CI.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ariguard-testbed
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vuln-root-src
+  namespace: ariguard-testbed
+data:
+  server.py: |
+    # Deliberately vulnerable: shells out with attacker-controlled input. Runs as root.
+    import http.server, subprocess, urllib.parse
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            u = urllib.parse.urlparse(self.path)
+            q = urllib.parse.parse_qs(u.query)
+            if u.path == "/exec" and "cmd" in q:
+                r = subprocess.run(["/bin/sh", "-c", q["cmd"][0]],
+                                   capture_output=True, text=True)
+                body = (r.stdout + r.stderr).encode()
+            else:
+                body = b"vuln-root: GET /exec?cmd=<shell> (command injection, runs as root)\n"
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *a):
+            pass
+    http.server.HTTPServer(("0.0.0.0", 80), H).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vuln-root
+  namespace: ariguard-testbed
+  labels: {app: vuln-root}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: vuln-root}
+  template:
+    metadata:
+      labels: {app: vuln-root}
+    spec:
+      hostPID: true
+      containers:
+        - name: app
+          image: python:3.12-slim
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          command: ["python3", "/src/server.py"]
+          ports: [{containerPort: 80}]
+          readinessProbe:
+            httpGet: {path: /, port: 80}
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          volumeMounts:
+            - {name: src, mountPath: /src}
+      volumes:
+        - name: src
+          configMap: {name: vuln-root-src}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vuln-root
+  namespace: ariguard-testbed
+spec:
+  selector: {app: vuln-root}
+  ports:
+    - {port: 80, targetPort: 80}
