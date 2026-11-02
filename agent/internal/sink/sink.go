@@ -173,6 +173,32 @@ func (s *Sink) Quarantine(ctx context.Context, ns, pod, rule, mode string) {
 	}
 }
 
+// Mutes fetches the operator's muted-pod allowlist from the console (F5). Safe on a nil *Sink
+// (returns an empty list), so a run without a sink simply has no mutes.
+func (s *Sink) Mutes(ctx context.Context) ([]string, error) {
+	if s == nil {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/api/v1/mutes", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		return nil, fmt.Errorf("GET /api/v1/mutes: status %d", resp.StatusCode)
+	}
+	var pods []string
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&pods); err != nil {
+		return nil, fmt.Errorf("decode mutes: %w", err)
+	}
+	return pods, nil
+}
+
 // allowLocked reports whether e should be forwarded: non-observe events and new
 // (cgroup, rule, to) combinations always pass; repeated observe events pass at most
 // once per ObserveInterval. Callers hold s.mu.
