@@ -132,7 +132,8 @@ Decisions F1–F7 and the v3.1 ABI additions: [docs/architecture.md](../docs/arc
 ## Phase 5 — Observed values (see [docs/backlog.md](../docs/backlog.md))
 | ID | Task | Depends | Done when |
 |---|---|---|---|
-| `[ ]` BPF-5.1 | B3 — observed values in the record: argv, opened path, and `connect` dst IP:port, as concrete IOCs and the input for real lateral movement (backlog F1) | BPF-1.5.* | the `AuditRecord` carries argv / path / connect dst IP:port; verifies on 5.15 → stable |
+| `[~]` BPF-5.1 | B3 — observed values in the record: argv, opened path, and `connect` dst IP:port, as concrete IOCs and the input for real lateral movement (backlog F1) | BPF-1.5.* | **connect dst IP:port done** via a dedicated `AG_CONNDST` map (ABI unchanged), verifies 5.15→stable. **argv + opened path still pending.** |
+| `[x]` BPF-5.2 | `PATH_INET` predicate: `reverse-shell`'s `outbound_connect` matches only AF_INET non-loopback connects, so AF_UNIX local IPC / loopback no longer raise observe-noise (FP-killer) | BPF-5.1 | testbed false positives 19 → 0, escape chain unchanged; verifies 5.15 → stable |
 
 > BPF-5.1 (B3) touches the record ABI; the 5.15/6.1 verifier limit bit us on ppid, so keep B3's
 > capture verifier-safe and minimal — prefer a dedicated program/map over widening the hot-path
