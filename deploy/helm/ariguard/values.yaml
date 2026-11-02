@@ -17,6 +17,10 @@ agent:
   # "on" applies a deny-all NetworkPolicy to the compromised pod (needs a NetworkPolicy-
   # enforcing CNI); "dryrun" only labels it. Requires the RBAC in agent-rbac.yaml.
   isolate: "off"
+  # Extra isolation for CNIs that ignore NetworkPolicy (e.g. kindnet): off|evict.
+  # "evict" deletes the quarantined pod so its network is cut immediately (destructive;
+  # a controller recreates it clean). Only applies with isolate: "on".
+  isolateFallback: "off"
   # Empty with console.enabled defaults to the in-cluster console backend.
   sinkUrl: ""
   resources:

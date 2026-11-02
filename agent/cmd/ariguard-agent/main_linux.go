@@ -80,6 +80,7 @@ func run(log *slog.Logger) error {
 	bpfStats := flag.Bool("bpf-stats", false, "enable BPF_STATS_RUN_TIME and expose per-program run-time metrics (small per-event overhead)")
 	sinkURL := flag.String("sink-url", "", `console base URL such as "http://console:8080" (empty: disabled)`)
 	isolate := flag.String("isolate", "off", "autonomous workload isolation on a confirmed terminal mitigation: off|dryrun|on (on applies a deny-all NetworkPolicy; dryrun only labels the pod; needs Kubernetes API access)")
+	isolateFallback := flag.String("isolate-fallback", "off", "extra isolation for CNIs that ignore NetworkPolicy (e.g. kindnet): off|evict (evict deletes the quarantined pod to cut its network now; destructive)")
 	flag.Parse()
 	if *objectPath == "" || *bundlePath == "" {
 		flag.Usage()
@@ -185,19 +186,28 @@ func run(log *slog.Logger) error {
 		log.Error("invalid --isolate", "err", err)
 		os.Exit(2)
 	}
+	isolateFb, err := responder.ParseFallback(*isolateFallback)
+	if err != nil {
+		log.Error("invalid --isolate-fallback", "err", err)
+		os.Exit(2)
+	}
 
 	// Operator allowlist (F5): polled from the console; muted pods are neither killed (excluded
-	// from AG_PODS below) nor quarantined (responder consults muteSet.Has).
+	// from AG_PODS below) nor quarantined (responder consults muteSet.Has). Muting an already
+	// quarantined pod also releases it (F6), via the responder's ReleaseLoop.
 	muteSet := mutes.New()
 	if snk != nil {
 		go mutes.Poll(ctx, muteSet, muteInterval, snk.Mutes, log)
 	}
 
-	rsp := responder.New(client, isolateMode, muteSet.Has, func(ns, pod, rule, mode string) {
+	rsp := responder.New(client, isolateMode, isolateFb, muteSet.Has, func(ns, pod, rule, mode string) {
 		snk.Quarantine(context.Background(), ns, pod, rule, mode)
+	}, func(ns, pod string) {
+		snk.Release(context.Background(), ns, pod)
 	}, log)
 	if rsp != nil {
-		log.Info("autonomous workload isolation enabled", "mode", isolateMode.String())
+		log.Info("autonomous workload isolation enabled", "mode", isolateMode.String(), "fallback", isolateFb.String())
+		go rsp.ReleaseLoop(ctx, muteInterval)
 	}
 
 	var wg sync.WaitGroup

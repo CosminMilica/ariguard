@@ -28,8 +28,8 @@ is *inferred* (same image across namespaces over time), not *observed* network p
 | F2 | **True lateral movement** — map `connect` dst IP → target pod identity (IP→pod from podmeta/k8s), emit **real pod→pod edges** | observed pivoting, not image-correlation inference | F1 | M |
 | F3 | **Relabel C3 honestly** — call the current image-correlation view "**actor spread**"; reserve "**lateral movement**" for F2's observed network pivots | don't claim what we don't observe | — | S |
 | F4 | **Richer actor IOCs (C2)** — add dst IP (and later file hash) to the actor key once B3 lands | stronger "same actor" correlation | F1 | S |
-| F5 | **Agent-side mutes/allowlist** — the responder's `muted` is currently nil; push the console mute list to the agent so quarantine/kill honor it | operator control; avoid isolating known-good | — | S |
-| F6 | **Quarantine lifecycle** — release/un-quarantine action, optional escalation (cordon/evict), and a cordon/evict fallback where the CNI doesn't enforce NetworkPolicy | isolation is one-way today; kindnet can't enforce NP | — | M |
+| F5 | ~~**Agent-side mutes/allowlist**~~ **(done)** — the agent polls `GET /api/v1/mutes`; muted pods are excluded from `AG_PODS` (no kill) and skipped by the responder (no quarantine) | operator control; avoid isolating known-good | — | S |
+| F6 | ~~**Quarantine lifecycle**~~ **(done)** — isolation is reversible: muting a quarantined pod releases it (removes the label → drops out of the deny-all NP selector), reported to the console as `released`; `--isolate-fallback=evict` deletes the pod for CNIs that ignore NetworkPolicy (kindnet) | isolation was one-way; kindnet can't enforce NP | — | M |
 | F7 | **Control plane / CRD** — dynamic rule/profile distribution to the fleet (Phase 3 deferred) so rules push without rebuilding the agent image | the "fleet" half of the product | PROTO/CP | L |
 | F8 | **Rule-library expansion** — more hooks + chains (persistence/cron, more MITRE techniques) | broader coverage; the Coverage page shows the blind spots | — | M |
 | F9 | **A2 — ML sequence mining** for rule generation (Phase 3 deferred) | the ML half of the AI bridge | — | L |

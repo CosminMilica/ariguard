@@ -82,13 +82,15 @@ type Event struct {
 	Node string `json:"node"`
 }
 
-// QuarantineEvent is the body of POST /api/v1/quarantine: a pod the responder isolated.
+// QuarantineEvent is the body of POST /api/v1/quarantine: a pod the responder isolated, or (with
+// Released) released.
 type QuarantineEvent struct {
 	Node      string `json:"node"`
 	Namespace string `json:"namespace"`
 	Pod       string `json:"pod"`
 	Rule      string `json:"rule"`
 	Mode      string `json:"mode"`
+	Released  bool   `json:"released,omitempty"`
 	TsNs      uint64 `json:"ts_ns"`
 }
 
@@ -170,6 +172,20 @@ func (s *Sink) Quarantine(ctx context.Context, ns, pod, rule, mode string) {
 	}
 	if err := s.post(ctx, "/api/v1/quarantine", e); err != nil {
 		s.log.Warn("sink quarantine", "err", err)
+	}
+}
+
+// Release reports that the responder un-quarantined a pod; failures are logged. Safe on a nil *Sink.
+func (s *Sink) Release(ctx context.Context, ns, pod string) {
+	if s == nil {
+		return
+	}
+	e := QuarantineEvent{
+		Node: s.info.Node, Namespace: ns, Pod: pod, Released: true,
+		TsNs: uint64(s.now().UnixNano()),
+	}
+	if err := s.post(ctx, "/api/v1/quarantine", e); err != nil {
+		s.log.Warn("sink release", "err", err)
 	}
 }
 

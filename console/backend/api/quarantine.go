@@ -8,13 +8,14 @@ type quarantineRow struct {
 	Pod       string `json:"pod"`
 	Rule      string `json:"rule"`
 	Mode      string `json:"mode"`
+	Released  bool   `json:"released"`
 	TsNS      int64  `json:"ts_ns"`
 }
 
 // quarantine lists autonomous workload isolations within the window, newest first.
 func (a *API) quarantine(w http.ResponseWriter, r *http.Request) {
 	win := windowOf(r)
-	rows, err := a.DB.Query(`SELECT node, namespace, pod, rule, mode, ts_ns FROM quarantine
+	rows, err := a.DB.Query(`SELECT node, namespace, pod, rule, mode, released, ts_ns FROM quarantine
 		WHERE ts_ns >= ? AND ts_ns <= ? ORDER BY ts_ns DESC, pod`, win.fromNS(), win.toNS())
 	if err != nil {
 		fail(w, err)
@@ -24,7 +25,7 @@ func (a *API) quarantine(w http.ResponseWriter, r *http.Request) {
 	out := []quarantineRow{}
 	for rows.Next() {
 		var q quarantineRow
-		if err := rows.Scan(&q.Node, &q.Namespace, &q.Pod, &q.Rule, &q.Mode, &q.TsNS); err != nil {
+		if err := rows.Scan(&q.Node, &q.Namespace, &q.Pod, &q.Rule, &q.Mode, &q.Released, &q.TsNS); err != nil {
 			fail(w, err)
 			return
 		}
@@ -37,10 +38,10 @@ func (a *API) quarantine(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// quarantinedKeys returns the set of "namespace\x00pod" keys currently quarantined,
-// used to flag triage/incident rows. One query, intersected in Go.
+// quarantinedKeys returns the set of "namespace\x00pod" keys currently quarantined (released
+// pods excluded), used to flag triage/incident rows. One query, intersected in Go.
 func (a *API) quarantinedKeys() (map[string]bool, error) {
-	rows, err := a.DB.Query(`SELECT namespace, pod FROM quarantine`)
+	rows, err := a.DB.Query(`SELECT namespace, pod FROM quarantine WHERE released=0`)
 	if err != nil {
 		return nil, err
 	}

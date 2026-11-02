@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,6 +56,34 @@ func (m Mode) String() string {
 	}
 }
 
+// Fallback selects an extra action for CNIs that don't enforce NetworkPolicy (e.g. kindnet):
+// the deny-all policy object is created but ignored, so network isolation needs another lever.
+type Fallback int
+
+const (
+	FallbackOff   Fallback = iota // trust NetworkPolicy to isolate (default)
+	FallbackEvict                 // also delete the pod, so its network connections are cut now
+)
+
+// ParseFallback maps the --isolate-fallback flag value to a Fallback.
+func ParseFallback(s string) (Fallback, error) {
+	switch s {
+	case "", "off", "none":
+		return FallbackOff, nil
+	case "evict", "delete":
+		return FallbackEvict, nil
+	default:
+		return FallbackOff, fmt.Errorf("invalid isolate fallback %q (want off|evict)", s)
+	}
+}
+
+func (f Fallback) String() string {
+	if f == FallbackEvict {
+		return "evict"
+	}
+	return "off"
+}
+
 const (
 	// QuarantineLabel marks an isolated pod and is the NetworkPolicy's podSelector.
 	QuarantineLabel = "ariguard.io/quarantine"
@@ -74,23 +103,26 @@ var systemNamespaces = map[string]bool{
 
 // Responder isolates pods on confirmed terminal mitigations. Safe for concurrent use.
 type Responder struct {
-	client kubernetes.Interface
-	mode   Mode
-	muted  func(pod string) bool
-	report func(ns, pod, rule, mode string) // optional: notify the console of a quarantine
-	log    *slog.Logger
+	client   kubernetes.Interface
+	mode     Mode
+	fallback Fallback
+	muted    func(pod string) bool
+	report   func(ns, pod, rule, mode string) // optional: notify the console of a quarantine
+	release  func(ns, pod string)             // optional: notify the console of a release
+	log      *slog.Logger
 
 	mu   sync.Mutex
 	seen map[string]bool // namespace/pod already quarantined (idempotent)
 }
 
 // New returns a Responder, or nil when mode is off (the stream then skips reaction entirely).
-// report, when non-nil, is called after a successful quarantine (e.g. to tell the console).
-func New(client kubernetes.Interface, mode Mode, muted func(string) bool, report func(ns, pod, rule, mode string), log *slog.Logger) *Responder {
+// report and release, when non-nil, are called after a successful quarantine / release (e.g. to
+// tell the console).
+func New(client kubernetes.Interface, mode Mode, fallback Fallback, muted func(string) bool, report func(ns, pod, rule, mode string), release func(ns, pod string), log *slog.Logger) *Responder {
 	if mode == ModeOff || client == nil {
 		return nil
 	}
-	return &Responder{client: client, mode: mode, muted: muted, report: report, log: log, seen: map[string]bool{}}
+	return &Responder{client: client, mode: mode, fallback: fallback, muted: muted, report: report, release: release, log: log, seen: map[string]bool{}}
 }
 
 // React quarantines the pod behind a confirmed terminal mitigation. It returns immediately and
@@ -147,7 +179,27 @@ func (r *Responder) quarantine(ctx context.Context, ns, pod, rule string) error 
 	if r.mode == ModeDryRun {
 		return nil
 	}
-	return r.ensureDenyAll(ctx, ns)
+	if err := r.ensureDenyAll(ctx, ns); err != nil {
+		return err
+	}
+	if r.fallback == FallbackEvict {
+		if err := r.evict(ctx, ns, pod); err != nil {
+			return fmt.Errorf("evict pod: %w", err)
+		}
+		r.log.Info("quarantined pod evicted (NetworkPolicy fallback)", "pod", ns+"/"+pod)
+	}
+	return nil
+}
+
+// evict deletes the pod so its network connections are cut immediately, for CNIs that ignore the
+// deny-all NetworkPolicy. A controller-managed pod is recreated clean; if it re-offends the kernel
+// kill fires again. An already-gone pod is treated as success.
+func (r *Responder) evict(ctx context.Context, ns, pod string) error {
+	err := r.client.CoreV1().Pods(ns).Delete(ctx, pod, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // ensureDenyAll creates the namespace's deny-all NetworkPolicy (ingress + egress) targeting
@@ -173,4 +225,78 @@ func (r *Responder) ensureDenyAll(ctx context.Context, ns string) error {
 		return fmt.Errorf("create deny-all NetworkPolicy: %w", err)
 	}
 	return nil
+}
+
+// ReleaseLoop periodically un-quarantines pods the operator has muted, making isolation
+// reversible: the mute list is the single operator lever (no kill, no quarantine, and release of
+// an already-isolated pod). It runs until ctx is done. A nil Responder is a no-op.
+func (r *Responder) ReleaseLoop(ctx context.Context, interval time.Duration) {
+	if r == nil || r.muted == nil {
+		return
+	}
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			r.reconcileReleases(ctx)
+		}
+	}
+}
+
+// reconcileReleases releases every quarantined pod that is now muted.
+func (r *Responder) reconcileReleases(ctx context.Context) {
+	r.mu.Lock()
+	var toRelease []string
+	for key := range r.seen {
+		_, pod, ok := splitKey(key)
+		if ok && r.muted(pod) {
+			toRelease = append(toRelease, key)
+		}
+	}
+	r.mu.Unlock()
+
+	for _, key := range toRelease {
+		ns, pod, _ := splitKey(key)
+		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), apiTimeout)
+		err := r.doRelease(bg, ns, pod)
+		cancel()
+		if err != nil {
+			r.log.Warn("release failed", "pod", key, "err", err)
+			continue
+		}
+		r.mu.Lock()
+		delete(r.seen, key)
+		r.mu.Unlock()
+		r.log.Info("workload released (muted)", "pod", key)
+		if r.release != nil {
+			r.release(ns, pod)
+		}
+	}
+}
+
+// doRelease removes the quarantine label and annotations so the pod drops out of the deny-all
+// NetworkPolicy's selector. The namespace policy is left in place (it only affects labeled pods).
+// An already-gone pod (e.g. evicted) is treated as released.
+func (r *Responder) doRelease(ctx context.Context, ns, pod string) error {
+	patch := fmt.Sprintf(
+		`{"metadata":{"labels":{%q:null},"annotations":{%q:null,%q:null}}}`,
+		QuarantineLabel, ruleAnnotation, atAnnotation,
+	)
+	_, err := r.client.CoreV1().Pods(ns).Patch(ctx, pod, types.StrategicMergePatchType, []byte(patch), metav1.PatchOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// splitKey splits a "namespace/pod" seen-key.
+func splitKey(key string) (ns, pod string, ok bool) {
+	i := strings.IndexByte(key, '/')
+	if i < 0 {
+		return "", "", false
+	}
+	return key[:i], key[i+1:], true
 }

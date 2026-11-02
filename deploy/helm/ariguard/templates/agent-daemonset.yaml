@@ -43,6 +43,9 @@ spec:
             {{- if and .Values.agent.isolate (ne .Values.agent.isolate "off") }}
             - --isolate={{ .Values.agent.isolate }}
             {{- end }}
+            {{- if and .Values.agent.isolateFallback (ne .Values.agent.isolateFallback "off") }}
+            - --isolate-fallback={{ .Values.agent.isolateFallback }}
+            {{- end }}
             {{- with include "ariguard.sinkUrl" . }}
             - --sink-url={{ . }}
             {{- end }}

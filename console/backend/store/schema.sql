@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS quarantine (
   rule TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL DEFAULT '',
   ts_ns INTEGER NOT NULL DEFAULT 0,
+  released INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (node, namespace, pod)
 );
 CREATE INDEX IF NOT EXISTS idx_quarantine_pod ON quarantine(pod);

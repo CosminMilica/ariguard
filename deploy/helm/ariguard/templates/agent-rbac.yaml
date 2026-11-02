@@ -15,7 +15,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["list", "watch", "get", "patch"] # patch: label a pod on autonomous quarantine
+    verbs: ["list", "watch", "get", "patch", "delete"] # patch: (un)label on quarantine/release; delete: --isolate-fallback=evict
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list", "create", "update"] # deny-all NetworkPolicy to isolate a compromised pod
