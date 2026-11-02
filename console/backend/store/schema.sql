@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS audit_events (
   ppid INTEGER NOT NULL DEFAULT 0,
   hook TEXT NOT NULL DEFAULT '',
   image TEXT NOT NULL DEFAULT '',
-  image_id TEXT NOT NULL DEFAULT ''
+  image_id TEXT NOT NULL DEFAULT '',
+  dst_ip TEXT NOT NULL DEFAULT '',
+  dst_port INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts_ns);
 CREATE INDEX IF NOT EXISTS idx_audit_pod ON audit_events(pod);
