@@ -54,7 +54,7 @@ func Stream(ctx context.Context, m, ppid, conndst *ebpf.Map, w io.Writer, names 
 		}
 		ev := audit.NewEvent(r, names.Load(), pod)
 		ev.Ppid = lookupPpid(ppid, ev.Pid) // process ancestry, from the fork-populated AG_PPID map
-		if r.Hook == fsm.HookConnect { // observed connect destination (B3), from AG_CONNDST
+		if r.Hook == fsm.HookConnect {     // observed connect destination (B3), from AG_CONNDST
 			if c, ok := lookupConnDst(conndst, ev.Pid); ok {
 				ev.DstIP, ev.DstPort = audit.ConnDstFields(c)
 			}
