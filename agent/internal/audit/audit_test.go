@@ -117,6 +117,21 @@ func TestWriteLine(t *testing.T) {
 	}
 }
 
+func TestConnDstFields(t *testing.T) {
+	// network-order sockaddr bytes the kernel copies verbatim into ConnDst: 10.0.0.5:4444.
+	c := fsm.ConnDst{
+		IP:   binary.LittleEndian.Uint32([]byte{10, 0, 0, 5}),
+		Port: binary.LittleEndian.Uint16([]byte{0x11, 0x5c}), // 0x115c = 4444 after ntohs
+	}
+	ip, port := ConnDstFields(c)
+	if ip != "10.0.0.5" || port != 4444 {
+		t.Fatalf("ConnDstFields = %s:%d, want 10.0.0.5:4444", ip, port)
+	}
+	if ip, port := ConnDstFields(fsm.ConnDst{}); ip != "" || port != 0 {
+		t.Fatalf("zero ConnDst = %s:%d, want empty", ip, port)
+	}
+}
+
 func TestComm(t *testing.T) {
 	var c [fsm.CommLen]byte
 	copy(c[:], "0123456789abcdef")

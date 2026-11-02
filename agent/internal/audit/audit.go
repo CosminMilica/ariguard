@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"sync/atomic"
 
@@ -110,6 +111,8 @@ type Event struct {
 	Container string `json:"container"`
 	Image     string `json:"image"`
 	ImageID   string `json:"image_id"`
+	DstIP     string `json:"dst_ip,omitempty"`   // observed IPv4 connect destination (B3)
+	DstPort   uint16 `json:"dst_port,omitempty"` // host byte order
 }
 
 func number(v uint32) string { return strconv.FormatUint(uint64(v), 10) }
@@ -151,6 +154,17 @@ func NewEvent(r fsm.AuditRecord, meta *fsm.Meta, pod podmeta.Info) Event {
 		e.To = name(rm.States, r.ToState)
 	}
 	return e
+}
+
+// ConnDstFields decodes an AG_CONNDST value (B3) into a dotted IPv4 string and host-order port.
+// The kernel stores the network-order sockaddr bytes verbatim, so the four octets sit in IP
+// low-to-high and the port needs ntohs. Returns ("", 0) for a zero (absent) destination.
+func ConnDstFields(c fsm.ConnDst) (string, uint16) {
+	if c.IP == 0 {
+		return "", 0
+	}
+	ip := net.IPv4(byte(c.IP), byte(c.IP>>8), byte(c.IP>>16), byte(c.IP>>24)).String()
+	return ip, c.Port>>8 | c.Port<<8
 }
 
 func comm(c [fsm.CommLen]byte) string {

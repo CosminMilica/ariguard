@@ -299,5 +299,20 @@ Also console-only, on existing incident data.
   first/last seen; and a focused inline-SVG path diagram (a left→right line of the namespaces) shown
   only when a single actor is selected.
 
-Still next: B3 (observed values — argv/path/connect dst IP:port), which will add the C2 dst IP as an
-extra IOC.
+## Tier B3 — observed connect destination
+
+The first observed-value IOC: the IPv4 destination of a `connect`. Captured verifier-safely the same
+way as `ppid` — a dedicated map, **not** by widening the shared hot-path handler (which is already at
+the 5.15 verifier's complexity limit; threading the value through `advance` and growing the
+`AuditRecord` pushed the connect program over `BPF_COMPLEXITY_LIMIT_INSNS`).
+
+- **`AG_CONNDST`** (`LRU_HASH`, `MAX_TRACKED_WORKLOADS`, key `u32` tgid → `ConnDst{ip u32, port u16}`,
+  network byte order). Written **only** by `sw_connect`, which reads the first 8 bytes of the
+  `sockaddr` (one `bpf_probe_read_user`) and stores the IPv4 dst before calling the shared handler.
+- The agent reads `AG_CONNDST[tgid]` for each `connect` audit event (like `AG_PPID`) and adds
+  `dst_ip` (dotted) + `dst_port` (host order) to the JSON. The `AuditRecord` ABI is unchanged.
+- Keyed by tgid, so a later connect on the same tgid can overwrite it — acceptable for an IOC, the
+  same tradeoff as the `ppid` fork map.
+
+Still next for B3: argv and opened path as observed values; and using `dst_ip` to let `reverse-shell`
+ignore loopback/same-pod connects (the testbed's false-positive finding).

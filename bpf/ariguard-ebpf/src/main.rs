@@ -7,7 +7,7 @@
 // no enforcement (that is phase 2, BPF LSM).
 
 use ariguard_common::{
-    AuditRecord, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_DENY,
+    AuditRecord, ConnDst, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_DENY,
     ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF,
     HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE,
     HOOK_FSMOUNT, HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT,
@@ -19,7 +19,7 @@ use aya_ebpf::{
     btf_maps::{Array, LruHashMap, PerCpuArray, RingBuf},
     helpers::{
         bpf_get_current_cgroup_id, bpf_get_current_comm, bpf_get_current_pid_tgid,
-        bpf_ktime_get_ns, bpf_probe_read_user_str_bytes, bpf_send_signal,
+        bpf_ktime_get_ns, bpf_probe_read_user, bpf_probe_read_user_str_bytes, bpf_send_signal,
     },
     macros::{btf_map, lsm, tracepoint},
     programs::{LsmContext, TracePointContext},
@@ -41,6 +41,10 @@ const BPF_NOEXIST: u64 = 1;
 const ARG_BASE: usize = 16;
 // sockaddr_un.sun_path starts here in the pointed-to struct.
 const SUN_PATH_OFF: u64 = 2;
+
+// IPv4 connect capture (B3). sockaddr_in head: sin_family u16 @0, sin_port u16 @2 (network
+// order), sin_addr u32 @4 (network order).
+const AF_INET: u16 = 2;
 
 // SIGKILL, delivered by bpf_send_signal to the current task (F1, F5).
 const SIGKILL: u32 = 9;
@@ -117,6 +121,12 @@ static AG_DENY: LruHashMap<u64, DenyToken, { MAX_TRACKED_WORKLOADS as usize }> =
 #[btf_map]
 static AG_PPID: LruHashMap<u32, u32, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
 
+// tgid -> observed IPv4 connect destination (B3). Written only by sw_connect; the agent reads it
+// to attach dst_ip:dst_port to connect audit events. A dedicated map (like AG_PPID) keeps the
+// capture out of the shared hot-path handler, which is already at the verifier's complexity limit.
+#[btf_map]
+static AG_CONNDST: LruHashMap<u32, ConnDst, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
+
 // sched_process_fork format: common(8) + parent_comm[16]@8 + parent_pid@24 + child_comm[16]@28
 // + child_pid@44. Records child -> parent so the agent can resolve ppid for any later event.
 #[tracepoint(category = "sched", name = "sched_process_fork")]
@@ -161,6 +171,13 @@ pub fn sw_ptrace(ctx: TracePointContext) -> u32 {
 
 #[tracepoint(category = "syscalls", name = "sys_enter_connect")]
 pub fn sw_connect(ctx: TracePointContext) -> u32 {
+    // B3: stash the observed IPv4 destination for this task; the agent attaches it to the connect
+    // audit event. Done here (not in the shared handler) to keep the hot binding loop small.
+    let (ip, port) = read_connect_dst(&ctx);
+    if ip != 0 {
+        let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+        let _ = AG_CONNDST.insert(&tgid, &ConnDst { ip, port, _pad: 0 }, 0);
+    }
     handle(&ctx, HOOK_CONNECT)
 }
 
@@ -213,6 +230,31 @@ pub fn sw_bpf(ctx: TracePointContext) -> u32 {
 #[inline(always)]
 fn read_arg(ctx: &TracePointContext, i: u32) -> Option<u64> {
     unsafe { ctx.read_at::<u64>(ARG_BASE + 8 * i as usize) }.ok()
+}
+
+// Reads the IPv4 destination (ip, port) of a connect from its sockaddr argument (arg 1), both in
+// network byte order. Returns (0, 0) for a null pointer or a non-AF_INET address (B3). A single
+// 8-byte read keeps the connect program within the verifier's complexity budget (one helper call,
+// no extra branching through the shared binding loop). `_OFF` constants document the layout.
+#[inline(always)]
+fn read_connect_dst(ctx: &TracePointContext) -> (u32, u16) {
+    let Some(ptr) = read_arg(ctx, 1) else {
+        return (0, 0);
+    };
+    if ptr == 0 {
+        return (0, 0);
+    }
+    // sockaddr_in head: sin_family[0..2], sin_port[2..4], sin_addr[4..8].
+    let buf = match unsafe { bpf_probe_read_user::<[u8; 8]>(ptr as *const [u8; 8]) } {
+        Ok(b) => b,
+        Err(_) => return (0, 0),
+    };
+    if u16::from_ne_bytes([buf[0], buf[1]]) != AF_INET {
+        return (0, 0);
+    }
+    let port = u16::from_ne_bytes([buf[2], buf[3]]);
+    let ip = u32::from_ne_bytes([buf[4], buf[5], buf[6], buf[7]]);
+    (ip, port)
 }
 
 // Reads the hook's path argument into AG_SCRATCH; returns the string length (no NUL).

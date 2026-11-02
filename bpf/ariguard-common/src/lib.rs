@@ -157,3 +157,14 @@ pub struct AuditRecord {
     pub enforced: u32,
     pub comm: [u8; COMM_LEN],
 }
+
+/// Observed IPv4 `connect` destination, written to AG_CONNDST keyed by tgid (B3). `ip`/`port` are
+/// in network byte order. A dedicated map keeps the connect capture out of the hot binding loop,
+/// so the shared handler stays within the verifier's complexity budget (like the AG_PPID map).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ConnDst {
+    pub ip: u32,
+    pub port: u16,
+    pub _pad: u16,
+}

@@ -14,11 +14,12 @@ import (
 
 	"github.com/CosminMilica/ariguard/agent/internal/audit"
 	"github.com/CosminMilica/ariguard/agent/internal/podmeta"
+	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // Stream reads AG_AUDIT and writes one JSON line per record to w until ctx is done.
 // Names are read per record, so a reload takes effect on the next line; pods may be nil.
-func Stream(ctx context.Context, m, ppid *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, reactor audit.Reactor, log *slog.Logger) error {
+func Stream(ctx context.Context, m, ppid, conndst *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, reactor audit.Reactor, log *slog.Logger) error {
 	rd, err := cringbuf.NewReader(m)
 	if err != nil {
 		return fmt.Errorf("open audit ring buffer: %w", err)
@@ -53,6 +54,11 @@ func Stream(ctx context.Context, m, ppid *ebpf.Map, w io.Writer, names *audit.Na
 		}
 		ev := audit.NewEvent(r, names.Load(), pod)
 		ev.Ppid = lookupPpid(ppid, ev.Pid) // process ancestry, from the fork-populated AG_PPID map
+		if r.Hook == fsm.HookConnect { // observed connect destination (B3), from AG_CONNDST
+			if c, ok := lookupConnDst(conndst, ev.Pid); ok {
+				ev.DstIP, ev.DstPort = audit.ConnDstFields(c)
+			}
+		}
 		names.SetComm(ev.CgroupID, ev.Comm)
 		if err := audit.WriteLine(w, ev); err != nil {
 			return fmt.Errorf("write audit event: %w", err)
@@ -74,4 +80,18 @@ func lookupPpid(m *ebpf.Map, pid uint32) uint32 {
 		return 0
 	}
 	return parent
+}
+
+// lookupConnDst returns the connect destination recorded for pid in AG_CONNDST (written by
+// sw_connect), or ok=false if none. Keyed by tgid, so a later connect on the same tgid can
+// overwrite it — acceptable for an IOC, matching the AG_PPID tradeoff.
+func lookupConnDst(m *ebpf.Map, pid uint32) (fsm.ConnDst, bool) {
+	if m == nil {
+		return fsm.ConnDst{}, false
+	}
+	var c fsm.ConnDst
+	if err := m.Lookup(pid, &c); err != nil {
+		return fsm.ConnDst{}, false
+	}
+	return c, true
 }
