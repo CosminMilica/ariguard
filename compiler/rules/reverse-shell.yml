@@ -6,7 +6,10 @@ states: [normal, connected, stdio_redirected, compromised]
 terminal: [compromised]
 events:
   outbound_connect:
+    # Only an outbound network connect: AF_INET and not loopback. Ignores AF_UNIX local IPC
+    # (e.g. a DB client's unix socket) and 127.x, which are never a reverse shell.
     - hook: connect
+      inet: true
   stdio_redirect:
     - hook: dup2
       arg: {index: 1, le: 2}

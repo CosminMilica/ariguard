@@ -48,6 +48,7 @@ const (
 	PathAny       uint32 = 0
 	PathPrefix    uint32 = 1 // NUL-terminated string at the argument pointer
 	PathSunPrefix uint32 = 2 // sockaddr_un.sun_path at the argument pointer
+	PathInet      uint32 = 3 // sockaddr is AF_INET and not loopback (connect); no pattern
 )
 
 // Argument predicates.

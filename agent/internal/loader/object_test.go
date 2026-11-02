@@ -17,8 +17,11 @@ import (
 // Phase 2 raised it from 512: the per-pod gate, AG_METRICS counters, enforcement
 // re-read and bpf_send_signal path add ~78 inlined insns. Phase 2b added the
 // deny-token arm (bpf_get_current_pid_tgid + AG_DENY insert) inline into every sw_
-// program (+~40, now 621); the lsm_* deny programs are ~164.
-const maxInstructions = 680
+// program (+~40, now 621); the lsm_* deny programs are ~164. B3 + the PATH_INET
+// predicate add the connect-dst read to sw_connect (AG_CONNDST insert, and again in
+// the inlined PATH_INET match), pushing it to ~696 — connect-only, still tiny for the
+// verifier (the kernel matrix 5.15→stable is the real gate).
+const maxInstructions = 720
 
 func loadSpec(t *testing.T) *ebpf.CollectionSpec {
 	t.Helper()

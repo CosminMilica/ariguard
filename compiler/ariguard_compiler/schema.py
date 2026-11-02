@@ -39,6 +39,7 @@ SCOPE_VALUES = {"cgroup": 0, "process": 1}
 PATH_ANY = 0
 PATH_PREFIX = 1
 PATH_SUN_PREFIX = 2
+PATH_INET = 3
 ARG_ANY = 0
 ARG_OPS = {"eq": 1, "le": 2, "mask_any": 3, "mask_none": 4}
 NO_ARG = 0xFFFFFFFF
@@ -55,7 +56,7 @@ SUN_PATH_ARGS = {"connect": 1}
 
 NAME_RE = re.compile(r"[a-z][a-z0-9_-]*")
 RULE_KEYS = {"name", "scope", "window_seconds", "states", "terminal", "events", "transitions"}
-BINDING_KEYS = {"hook", "path_prefix", "sun_path_prefix", "arg"}
+BINDING_KEYS = {"hook", "path_prefix", "sun_path_prefix", "inet", "arg"}
 TRANSITION_KEYS = {"from", "event", "to", "action"}
 
 
@@ -201,6 +202,10 @@ def _parse_event(name: str, idx: int, spec: object) -> list[Binding]:
             _require(hook in SUN_PATH_ARGS, f"{where}: sun_path_prefix is only valid on connect")
             path_kind, path_arg = PATH_SUN_PREFIX, SUN_PATH_ARGS[hook]
             patterns = _patterns(entry["sun_path_prefix"], where, "sun_path_prefix")
+        if "inet" in entry:
+            _require(hook in SUN_PATH_ARGS, f"{where}: inet is only valid on connect")
+            _require(entry["inet"] is True, f"{where}: inet must be true")
+            path_kind, path_arg, patterns = PATH_INET, SUN_PATH_ARGS[hook], [b""]
 
         bindings += [
             Binding(hook_id, idx, path_kind, path_arg, p, arg_op, arg_index, arg_value)

@@ -169,7 +169,7 @@ func TestValidateRejects(t *testing.T) {
 		{"hook", func(b *Bundle) { b.Bindings[0].Hook = NumHooks }, "unknown hook"},
 		{"rule", func(b *Bundle) { b.Bindings[0].Rule = 2 }, "rule 2 out of range"},
 		{"event", func(b *Bundle) { b.Bindings[2].Event = 1 }, "event 1 out of range"},
-		{"path kind", func(b *Bundle) { b.Bindings[0].PathKind = 3 }, "unknown path kind"},
+		{"path kind", func(b *Bundle) { b.Bindings[0].PathKind = 9 }, "unknown path kind"},
 		{"path any arg", func(b *Bundle) { b.Bindings[1].PathArg = 1 }, "PATH_ANY"},
 		{"path any len", func(b *Bundle) { b.Bindings[1].PathLen = 1 }, "PATH_ANY"},
 		{"path arg", func(b *Bundle) { b.Bindings[0].PathArg = MaxSyscallArgs }, "path_arg 6"},

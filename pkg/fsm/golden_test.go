@@ -104,7 +104,8 @@ func TestGoldenPolicy(t *testing.T) {
 			t.Errorf("connect binding %d = %+v", i, e)
 		}
 	}
-	if e := g[HookConnect].Entries[3]; e.Rule != 2 || e.PathKind != PathAny || e.ArgOp != ArgAny {
+	if e := g[HookConnect].Entries[3]; e.Rule != 2 || e.PathKind != PathInet || e.PathArg != 1 ||
+		e.PathLen != 0 || e.ArgOp != ArgAny {
 		t.Errorf("reverse-shell connect binding = %+v", e)
 	}
 

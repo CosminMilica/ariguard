@@ -99,6 +99,10 @@ def _bindings(sel: dict, name: str) -> list[dict]:
         if field == "sun_path|startswith":
             shared["sun_path_prefix"] = value if isinstance(value, list) else [value]
             continue
+        if field == "family":
+            _require(value == "inet", f"sub-rule {name!r}: only family: inet is supported")
+            shared["inet"] = True
+            continue
         m = _ARG_FIELD.match(field)
         _require(
             m is not None and m.group(2) in _ARG_OPS,
