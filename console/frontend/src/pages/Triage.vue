@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import ContainmentBar from '../components/ContainmentBar.vue'
 import QuarantineBadge from '../components/QuarantineBadge.vue'
-import { store, clockNs, toMs, openChainModal, exportIncident, type TriageRow } from '../api'
+import { store, clockNs, toMs, openChainModal, exportIncident, mute, unmute, type TriageRow } from '../api'
 
 const stateLabel = (s: string) => (s || '').replace(/_/g, ' ')
 const key = (t: TriageRow) => t.pod + t.started_ts_ns
@@ -27,6 +27,11 @@ const containedCount = computed(() => store.triage.filter(t => ['killed', 'block
 function onExport(e: Event, pod: string) {
   e.stopPropagation()
   exportIncident(pod)
+}
+// Operator response: muting a pod stops further kill/quarantine and releases it if isolated (F6).
+async function onMute(e: Event, pod: string) {
+  e.stopPropagation()
+  try { store.muted.includes(pod) ? await unmute(pod) : await mute(pod) } catch { store.offline = true }
 }
 </script>
 
@@ -60,7 +65,13 @@ function onExport(e: Event, pod: string) {
             <td class="mono">{{ age(t.started_ts_ns) }}</td>
             <td class="mono dim">{{ clockNs(t.last_ts_ns) }}</td>
             <td><span :class="outcome(t.outcome).cls">{{ outcome(t.outcome).text }}</span><QuarantineBadge v-if="t.quarantined" class="qb" /></td>
-            <td class="right"><button class="btn" @click="onExport($event, t.pod)">Export</button></td>
+            <td class="right nowrap">
+              <button class="btn" :class="{ warn: t.quarantined && !store.muted.includes(t.pod) }" @click="onMute($event, t.pod)"
+                :title="store.muted.includes(t.pod) ? 'Re-enable enforcement' : 'Mute: stop kill/quarantine and release if isolated'">
+                {{ store.muted.includes(t.pod) ? 'Muted' : (t.quarantined ? 'Release' : 'Mute') }}
+              </button>
+              <button class="btn" @click="onExport($event, t.pod)">Export</button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -71,6 +82,9 @@ function onExport(e: Event, pod: string) {
 <style scoped>
 .clickrow { cursor:pointer; }
 .qb { margin-left:8px; vertical-align:middle; }
+.nowrap { white-space:nowrap; }
+.nowrap .btn { margin-left:6px; }
+.btn.warn { border-color:var(--orange); color:var(--orange); }
 .live { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--faint); }
 .live.on { background:var(--crit); box-shadow:0 0 0 0 color-mix(in srgb, var(--crit) 70%, transparent); animation:pulse 1.6s infinite; }
 @keyframes pulse {
