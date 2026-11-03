@@ -80,6 +80,8 @@ type Pods interface {
 	Lookup(ctx context.Context, cgroupID uint64) podmeta.Info
 	// IsPod reports whether the cgroup belongs to a Kubernetes pod container.
 	IsPod(cgroupID uint64) bool
+	// LookupIP resolves a connect destination IP to the target pod, or zero Info when unknown (F2).
+	LookupIP(ctx context.Context, ip string) podmeta.Info
 }
 
 // Decode parses one little-endian ring buffer sample.
@@ -113,6 +115,8 @@ type Event struct {
 	ImageID   string `json:"image_id"`
 	DstIP     string `json:"dst_ip,omitempty"`   // observed IPv4 connect destination (B3)
 	DstPort   uint16 `json:"dst_port,omitempty"` // host byte order
+	DstPod    string `json:"dst_pod,omitempty"`  // target pod of DstIP, when it resolves to a pod (F2)
+	DstNs     string `json:"dst_ns,omitempty"`   // target pod's namespace (F2)
 }
 
 func number(v uint32) string { return strconv.FormatUint(uint64(v), 10) }
