@@ -18,8 +18,9 @@ Runs as a DaemonSet, one instance per node. Responsibilities:
   `dryrun` applies the label only. It is idempotent, never touches system
   namespaces or muted pods, and runs non-blocking off the mitigation path. Each
   quarantine is POSTed to the console (`/api/v1/quarantine`). NetworkPolicy
-  enforcement requires a NetworkPolicy-capable CNI (Cilium/Calico); kindnet does
-  not enforce it.
+  enforcement is done by the CNI (Cilium/Calico); kindnet does not enforce it, so
+  `--isolate-fallback=evict` deletes the pod there instead. Isolation is
+  reversible: muting a quarantined pod releases it.
 
 The agent holds **no decision logic**: detection and enforcement happen in the kernel.
 It is a loader, map manager, and telemetry pump.
