@@ -64,7 +64,9 @@ egress, ingress and lateral movement while the pod stays up for investigation
 (isolate-don't-destroy). It is gated `--isolate=off|dryrun|on` (dry-run labels only), idempotent,
 and never touches system namespaces or muted pods. NetworkPolicy is enforced by the CNI
 (Cilium/Calico); kindnet does not enforce it, so on kind the policy is created but not actually
-blocking.
+blocking — there `--isolate-fallback=evict` deletes the pod to cut its network instead.
+Isolation is reversible: muting a quarantined pod releases it (removes the label → drops out of the
+deny-all policy).
 
 ## 3. Rules come from threat intelligence
 

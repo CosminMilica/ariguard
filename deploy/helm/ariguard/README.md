@@ -58,7 +58,8 @@ helm upgrade --install ariguard deploy/helm/ariguard -n ariguard-system \
 | `agent.image` | `ariguard-agent` | agent image name |
 | `agent.enforce` | `true` | `true` = kill at the terminal step; `false` = observe only |
 | `agent.deny` | `false` | `true` = refuse deny-action syscalls with `-EPERM` via BPF LSM where a hook exists (needs `enforce` + a kernel with BPF LSM; kill fallback otherwise) |
-| `agent.isolate` | `"off"` | `off` \| `dryrun` \| `on` → appends `--isolate=<mode>`; `on` quarantines a pod after a confirmed terminal mitigation (label + deny-all NetworkPolicy), `dryrun` labels only (needs a NetworkPolicy-capable CNI for enforcement) |
+| `agent.isolate` | `"off"` | `off` \| `dryrun` \| `on` → appends `--isolate=<mode>`; `on` quarantines a pod after a confirmed terminal mitigation (label + deny-all NetworkPolicy), `dryrun` labels only. NetworkPolicy enforcement is done by the CNI (Cilium/Calico); see `agent.isolateFallback` for CNIs that don't |
+| `agent.isolateFallback` | `"off"` | `off` \| `evict` → appends `--isolate-fallback=<mode>`; `evict` deletes a quarantined pod to cut its network on CNIs that ignore NetworkPolicy (e.g. kindnet). Destructive; only with `isolate: on` |
 | `agent.sinkUrl` | `""` | where the agent pushes audit; empty + console on → the console backend svc |
 | `agent.resources` | small requests | agent container resources |
 | `console.enabled` | `true` | deploy the console (false = agent only) |

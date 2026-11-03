@@ -81,9 +81,10 @@ ariguard/
 
 - Linux kernel **≥ 5.7** with BTF (`/sys/kernel/btf/vmlinux`); `CONFIG_BPF_LSM=y` with `bpf`
   in `/sys/kernel/security/lsm` for the `-EPERM` deny (kill fallback otherwise).
-- A NetworkPolicy-enforcing CNI (**Cilium/Calico**) for autonomous isolation (`--isolate=on`);
-  kindnet (kind's default) does **not** enforce NetworkPolicy, so on kind the quarantine policy is
-  created but traffic is not actually blocked.
+- Autonomous isolation (`--isolate=on`) is **CNI-agnostic** and does not require Cilium: a
+  NetworkPolicy-enforcing CNI (**Cilium/Calico**) makes the deny-all policy cut traffic (pod stays
+  up for investigation); on a CNI that ignores NetworkPolicy (kindnet, kind's default) use
+  `--isolate-fallback=evict`, which deletes the pod to cut its network instead.
 - Rust toolchain + `bpf-linker`; Go ≥ 1.27; Python ≥ 3.11.
 - macOS dev: a Linux VM (Lima) + kind.
 

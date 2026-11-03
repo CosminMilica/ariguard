@@ -255,7 +255,9 @@ gap with no new kernel work: it is pure agent/control-plane (see
   console via `POST /api/v1/quarantine`.
 - **CNI caveat.** NetworkPolicy is enforced by the CNI (Cilium/Calico). kindnet (kind's default)
   does **not** enforce it, so on kind the policy object is created but traffic is not actually
-  blocked.
+  blocked. AriGuard does not depend on Cilium — where the CNI ignores NetworkPolicy, the
+  `--isolate-fallback=evict` escape hatch cuts the network by deleting the pod (see the lifecycle
+  section below).
 
 ### RBAC additions
 

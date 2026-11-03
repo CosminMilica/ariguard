@@ -42,7 +42,8 @@ before denying or killing anything.
 
 - Kernel ≥ 5.7 with `CONFIG_BPF_LSM=y` and BTF enabled.
 - The agent runs privileged enough to load BPF and attach LSM hooks.
-- Autonomous isolation assumes a NetworkPolicy-enforcing CNI (Cilium/Calico); where the CNI does
-  not enforce NetworkPolicy (e.g. kindnet), the quarantine policy is created but does not block
-  traffic.
+- Autonomous network isolation is CNI-agnostic: with a NetworkPolicy-enforcing CNI (Cilium/Calico)
+  the quarantine policy cuts traffic and the pod stays up for investigation; where the CNI does not
+  enforce NetworkPolicy (e.g. kindnet), `--isolate-fallback=evict` deletes the pod to cut its
+  network instead. AriGuard does not depend on Cilium.
 - The control plane and agents trust each other over an authenticated channel.

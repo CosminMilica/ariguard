@@ -84,6 +84,7 @@ kubectl apply -k deploy/k8s/overlays/detect   # agent back to detect-only
 ## Notes
 
 - **kindnet** does not enforce NetworkPolicy, so Tier C1's quarantine object is created but traffic
-  is not actually cut here; a Cilium/Calico CNI would enforce it.
+  is not actually cut here; a Cilium/Calico CNI would enforce it, or `--isolate-fallback=evict` cuts
+  the network on kindnet by deleting the pod.
 - Real exploits run only against this isolated cluster — **never in CI** (CI keeps the deterministic
   synthetic drivers in `testdata/workloads/`).
