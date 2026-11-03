@@ -45,6 +45,7 @@ type Resolver struct {
 	paths      map[uint64]string
 	walkedAt   time.Time
 	containers map[string]Info
+	byIP       map[string]Info // pod IP -> pod identity, for connect-destination resolution (F2)
 	listedAt   time.Time
 }
 
@@ -112,6 +113,25 @@ func (r *Resolver) IsPod(cgroupID uint64) bool {
 	return ok && IsPodCgroup(path)
 }
 
+// LookupIP returns the pod owning ip, or zero Info when unknown (no client, host-network target,
+// off-cluster address, or not yet listed). Used to turn an observed connect destination into a
+// target pod identity for real lateral-movement edges (F2).
+func (r *Resolver) LookupIP(ctx context.Context, ip string) Info {
+	if ip == "" || r.client == nil {
+		return Info{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if info, ok := r.byIP[ip]; ok {
+		return info
+	}
+	if r.due(r.listedAt) {
+		r.list(ctx)
+		return r.byIP[ip]
+	}
+	return Info{}
+}
+
 func (r *Resolver) due(last time.Time) bool {
 	return last.IsZero() || r.now().Sub(last) >= refreshInterval
 }
@@ -151,18 +171,39 @@ func (r *Resolver) list(ctx context.Context) {
 		return
 	}
 	containers := make(map[string]Info)
+	byIP := make(map[string]Info)
 	for _, p := range pods.Items {
+		var first Info
 		for _, statuses := range [][]corev1.ContainerStatus{
 			p.Status.ContainerStatuses, p.Status.InitContainerStatuses, p.Status.EphemeralContainerStatuses,
 		} {
 			for _, s := range statuses {
+				info := Info{Namespace: p.Namespace, Pod: p.Name, Container: s.Name, Image: s.Image, ImageID: s.ImageID}
 				if id := stripRuntime(s.ContainerID); id != "" {
-					containers[id] = Info{Namespace: p.Namespace, Pod: p.Name, Container: s.Name, Image: s.Image, ImageID: s.ImageID}
+					containers[id] = info
+				}
+				if first.Pod == "" {
+					first = info
 				}
 			}
 		}
+		// Index the pod's IP(s) for connect-destination resolution. Host-network pods share the
+		// node IP, so skip them — their IP identifies the node, not the pod.
+		if p.Spec.HostNetwork {
+			continue
+		}
+		id := Info{Namespace: p.Namespace, Pod: p.Name, Image: first.Image, ImageID: first.ImageID}
+		for _, ip := range p.Status.PodIPs {
+			if ip.IP != "" {
+				byIP[ip.IP] = id
+			}
+		}
+		if p.Status.PodIP != "" {
+			byIP[p.Status.PodIP] = id
+		}
 	}
 	r.containers = containers
+	r.byIP = byIP
 }
 
 func cgroupPath(root, path string) string {

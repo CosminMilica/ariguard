@@ -64,6 +64,10 @@ export interface ActorTrail {
   rules: string[]; first_ts_ns: number; last_ts_ns: number
 }
 export interface Lateral { actors: ActorTrail[]; namespaces: string[] }
+export interface Edge {
+  src_namespace: string; src_pod: string; dst_namespace: string; dst_pod: string
+  cross_ns: boolean; count: number; ports: number[]; rules: string[]; first_ts_ns: number; last_ts_ns: number
+}
 
 export const store = reactive({
   page: 'overview' as Page,
@@ -88,6 +92,7 @@ export const store = reactive({
   containment: null as Containment | null,
   coverage: null as Coverage | null,
   lateral: null as Lateral | null,
+  edges: [] as Edge[],
   muted: [] as string[],
   overview: null as Overview | null,
   allWorkloads: [] as Workload[],
@@ -183,7 +188,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -200,8 +205,9 @@ export async function refresh() {
       get<Coverage>('/api/coverage'),
       get<Actor[]>('/api/actors'),
       get<Lateral>('/api/lateral'),
+      get<Edge[]>('/api/edges'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -217,6 +223,7 @@ export async function refresh() {
     if (cov.status === 'fulfilled') store.coverage = cov.value
     if (act.status === 'fulfilled') store.actors = arr(act.value)
     if (lat.status === 'fulfilled') store.lateral = lat.value
+    if (edg.status === 'fulfilled') store.edges = arr(edg.value)
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()

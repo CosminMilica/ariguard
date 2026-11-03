@@ -305,11 +305,13 @@ Console-only, no kernel/agent change: it reuses the incident-group materializati
   the `comms[]`, and `affected_namespaces[]`. The frontend **Actors** page is one row per actor,
   wide-spread rows accented.
 
-## Tier C3 — lateral-movement trails
+## Tier C3 — actor spread (inferred)
 
-Also console-only, on existing incident data.
+Also console-only, on existing incident data. **Naming (F3):** this is *inferred* spread — the same
+compromised image appearing across namespaces over time — **not** observed network movement. That is
+F2 below ("network pivots"); the Lateral page shows both, clearly separated.
 
-- **`GET /api/lateral`** reconstructs attacker movement as **per-actor trails**: for each actor
+- **`GET /api/lateral`** reconstructs attacker spread as **per-actor trails**: for each actor
   (container image digest) it returns the distinct namespaces that actor reached in first-seen order
   (`path`, earliest-first), `hops` (len(path) − 1; 0 = no lateral movement), plus its namespaces,
   pods, incidents, killed/blocked counts, the `rules[]` it triggered and first/last seen; actors
@@ -335,6 +337,24 @@ the 5.15 verifier's complexity limit; threading the value through `advance` and 
   `dst_ip` (dotted) + `dst_port` (host order) to the JSON. The `AuditRecord` ABI is unchanged.
 - Keyed by tgid, so a later connect on the same tgid can overwrite it — acceptable for an IOC, the
   same tradeoff as the `ppid` fork map.
+
+## F2 — observed lateral movement (real pod→pod edges)
+
+Turns the B3 connect destination into observed network movement, not inference (contrast C3 above).
+
+- **Agent-side resolution.** `podmeta` keeps an **IP→pod index** built from each pod's
+  `status.podIP(s)` during its existing cluster-wide pod list (host-network pods are skipped — their
+  IP is the node's, not the pod's). For every `connect` audit event, the stream resolves the observed
+  `dst_ip` to the target pod and tags the event with `dst_pod`/`dst_ns`. Same enrichment pattern as
+  `ppid`/image/dst — the hot kernel path is untouched.
+- **Console.** `audit_events` gains `dst_pod`/`dst_ns` columns (in-place migration). **`GET /api/edges`**
+  aggregates distinct observed **src pod → dst pod** edges in the window: connection count, ports,
+  rules, first/last seen, and a `cross_ns` flag (src and dst in different namespaces = real lateral
+  reach). Cross-namespace edges sort first; a pod connecting to itself is dropped.
+- **UI.** The Lateral page leads with a **Network pivots** table (observed edges, cross-ns first),
+  then the renamed **Actor spread** view (C3 inference) below.
+- **Scope.** Only destinations that are cluster pods resolve; off-cluster C2 (the internet) stays as
+  `dst_ip` on the actor/C2 view (F4). No kernel or ABI change.
 
 Still next for B3: argv and opened path as observed values.
 

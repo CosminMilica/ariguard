@@ -198,6 +198,39 @@ func TestLookupPodRefresh(t *testing.T) {
 	}
 }
 
+func TestLookupIP(t *testing.T) {
+	root := t.TempDir()
+	target := pod("ns-b", "db", corev1.ContainerStatus{Name: "db", ContainerID: "containerd://" + idA,
+		Image: "postgres:16", ImageID: "postgres@sha256:xyz"})
+	target.Status.PodIP = "10.0.0.5"
+	host := pod("kube-system", "kube-proxy", corev1.ContainerStatus{Name: "kp", ContainerID: "containerd://" + idB})
+	host.Spec.HostNetwork = true
+	host.Status.PodIP = "192.168.1.1"
+	r, _, _ := newResolver(t, root, target, host)
+	ctx := context.Background()
+
+	got := r.LookupIP(ctx, "10.0.0.5")
+	if got.Pod != "db" || got.Namespace != "ns-b" || got.Image != "postgres:16" {
+		t.Fatalf("LookupIP(pod IP) = %+v", got)
+	}
+	if got := r.LookupIP(ctx, "192.168.1.1"); got.Pod != "" {
+		t.Errorf("host-network pod IP must not resolve to a pod: %+v", got)
+	}
+	if got := r.LookupIP(ctx, "8.8.8.8"); got.Pod != "" {
+		t.Errorf("off-cluster IP = %+v, want empty", got)
+	}
+	if got := r.LookupIP(ctx, ""); got.Pod != "" {
+		t.Errorf("empty IP = %+v, want empty", got)
+	}
+}
+
+func TestLookupIPWithoutClient(t *testing.T) {
+	r := New(t.TempDir(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if got := r.LookupIP(context.Background(), "10.0.0.5"); got.Pod != "" {
+		t.Errorf("LookupIP without client = %+v, want empty", got)
+	}
+}
+
 func TestLookupWithoutClient(t *testing.T) {
 	root := t.TempDir()
 	ino := mkdir(t, root, "docker-"+idA+".scope")

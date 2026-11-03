@@ -29,6 +29,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/campaigns", a.campaigns)
 	mux.HandleFunc("GET /api/actors", a.actors)
 	mux.HandleFunc("GET /api/lateral", a.lateral)
+	mux.HandleFunc("GET /api/edges", a.edges)
 	mux.HandleFunc("GET /api/containment", a.containment)
 	mux.HandleFunc("GET /api/coverage", a.coverage)
 	mux.HandleFunc("GET /api/export", a.export)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { store, shortImage, clockNs, type ActorTrail } from '../api'
+import { store, shortImage, clockNs, type ActorTrail, type Edge } from '../api'
 
 const selectedActorId = ref('')
 const selectedNs = ref('')
@@ -8,6 +8,10 @@ const movedOnly = ref(true)
 
 const actors = computed<ActorTrail[]>(() => store.lateral?.actors ?? [])
 const namespaces = computed<string[]>(() => store.lateral?.namespaces ?? [])
+
+// Observed network pivots (F2): real pod→pod connections, not image-correlation inference.
+const edges = computed<Edge[]>(() => store.edges ?? [])
+const crossNsEdges = computed(() => edges.value.filter(e => e.cross_ns).length)
 
 const focused = computed<ActorTrail | null>(() =>
   selectedActorId.value ? actors.value.find(a => a.image_id === selectedActorId.value) ?? null : null)
@@ -57,13 +61,52 @@ const diagram = computed(() => {
 <template>
   <section class="card">
     <div class="hd">
-      <h2>Lateral</h2>
-      <span class="c">{{ filtered.length }} actors · {{ movedCount }} moved laterally</span>
+      <h2>Network pivots</h2>
+      <span class="c">{{ edges.length }} edges · {{ crossNsEdges }} cross-namespace</span>
     </div>
 
     <p class="intro">
-      Lateral movement — a compromised image (an <b>actor</b>) reaching more than one namespace over time.
-      Each row is an actor and the namespaces it moved through, earliest first.
+      Observed lateral movement — real <b>pod → pod</b> connections the agent saw (a compromised pod's
+      <code>connect</code> whose destination IP resolved to another pod). Cross-namespace pivots first.
+    </p>
+
+    <div class="bd" v-if="!edges.length">
+      <div class="empty">No pod-to-pod network pivots observed in this range.</div>
+    </div>
+    <div class="scroll" v-else>
+      <table>
+        <thead>
+          <tr><th>Source pod</th><th></th><th>Destination pod</th><th>Reach</th><th>Conns</th><th>Ports</th><th>Rules</th><th>Last</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(e, i) in edges" :key="i" :class="{ mover: e.cross_ns }">
+            <td class="mono" :title="e.src_namespace">{{ e.src_pod }}<span class="dim"> · {{ shortNs(e.src_namespace) }}</span></td>
+            <td class="arrcell">→</td>
+            <td class="mono" :title="e.dst_namespace">{{ e.dst_pod }}<span class="dim"> · {{ shortNs(e.dst_namespace) }}</span></td>
+            <td><span class="chip" :class="e.cross_ns ? 'hit' : 'mono'">{{ e.cross_ns ? 'cross-ns' : 'same-ns' }}</span></td>
+            <td class="mono">{{ e.count }}</td>
+            <td class="chips"><span v-for="p in e.ports" :key="p" class="chip mono">{{ p }}</span></td>
+            <td class="chips">
+              <span v-for="r in chips(e.rules).shown" :key="r" class="chip mono">{{ r }}</span>
+              <span v-if="chips(e.rules).rest > 0" class="chip more">+{{ chips(e.rules).rest }}</span>
+            </td>
+            <td class="mono dim">{{ clockNs(e.last_ts_ns) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hd">
+      <h2>Actor spread</h2>
+      <span class="c">{{ filtered.length }} actors · {{ movedCount }} spread across namespaces</span>
+    </div>
+
+    <p class="intro">
+      Actor spread (inferred) — the same compromised <b>image</b> (an <b>actor</b>) appearing in more than
+      one namespace over time. This is correlation by payload, <b>not</b> observed network movement — see
+      Network pivots above for that. Each row is an actor and the namespaces it reached, earliest first.
     </p>
 
     <div class="toolbar">
@@ -198,4 +241,8 @@ td.path { white-space:normal; max-width:360px; }
 .chip.hit { border-color:var(--teal-dim); color:var(--fg); background:color-mix(in srgb, var(--teal) 16%, var(--surface-2)); }
 .chip.more { color:var(--faint); }
 .linkish { margin-left:8px; padding:2px 9px; }
+
+.intro code { font-family:var(--mono); font-size:11.5px; color:var(--fg-2); background:var(--surface-2); padding:1px 5px; border-radius:4px; }
+.arrcell { color:var(--faint); font-family:var(--mono); text-align:center; }
+.dim { color:var(--faint); }
 </style>

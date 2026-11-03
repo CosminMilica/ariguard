@@ -57,6 +57,11 @@ func Stream(ctx context.Context, m, ppid, conndst *ebpf.Map, w io.Writer, names 
 		if r.Hook == fsm.HookConnect {     // observed connect destination (B3), from AG_CONNDST
 			if c, ok := lookupConnDst(conndst, ev.Pid); ok {
 				ev.DstIP, ev.DstPort = audit.ConnDstFields(c)
+				if ev.DstIP != "" && pods != nil { // resolve the destination to a target pod (F2)
+					if dst := pods.LookupIP(ctx, ev.DstIP); dst.Pod != "" {
+						ev.DstPod, ev.DstNs = dst.Pod, dst.Namespace
+					}
+				}
 			}
 		}
 		names.SetComm(ev.CgroupID, ev.Comm)

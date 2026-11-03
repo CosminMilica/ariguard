@@ -25,8 +25,8 @@ is *inferred* (same image across namespaces over time), not *observed* network p
 | ID | Task | Why | Depends | Size |
 |----|------|-----|---------|------|
 | F1 | **B3 — observed values**: ~~`connect` dst IP:port~~ **(done — `AG_CONNDST` map; see architecture.md)**; still argv + opened path | concrete IOCs, and the input for real lateral movement | — | M (kernel ABI; verifier-safe like the fork map) |
-| F2 | **True lateral movement** — map `connect` dst IP → target pod identity (IP→pod from podmeta/k8s), emit **real pod→pod edges** | observed pivoting, not image-correlation inference | F1 | M |
-| F3 | **Relabel C3 honestly** — call the current image-correlation view "**actor spread**"; reserve "**lateral movement**" for F2's observed network pivots | don't claim what we don't observe | — | S |
+| F2 | ~~**True lateral movement**~~ **(done)** — the agent resolves each `connect` dst IP → target pod (podmeta IP→pod index) and tags the event with `dst_pod`/`dst_ns`; `GET /api/edges` reconstructs observed **pod→pod** edges (cross-namespace first), shown as "Network pivots" on the Lateral page | observed pivoting, not image-correlation inference | F1 | M |
+| F3 | ~~**Relabel C3 honestly**~~ **(done)** — the image-correlation view is now "**actor spread**" (inference); "**lateral movement / network pivots**" is reserved for F2's observed edges | don't claim what we don't observe | — | S |
 | F4 | **Richer actor IOCs (C2)** — add dst IP (and later file hash) to the actor key once B3 lands | stronger "same actor" correlation | F1 | S |
 | F5 | ~~**Agent-side mutes/allowlist**~~ **(done)** — the agent polls `GET /api/v1/mutes`; muted pods are excluded from `AG_PODS` (no kill) and skipped by the responder (no quarantine) | operator control; avoid isolating known-good | — | S |
 | F6 | ~~**Quarantine lifecycle**~~ **(done)** — isolation is reversible: muting a quarantined pod releases it (removes the label → drops out of the deny-all NP selector), reported to the console as `released`; `--isolate-fallback=evict` deletes the pod for CNIs that ignore NetworkPolicy (kindnet) | isolation was one-way; kindnet can't enforce NP | — | M |
