@@ -259,7 +259,7 @@ gap with no new kernel work: it is pure agent/control-plane (see
 
 ### RBAC additions
 
-The agent ClusterRole gains `pods: get,patch` and
+The agent ClusterRole gains `pods: get,patch,delete` (delete for `--isolate-fallback=evict`) and
 `networking.k8s.io/networkpolicies: get,list,create,update`
 (`deploy/k8s/base/rbac.yaml` + Helm). Deploy wiring: Helm value `agent.isolate` (default `"off"`)
 appends `--isolate=<mode>`; a new kustomize overlay `deploy/k8s/overlays/isolate` runs
@@ -270,6 +270,26 @@ appends `--isolate=<mode>`; a new kustomize overlay `deploy/k8s/overlays/isolate
 Ingest `POST /api/v1/quarantine` writes a `quarantine` table; read `GET /api/quarantine`. A
 `quarantined` boolean is added to `/api/triage` and `/api/incidents`, surfaced as an `ISOLATED`
 badge in the Triage and Incidents UI.
+
+### Quarantine lifecycle (F6)
+
+Isolation is reversible and has an escape hatch for CNIs that can't enforce NetworkPolicy.
+
+- **Release = mute.** The mute allowlist (F5) is the single operator lever. The responder runs a
+  `ReleaseLoop` (same interval as the mute poll) that un-quarantines any pod now muted: it removes
+  the `ariguard.io/quarantine` label and annotations, so the pod drops out of the deny-all
+  NetworkPolicy's selector (the namespace policy stays, it only affects labeled pods), clears the
+  pod from `seen` (a later offense can re-quarantine), and reports the release. There is **no new
+  operator endpoint** — the operator mutes a pod (UI: Workloads row menu → mute) to release it.
+- **Release reporting.** The agent sends `POST /api/v1/quarantine` with `released: true`; ingest
+  flips the row's `released` flag (keeping its `rule`/`mode` for history). `quarantinedKeys`
+  excludes released rows, so the `ISOLATED` badge clears in Triage/Incidents.
+- **Evict fallback.** `--isolate-fallback=off|evict` (Helm `agent.isolateFallback`). With `evict`,
+  mode `on` additionally deletes the quarantined pod after the label + NetworkPolicy, so its network
+  connections are cut now on CNIs that ignore NetworkPolicy (kindnet). A controller-managed pod is
+  recreated clean; if it re-offends the kernel kill fires again. Destructive, so it is opt-in and
+  off by default (the default keeps the isolate-don't-destroy stance). Eviction needs `pods: delete`
+  in the agent ClusterRole.
 
 ## Tier C2 — actor correlation
 

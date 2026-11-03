@@ -53,4 +53,22 @@ func TestQuarantine(t *testing.T) {
 	if len(triage) != 1 || triage[0].Pod != "iso-pod" || !triage[0].Quarantined {
 		t.Fatalf("triage quarantined flag: %+v", triage)
 	}
+
+	// Agent releases the pod (F6): the row flips to released, keeps its rule/mode, and the
+	// triage row is no longer flagged quarantined.
+	rel, _ := json.Marshal(map[string]any{"node": "n1", "namespace": "ns", "pod": "iso-pod", "released": true, "ts_ns": now})
+	mustPost(t, srv, "/api/v1/quarantine", string(rel))
+
+	var after []struct {
+		Pod, Rule, Mode string
+		Released        bool
+	}
+	mustGet(t, srv, "/api/quarantine?range=1h", &after)
+	if len(after) != 1 || !after[0].Released || after[0].Rule != "r1" || after[0].Mode != "on" {
+		t.Fatalf("released row: %+v", after)
+	}
+	mustGet(t, srv, "/api/triage?range=1h", &triage)
+	if len(triage) != 1 || triage[0].Quarantined {
+		t.Fatalf("triage must not flag a released pod: %+v", triage)
+	}
 }

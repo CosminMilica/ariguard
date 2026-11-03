@@ -50,38 +50,6 @@ kubectl -n ariguard-system port-forward svc/ariguard-console-frontend 8080:80   
 
 See [docs/deployment.md](docs/deployment.md) for the local VM + kind dev loop.
 
-## Status
-
-Built in phases. **Phases 0–2 are complete and in `main`** (CI green end to end: unit,
-contract, console, helm, security, bpf, the kernel matrix 5.15→stable, and the kind e2e).
-
-- [x] **Phase 0–1.5** — generic multi-rule in-kernel FSM; three attack chains detected by the
-  *ordered sequence* of syscalls, per pod, across kernels 5.15→stable.
-- [x] **Phase 2** — synchronous mitigation: the attacker is **killed** at the terminal step
-  (`bpf_send_signal`), gated per pod; benign workloads and the node runtime are untouched.
-- [x] **Console** — a full incident-investigation tool (agent → sink → SQLite → Vue): Triage,
-  Campaigns (blast-radius), Timeline, Coverage (ATT&CK × hooks), Performance, Actors (actor
-  correlation), Lateral (lateral-movement graph), per-incident JSON export, a process tree built
-  from `ppid`, and the quarantine status (an `ISOLATED` badge) of autonomously isolated workloads.
-- [x] **Phase 2b** — LSM `-EPERM` deny: the host mount is refused via a BPF LSM hook
-  (`sb_mount`/`move_mount`), with a `kill` fallback where no LSM hook exists.
-- [x] **Phase 3** — Sigma `temporal_ordered` → FSM compiler plus automated rule generation
-  (Claude co-authored in-session, offline; outputs committed, CI never calls an LLM), gated by
-  schema/round-trip validation and a behavioral attack-vs-benign check. The rule library is now
-  **7 kill-chains**. Control-plane / CRD fleet distribution is deferred.
-- [x] **Phase 4** — evaluation (our-metrics-first): the `ariguard-bench` harness measures
-  per-hook latency, the flat memory curve and throughput. Falco/Tetragon comparison is deferred.
-- [x] **Tier C (C1)** — autonomous workload isolation: on a confirmed terminal mitigation the
-  agent quarantines the pod (`ariguard.io/quarantine` label + a deny-all NetworkPolicy), gated
-  `off|dryrun|on` (`--isolate`), idempotent, never touching system namespaces. Actual network
-  enforcement needs a NetworkPolicy-enforcing CNI (Cilium/Calico).
-- [x] **Tier C (C2)** — actor correlation: `GET /api/actors` clusters incident groups by container
-  image digest, so the same compromised image across many pods/namespaces is one actor (a campaign
-  by payload, not by rule), widest-spread first; surfaced on an **Actors** page. Console-only.
-- [x] **Tier C (C3)** — lateral-movement graph: `GET /api/lateral` reconstructs each actor's
-  time-ordered namespace sequence into directed edges A→B; a **Lateral** page renders an inline-SVG
-  directed graph plus an edge table. Console-only.
-
 ## Academic context
 
 AriGuard is the engineering artifact of a master's dissertation. Its contribution is
