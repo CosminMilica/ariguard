@@ -22,9 +22,9 @@ func (a *API) workloads(w http.ResponseWriter, r *http.Request) {
 	switch filter {
 	case "", "all":
 	case "alerting":
-		query += ` AND state != 'normal'`
+		query += ` AND state IN ` + threatStatesSQL
 	case "quiet":
-		query += ` AND state = 'normal'`
+		query += ` AND state NOT IN ` + threatStatesSQL
 	default:
 		query += ` AND node = ?`
 		args = append(args, filter)
