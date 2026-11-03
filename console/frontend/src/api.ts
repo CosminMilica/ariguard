@@ -142,7 +142,10 @@ export const SEV_TO_KEY: Record<string, string> = {
 }
 export const sevKey = (s: string) => SEV_TO_KEY[(s || '').toLowerCase()] || 'info'
 
-export function isAlerting(w: Workload) { return w.state !== 'normal' }
+// Threat states denote real progression; `normal` and reverse-shell's `connected` (a bare
+// outbound connect, which every pod makes) are benign and never alerting.
+const THREAT_STATES = ['suspicious', 'memfd_created', 'stdio_redirected', 'escalating', 'breakout_imminent', 'compromised']
+export function isAlerting(w: Workload) { return THREAT_STATES.includes(w.state) }
 
 function clientWorkloads(list: Workload[]) {
   const f = store.wlFilter

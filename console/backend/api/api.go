@@ -102,7 +102,15 @@ var stateSeverity = map[string]string{
 	"breakout_imminent": "crit",
 	"escalating":        "mid",
 	"suspicious":        "warn",
+	"memfd_created":     "warn", // fileless-exec staging — rare, worth surfacing
+	"stdio_redirected":  "warn", // reverse-shell stdio→socket — rare, worth surfacing
 }
+
+// threatStatesSQL lists the FSM states that denote real threat progression. A workload is
+// "alerting" when it reaches one of these. `normal` and reverse-shell's `connected` (a bare
+// outbound connect, which every pod makes) are benign and excluded — connecting out is not itself
+// an attack, so it must not flag kube-apiserver/agent/etc. as threats.
+const threatStatesSQL = `('suspicious','memfd_created','stdio_redirected','escalating','breakout_imminent','compromised')`
 
 // nodeStats holds the latest counters and the rate between the last two samples.
 type nodeStats struct {

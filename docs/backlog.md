@@ -49,6 +49,13 @@ is *inferred* (same image across namespaces over time), not *observed* network p
 - B3 (F1) touches the record ABI; the 5.15/6.1 verifier limit bit us on ppid — keep B3's capture
   minimal and prefer a dedicated program/map over widening the hot-path programs.
 - Until F2, the "lateral" view is actor-spread inference (F3), not observed pivoting.
+- A bare outbound `connect` is the reverse-shell chain's entry step but is itself benign (every pod
+  connects out). The engine still tracks the `connected` state (and the connect event feeds F2
+  pivots), but the console treats `connected` as **non-threat**: only real threat states
+  (`suspicious`/`memfd_created`/`stdio_redirected`/`escalating`/`breakout_imminent`/`compromised`) or
+  an enforcement action count as alerting. This stops kube-apiserver/agent/etc. showing as
+  reverse-shell threats. A rule-level FP-killer (require the connect to be followed by stdio+shell
+  before surfacing) is a future option.
 
 ## Testbed run 1 — findings (2026-11-02)
 
