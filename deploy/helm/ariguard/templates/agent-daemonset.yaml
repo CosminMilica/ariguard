@@ -49,6 +49,9 @@ spec:
             {{- with include "ariguard.sinkUrl" . }}
             - --sink-url={{ . }}
             {{- end }}
+            {{- if not .Values.agent.policySync }}
+            - --policy-sync=false
+            {{- end }}
           env:
             - name: NODE_NAME
               valueFrom:

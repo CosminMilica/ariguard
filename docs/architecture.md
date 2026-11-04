@@ -358,6 +358,28 @@ Turns the B3 connect destination into observed network movement, not inference (
 
 Still next for B3: argv and opened path as observed values.
 
+## F7 — control plane (live policy distribution)
+
+Rules reach the fleet without rebuilding the agent image: the **console is the control plane**,
+reusing the agent's existing poll (like the F5 mute list) and hot-swap (the SIGHUP apply path).
+
+- **Store + push.** `PUT /api/v1/policy` stores one compiled bundle in the `policy` table, versioned
+  by its SHA-256 (first 16 hex). The rule pipeline (autogen / CI) pushes here; a human or job, not
+  the kernel.
+- **Poll + hot-swap.** Each agent (`agent/internal/policysync`) polls `GET /api/v1/policy?have=<version>`
+  every `policyInterval`. A matching version is a `304` (cheap no-op); a new one returns the bytes,
+  which the agent applies via `applyBundleData` → `policy.Apply` — the same map hot-swap SIGHUP uses,
+  no program reload. A `policyMu` serialises the poller against SIGHUP. No policy pushed → `204`, and
+  the agent keeps its baked-in bundle.
+- **Fail-safe.** A failed fetch or a bad bundle keeps the running policy; the agent never drops to no
+  policy because the console hiccuped. `--policy-sync=false` (Helm `agent.policySync`) pins the
+  baked-in bundle.
+- **Shadow vs enforce is just the pushed bundle.** A shadow rule's terminal action is `observe`
+  (detect-only); promotion re-pushes it as `kill`. This is what lets the autonomous loop
+  ([autonomous-rulegen.md](autonomous-rulegen.md)) distribute learned rules live and safely.
+- **Scope.** The console-served bundle is the single-node/kind control plane; a Kubernetes CRD +
+  reconciler for multi-cluster is a further option. No new agent RBAC (it is HTTP to the console).
+
 ### `PATH_INET` — network-connect predicate (FP-killer)
 
 A new path predicate, `PATH_INET` (path kind 3, no pattern), matches a `connect` only when its

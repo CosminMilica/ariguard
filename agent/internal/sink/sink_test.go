@@ -107,6 +107,36 @@ func TestMutes(t *testing.T) {
 	}
 }
 
+func TestPolicy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/policy" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("X-Policy-Version", "v2")
+		if r.URL.Query().Get("have") == "v2" {
+			w.WriteHeader(http.StatusNotModified) // nothing new
+			return
+		}
+		_, _ = w.Write([]byte("bundle-bytes"))
+	}))
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+
+	data, version, changed, err := s.Policy(context.Background(), "v1")
+	if err != nil || !changed || version != "v2" || string(data) != "bundle-bytes" {
+		t.Fatalf("Policy(new) = %q, %q, %v, %v", data, version, changed, err)
+	}
+	_, version, changed, err = s.Policy(context.Background(), "v2")
+	if err != nil || changed || version != "v2" {
+		t.Fatalf("Policy(current) = %q, %v, %v", version, changed, err)
+	}
+	var nilS *Sink
+	if d, v, c, err := nilS.Policy(context.Background(), ""); d != nil || v != "" || c || err != nil {
+		t.Errorf("nil sink Policy = %q, %q, %v, %v", d, v, c, err)
+	}
+}
+
 func TestAuditBatching(t *testing.T) {
 	rec := &recorder{}
 	srv := httptest.NewServer(rec)

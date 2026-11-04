@@ -23,6 +23,9 @@ agent:
   isolateFallback: "off"
   # Empty with console.enabled defaults to the in-cluster console backend.
   sinkUrl: ""
+  # Poll the console (control plane) for a newer policy bundle and hot-swap it without an image
+  # rebuild (F7). Needs a sink URL. Set false to pin the agent to its baked-in bundle.
+  policySync: true
   resources:
     requests:
       cpu: 50m

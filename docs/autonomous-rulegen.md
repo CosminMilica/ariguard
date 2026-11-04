@@ -63,17 +63,21 @@ user-namespace escape not in the hand-written library), gated and silent on all 
 
 ## What the live loop still needs
 
-The engine above runs offline on a trace corpus. Running it continuously against the real fleet
-needs the deployment layer, largely **backlog F7 (control plane / CRD)**:
+The engine above runs offline on a trace corpus. The live fleet loop:
 
 1. **Trace capture** — an agent "learn mode" (or an offline tracer on canary namespaces) shipping
-   full syscall-hook traces: benign from normal workloads, attack from honeypots.
+   full syscall-hook traces: benign from normal workloads, attack from honeypots. *(remaining)*
 2. **A mining service** — a scheduled job running `autogenerate` / `feeds.ingest_dir` over the
-   rolling corpus.
-3. **Live distribution (F7)** — push accepted shadow rules to the fleet without rebuilding the
-   agent image (CRD / gRPC `PushPolicy`).
+   rolling corpus, compiling the survivors into a bundle. *(remaining)*
+3. **Live distribution (F7)** — **done**. The console is the control plane: the pipeline
+   `PUT /api/v1/policy` (the compiled bundle), and every agent polls `GET /api/v1/policy?have=<version>`
+   every `policyInterval` and hot-swaps a new version into the kernel maps (the existing SIGHUP
+   apply path), with no image rebuild. Version = the bundle's SHA-256, so an unchanged push is a
+   fleet-wide 304. Shadow vs enforce is just which bundle is pushed: a shadow rule's terminal
+   action is `observe`, the promoted one's is `kill`.
 4. **Shadow telemetry + auto-promote** — the console records per-rule hits/false-positives and
-   drives `decide_mode` to promote or retire.
+   drives `decide_mode` to promote or retire, re-pushing the bundle. *(remaining)*
 
-These are deployment/control-plane work (they need the fleet and F7), tracked separately; the
-decision logic they call — mining, gating, baseline, promotion — is implemented and tested here.
+Distribution (3) is implemented and tested (`console/backend/ingest/policy.go`,
+`agent/internal/policysync`); capture, the mining service and the auto-promote telemetry are the
+remaining wiring, tracked as backlog F11.
