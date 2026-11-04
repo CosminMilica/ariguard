@@ -171,7 +171,11 @@ def autogenerate(
         if cand.hooks in known_chains:
             continue
         name = f"{name_prefix}-{'-'.join(cand.hooks)}"[:60].rstrip("-")
-        rule = mine.candidate_to_rule(cand, name, scope=scope, window_seconds=window_seconds)
+        # Shadow by default: a freshly minted rule only audits (observe terminal), never kills,
+        # until measured hits with no false positives promote it (see loop.decide_mode).
+        rule = mine.candidate_to_rule(
+            cand, name, scope=scope, window_seconds=window_seconds, enforce=False
+        )
         out.append(
             AutoRule(
                 name=name,

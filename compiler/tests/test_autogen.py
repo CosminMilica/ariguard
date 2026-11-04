@@ -80,10 +80,10 @@ def test_autogenerate_proposes_a_shadow_rule_from_fleet_traces():
     assert top.candidate.hooks == ("unshare", "mount", "execve")
     assert top.mode == autogen.SHADOW  # never born enforcing
     assert top.source == "baseline-novel"
-    # it is a first-class, valid rule and its last step kills
+    # it is a first-class, valid rule; born shadow, its terminal only audits (never kills) until promoted
     rule = parse_rule(top.rule)
     assert validate_rule(rule) == [] and roundtrip_ok([rule]) == []
-    assert top.rule["transitions"][-1]["action"] == "kill"
+    assert top.rule["transitions"][-1]["action"] == "observe"
     # the gate held: fires on the honeypot traces, silent on the whole benign baseline
     assert mine.gate(top.rule, traces) == []
 

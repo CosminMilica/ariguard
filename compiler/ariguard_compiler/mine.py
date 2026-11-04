@@ -207,13 +207,21 @@ def candidate_to_rule(
     *,
     scope: str = "process",
     window_seconds: int = DEFAULT_WINDOW_SECONDS,
+    enforce: bool = True,
 ) -> dict:
-    """Render a candidate as a kill-chain rule mapping (schema v3), ready for parse_rule."""
+    """Render a candidate as a kill-chain rule mapping (schema v3), ready for parse_rule.
+
+    ``enforce`` picks the terminal action: ``kill`` (default) for a proven rule, ``observe`` for a
+    shadow rule that must only audit, never kill. The action is per-transition, so shadow vs enforce
+    is a compiler-side choice — no per-rule kernel flag is needed (a shadow rule simply never carries
+    a kill action, so the global ``--enforce`` switch cannot make it kill).
+    """
     hooks = cand.hooks
     intermediate = [f"s{i}" for i in range(1, len(hooks))]
     states = ["normal", *intermediate, "compromised"]
     events: dict[str, list[dict]] = {}
     transitions: list[dict] = []
+    terminal_action = "kill" if enforce else "observe"
     for i, hook in enumerate(hooks):
         ev = f"e{i}"
         binding: dict = {"hook": hook}
@@ -226,7 +234,7 @@ def candidate_to_rule(
                 "from": states[i],
                 "event": ev,
                 "to": states[i + 1],
-                "action": "kill" if i == len(hooks) - 1 else "observe",
+                "action": terminal_action if i == len(hooks) - 1 else "observe",
             }
         )
     return {
