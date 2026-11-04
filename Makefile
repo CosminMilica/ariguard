@@ -50,6 +50,10 @@ golden: ## Regenerate the cross-language golden transition table
 bundle: ## Regenerate the full deploy bundle (all rules) baked into the agent image
 	cd compiler && $(PYTHON) -m ariguard_compiler.cli --rules-dir rules --sigma-dir rules/sigma/generated --out ../testdata/golden/policy-full.bin
 
+rulegen-loop: ## F11: one autonomous pass (mine + feeds + build) -> dry-run bundle; add CONSOLE=<url> to push
+	cd compiler && $(PYTHON) -m ariguard_compiler.loop --rules-dir rules --sigma-dir rules/sigma/generated \
+		--corpus ../testdata/traces/fleet $(if $(CONSOLE),--console $(CONSOLE),--dry-run --out /tmp/ariguard-loop.bin)
+
 ingest: ## Fetch MITRE ATT&CK and regenerate the Linux technique catalog
 	cd compiler && $(PYTHON) -m ariguard_compiler.ingest_attack --out ../compiler/techniques/attack-linux.yml
 

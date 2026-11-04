@@ -61,23 +61,44 @@ Fixtures in `testdata/traces/` prove it: `ariguard-autogen testdata/traces/fleet
 baseline from the benign runs and proposes a new shadow rule `unshare → mount → execve` (a
 user-namespace escape not in the hand-written library), gated and silent on all benign traffic.
 
-## What the live loop still needs
+## The live loop (F11)
 
-The engine above runs offline on a trace corpus. The live fleet loop:
+The engine above runs offline on a trace corpus. `loop.py` (`ariguard-rulegen-loop`) is the
+orchestrator that closes the loop against a running console, in one deterministic pass:
 
-1. **Trace capture** — an agent "learn mode" (or an offline tracer on canary namespaces) shipping
-   full syscall-hook traces: benign from normal workloads, attack from honeypots. *(remaining)*
-2. **A mining service** — a scheduled job running `autogenerate` / `feeds.ingest_dir` over the
-   rolling corpus, compiling the survivors into a bundle. *(remaining)*
-3. **Live distribution (F7)** — **done**. The console is the control plane: the pipeline
+```
+ariguard-rulegen-loop \
+  --rules-dir rules --sigma-dir rules/sigma/generated \   # curated library (always enforced)
+  --corpus testdata/traces --feeds vendor/sigma \          # discovery: mine + ingest community
+  --console http://ariguard-console                        # F7: pull telemetry, push the bundle
+```
+
+1. **Mining service** — **done**. `build_bundle` runs `autogenerate` over the labeled corpus
+   (fleet baseline + honeypot) and `feeds.ingest_dir` over the community Sigma snapshot, links the
+   curated library + the survivors into one bundle, capped at `MAX_RULES` (library first, then the
+   highest-scoring proposals). Run it on a timer (CronJob) — it is CPU-only and offline but for the
+   two console calls.
+2. **Live distribution (F7)** — **done**. The console is the control plane: the loop
    `PUT /api/v1/policy` (the compiled bundle), and every agent polls `GET /api/v1/policy?have=<version>`
    every `policyInterval` and hot-swaps a new version into the kernel maps (the existing SIGHUP
    apply path), with no image rebuild. Version = the bundle's SHA-256, so an unchanged push is a
-   fleet-wide 304. Shadow vs enforce is just which bundle is pushed: a shadow rule's terminal
-   action is `observe`, the promoted one's is `kill`.
-4. **Shadow telemetry + auto-promote** — the console records per-rule hits/false-positives and
-   drives `decide_mode` to promote or retire, re-pushing the bundle. *(remaining)*
+   fleet-wide 304. Shadow vs enforce is just the terminal action compiled into a rule: a shadow
+   rule's is `observe`, the promoted one's is `kill` — no per-rule kernel flag.
+3. **Shadow telemetry + auto-promote** — **done**. The console computes per-rule behavior at
+   `GET /api/v1/rules/telemetry` (terminal-state hits, distinct pods, time span, and *benign fires*
+   = hits on a muted/operator-declared-known-good pod). The loop maps it to `ShadowMetrics` and lets
+   `decide_mode` promote a proven rule (enough hits over enough days, zero benign fires) to enforce,
+   hold it in shadow, or retire one that fired on benign traffic — then re-pushes. A newly mined
+   rule therefore ships `observe`-only and can never kill until it has earned it on real traffic.
+4. **Full-syscall trace capture** — *remaining, and the honest gap*. The agent's audit stream (and
+   so `GET /api/v1/audit/export`, which feeds `trace.from_audit`) contains **only rule-matched**
+   events, so the fleet data can *confirm and tune* existing rules and drive promotion, but it
+   cannot *discover* brand-new chains. Discovery today comes from the correctly-labeled honeypot /
+   fixture corpus and the community feeds. Discovering novel chains from production would need an
+   agent "learn mode" capturing the full syscall-hook stream (benign from normal workloads, attack
+   from canaries) — a kernel-side change (verifier + perf budget) deliberately deferred.
 
-Distribution (3) is implemented and tested (`console/backend/ingest/policy.go`,
-`agent/internal/policysync`); capture, the mining service and the auto-promote telemetry are the
-remaining wiring, tracked as backlog F11.
+Distribution, the mining service and the auto-promote telemetry are implemented and tested
+(`compiler/ariguard_compiler/loop.py`, `console/backend/ingest/{policy,export}.go`,
+`agent/internal/policysync`); full-syscall capture for novel-chain discovery is the one remaining
+piece, tracked as backlog F11.
