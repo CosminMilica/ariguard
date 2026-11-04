@@ -22,7 +22,9 @@ def test_non_expressible_sigma_is_skipped_not_fatal(tmp_path):
     good = SIGMA / "reverse-shell.yml"
     (tmp_path / "ok.yml").write_text(good.read_text(), encoding="utf-8")
     # a rule that is not a valid Sigma correlation for our hooks: compiled away, recorded as skipped
-    (tmp_path / "bad.yml").write_text("title: not a correlation\nlogsource: {category: foo}\n", encoding="utf-8")
+    (tmp_path / "bad.yml").write_text(
+        "title: not a correlation\nlogsource: {category: foo}\n", encoding="utf-8"
+    )
     result = feeds.ingest_dir(tmp_path)
     assert result.expressible == 1
     assert len(result.skipped) == 1

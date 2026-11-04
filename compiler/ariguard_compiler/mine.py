@@ -132,7 +132,9 @@ def _infer_predicate(hook: str, occurrences: list[trace.Event]) -> dict | None:
     return None
 
 
-def _occurrences(attack_traces: list[trace.Trace], hooks: tuple[str, ...]) -> list[list[trace.Event]]:
+def _occurrences(
+    attack_traces: list[trace.Trace], hooks: tuple[str, ...]
+) -> list[list[trace.Event]]:
     """For each chain position, the attack events that realise it (first matching occurrence per
     trace), used to infer predicates."""
     per_pos: list[list[trace.Event]] = [[] for _ in hooks]
@@ -200,7 +202,11 @@ def _drop_subsumed(cands: list[Candidate]) -> list[Candidate]:
 
 
 def candidate_to_rule(
-    cand: Candidate, name: str, *, scope: str = "process", window_seconds: int = DEFAULT_WINDOW_SECONDS
+    cand: Candidate,
+    name: str,
+    *,
+    scope: str = "process",
+    window_seconds: int = DEFAULT_WINDOW_SECONDS,
 ) -> dict:
     """Render a candidate as a kill-chain rule mapping (schema v3), ready for parse_rule."""
     hooks = cand.hooks

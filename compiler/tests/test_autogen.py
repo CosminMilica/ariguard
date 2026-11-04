@@ -58,9 +58,13 @@ def test_mine_novel_finds_the_novel_chain_and_ignores_normal():
 
 def test_decide_mode_shadow_enforce_retire():
     assert autogen.decide_mode(autogen.ShadowMetrics(0, 0, 0.0)) == autogen.SHADOW  # too fresh
-    assert autogen.decide_mode(autogen.ShadowMetrics(3, 0, 2.0)) == autogen.SHADOW  # window too short
+    assert (
+        autogen.decide_mode(autogen.ShadowMetrics(3, 0, 2.0)) == autogen.SHADOW
+    )  # window too short
     assert autogen.decide_mode(autogen.ShadowMetrics(5, 0, 9.0)) == autogen.ENFORCE  # caught, clean
-    assert autogen.decide_mode(autogen.ShadowMetrics(5, 1, 9.0)) == autogen.RETIRE  # a false positive
+    assert (
+        autogen.decide_mode(autogen.ShadowMetrics(5, 1, 9.0)) == autogen.RETIRE
+    )  # a false positive
     assert autogen.decide_mode(autogen.ShadowMetrics(0, 0, 30.0)) == autogen.SHADOW  # never caught
 
 

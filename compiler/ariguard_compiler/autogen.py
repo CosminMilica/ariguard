@@ -29,7 +29,7 @@ from pathlib import Path
 import yaml
 
 from . import mine, trace
-from .mine import Candidate, _contains, _drop_subsumed, _occurrences, _infer_predicate, _prefixspan
+from .mine import Candidate, _contains, _drop_subsumed, _infer_predicate, _occurrences, _prefixspan
 
 SHADOW = "shadow"
 ENFORCE = "enforce"

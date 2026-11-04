@@ -17,7 +17,8 @@ def _trace(label, *hooks, paths=None, inet=None):
     paths = paths or {}
     inet = inet or set()
     events = tuple(
-        trace.Event(hook=h, ts_ns=i, path=paths.get(i), inet=(i in inet)) for i, h in enumerate(hooks)
+        trace.Event(hook=h, ts_ns=i, path=paths.get(i), inet=(i in inet))
+        for i, h in enumerate(hooks)
     )
     return trace.Trace(label=label, events=events, source="|".join(hooks))
 
@@ -89,7 +90,12 @@ def test_predicate_inference_path_and_inet():
 
 
 def test_candidate_to_rule_passes_the_schema_and_a4():
-    cand = mine.Candidate(("openat", "setns", "mount", "execve"), 1.0, 0.0, (None, None, {"path_prefix": ["/mnt"]}, None))
+    cand = mine.Candidate(
+        ("openat", "setns", "mount", "execve"),
+        1.0,
+        0.0,
+        (None, None, {"path_prefix": ["/mnt"]}, None),
+    )
     rule_dict = mine.candidate_to_rule(cand, "mined-escape")
     rule = parse_rule(rule_dict)  # schema accepts it
     assert rule.num_states == 5 and rule.terminal_from == 4
@@ -103,7 +109,12 @@ def test_candidate_to_rule_passes_the_schema_and_a4():
 def test_simulate_fires_on_attack_silent_on_benign():
     cand = mine.Candidate(("openat", "setns", "mount", "execve"), 1.0, 0.0)
     rule = parse_rule(mine.candidate_to_rule(cand, "mined-escape"))
-    attack = (trace.Event("openat"), trace.Event("setns"), trace.Event("mount"), trace.Event("execve"))
+    attack = (
+        trace.Event("openat"),
+        trace.Event("setns"),
+        trace.Event("mount"),
+        trace.Event("execve"),
+    )
     benign = (trace.Event("openat"), trace.Event("execve"))  # no setns/mount
     assert mine.simulate(rule, attack) is True
     assert mine.simulate(rule, benign) is False
@@ -192,7 +203,9 @@ def test_mine_sequences_backcompat_returns_accepted_rule_dicts():
 
 def test_cli_writes_accepted_rule_files(tmp_path, capsys):
     out = tmp_path / "rules"
-    code = mine.main([str(TRACES / "module-tampering"), "--out-dir", str(out), "--name-prefix", "learned"])
+    code = mine.main(
+        [str(TRACES / "module-tampering"), "--out-dir", str(out), "--name-prefix", "learned"]
+    )
     assert code == 0
     written = list(out.glob("*.yml"))
     assert written, "the CLI wrote no rule file"

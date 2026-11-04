@@ -157,5 +157,7 @@ def from_audit(lines: list[dict], label: str) -> list[Trace]:
             if e.get("hook") in HOOK_VALUES
         ]
         if events:
-            traces.append(Trace(label=label, events=tuple(events), source=f"cgroup={key[0]} pid={key[1]}"))
+            traces.append(
+                Trace(label=label, events=tuple(events), source=f"cgroup={key[0]} pid={key[1]}")
+            )
     return traces
