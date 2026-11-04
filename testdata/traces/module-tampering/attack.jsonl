@@ -1,0 +1,3 @@
+{"source": "rootkit-load-1", "events": [{"hook": "openat", "path": "/lib/modules/evil.ko"}, {"hook": "finit_module"}, {"hook": "bpf"}]}
+{"source": "rootkit-load-2", "events": [{"hook": "openat", "path": "/tmp/mod.ko"}, {"hook": "finit_module"}, {"hook": "bpf"}, {"hook": "execve", "path": "/usr/bin/id"}]}
+{"source": "rootkit-load-3", "events": [{"hook": "connect", "inet": true}, {"hook": "finit_module"}, {"hook": "bpf"}]}

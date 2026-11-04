@@ -55,6 +55,36 @@ ATT&CK gives descriptions + detection prose + data sources, **not** syscall FSM 
 catalog is the *input to the co-author step*, not the rule itself. Atomic Red Team (mapped to
 ATT&CK) supplies real attack procedures to reuse as behavioral-gate attack drivers.
 
+## A1/A2 — the data-driven path (`mine.py`, implemented)
+
+The knowledge-driven path above starts from MITRE prose; the data-driven path starts from
+**observed behavior**. It learns a rule from the difference between attack and benign runs, so it
+needs no LLM at all:
+```
+  labeled traces (attack + benign twin, testdata/traces/<scenario>/*.jsonl)
+     │  trace.py: ordered hook events per workload run, labeled
+     ▼
+  mine.py
+     │  1. frequent ordered subsequences of hooks in attack (gap-allowed PrefixSpan)
+     │  2. contrast filter: keep frequent-in-attack, absent-in-benign (score = a_sup − b_sup);
+     │     a subsequence every workload runs (connect→execve) scores ~0 and is dropped —
+     │     the benign twin is the automatic FP killer
+     │  3. candidate → kill-chain rule (one state per step, last step kill; path/inet predicate
+     │     inferred when the attack occurrences agree)
+     ▼
+  the SAME gate as a hand-written rule: schema (parse_rule) + A4 (validate + round-trip) +
+  a behavioral replay (fire on every attack trace, silent on every benign one). Mining proposes,
+  the gate disposes.
+```
+It is pure, deterministic and explainable: each rule carries the exact subsequence and contrast
+score it was learned from — no model to train, no network. On the committed fixtures it
+re-discovers `container-escape` and `reverse-shell`, and learns a new `finit_module → bpf`
+(module-tampering) chain the hand-written library did not have. Traces are **full-syscall
+captures** written to the fixture format (the agent's audit stream only shows what rules already
+match, so it cannot discover new chains — `trace.from_audit` is for confirming a mined rule against
+live data, not mining). Limitation: hooks are mined literally; interchangeable hooks (dup2/dup3)
+are not yet an equivalence class.
+
 ## How we run it (two clearly-separated modes)
 **Author-time (generation — needs an LLM, run by a human, not in CI):**
 - `make generate TECHNIQUES=compiler/techniques/<catalog>.yml` → for each technique the LLM

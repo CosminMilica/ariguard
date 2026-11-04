@@ -1,0 +1,3 @@
+{"source": "cni-plugin", "events": [{"hook": "openat", "path": "/opt/cni/net.d"}, {"hook": "bpf"}, {"hook": "execve", "path": "/opt/cni/bin/bridge"}]}
+{"source": "monitoring-agent", "events": [{"hook": "bpf"}, {"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/node-exporter"}]}
+{"source": "module-reader", "events": [{"hook": "openat", "path": "/lib/modules/overlay.ko"}, {"hook": "execve", "path": "/sbin/modinfo"}]}

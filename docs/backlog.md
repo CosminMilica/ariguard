@@ -32,7 +32,7 @@ is *inferred* (same image across namespaces over time), not *observed* network p
 | F6 | ~~**Quarantine lifecycle**~~ **(done)** — isolation is reversible: muting a quarantined pod releases it (removes the label → drops out of the deny-all NP selector), reported to the console as `released`; `--isolate-fallback=evict` deletes the pod for CNIs that ignore NetworkPolicy (kindnet) | isolation was one-way; kindnet can't enforce NP | — | M |
 | F7 | **Control plane / CRD** — dynamic rule/profile distribution to the fleet (Phase 3 deferred) so rules push without rebuilding the agent image | the "fleet" half of the product | PROTO/CP | L |
 | F8 | **Rule-library expansion** — more hooks + chains (persistence/cron, more MITRE techniques) | broader coverage; the Coverage page shows the blind spots | — | M |
-| F9 | **A2 — ML sequence mining** for rule generation (Phase 3 deferred) | the ML half of the AI bridge | — | L |
+| F9 | ~~**A2 — ML sequence mining**~~ **(done)** — `mine.py`/`trace.py`: contrast sequential-pattern mining learns kill-chain rules from labeled attack/benign syscall traces (frequent-in-attack, absent-in-benign), gated by the same schema + A4 + behavioral replay as hand-written rules; re-discovers the shipped chains and learns a new `finit_module→bpf` one | the ML half of the AI bridge | — | L |
 | F10 | **Console hardening** — SQLite retention/rotation, auth, multi-node correlation across agents | production/longevity, and cross-node campaigns/actors | — | M |
 
 ## Recommended order
