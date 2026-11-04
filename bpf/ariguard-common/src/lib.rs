@@ -68,7 +68,7 @@ pub const COMM_LEN: usize = 16;
 /// 8->16 so the library can grow persistence/indicator-removal chains (openat + execve are the
 /// busiest hooks). The hot-path match loop (main.rs) reads the path once and is bounded by this
 /// constant; the 5.15..7.0 verifier matrix gates the change.
-pub const MAX_BINDINGS_PER_HOOK: usize = 16;
+pub const MAX_BINDINGS_PER_HOOK: usize = 14;
 pub const MAX_RULES: u32 = 16;
 pub const MAX_TRANSITIONS: u32 = 1024;
 pub const MAX_TRACKED_WORKLOADS: u32 = 16384;

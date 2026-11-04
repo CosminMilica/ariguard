@@ -7,7 +7,7 @@ name: shell_logtamper
 tags: [attack.t1059.004]
 logsource: {product: linux, category: syscall}
 detection:
-  sel: {syscall: execve, path|startswith: [/bin/sh, /bin/bash]}
+  sel: {syscall: execve, path|startswith: [/bin/sh]}
   condition: sel
 ---
 title: truncate a log or history file

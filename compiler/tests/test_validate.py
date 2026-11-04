@@ -64,7 +64,7 @@ def test_valid_bundle_passes():
 def test_too_many_bindings_per_hook():
     rule = _rule(bindings=[Binding(HOOK_VALUES["execve"], 0) for _ in range(17)])
     problems = validate_rule(rule)
-    assert any("execve" in p and "max is 16" in p for p in problems)
+    assert any("execve" in p and "max is 14" in p for p in problems)
 
 
 def test_bundle_exceeds_max_rules():

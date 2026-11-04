@@ -16,7 +16,7 @@ func TestStructSizes(t *testing.T) {
 		{"FsmState", unsafe.Sizeof(FsmState{}), 16},
 		{"Transition", unsafe.Sizeof(Transition{}), 8},
 		{"Binding", unsafe.Sizeof(Binding{}), 72},
-		{"HookBindings", unsafe.Sizeof(HookBindings{}), 1160},
+		{"HookBindings", unsafe.Sizeof(HookBindings{}), 1016},
 		{"Rule", unsafe.Sizeof(Rule{}), 32},
 		{"Policy", unsafe.Sizeof(Policy{}), 8},
 		{"AuditRecord", unsafe.Sizeof(AuditRecord{}), 64},

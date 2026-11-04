@@ -347,10 +347,10 @@ def _too_many_execve() -> dict:
         (_with(**_ev({"hook": "dup2", "arg": {"index": 1, "le": 2**64}})), r"2\^64"),
         (_with(**_ev({"hook": "dup2", "arg": {"index": 1, "le": True}})), r"2\^64"),
         (_with(**_ev({"hook": "dup2", "arg": {"index": 1, "le": "2"}})), r"2\^64"),
-        (_with(**_too_many_execve()), "max is 16"),
+        (_with(**_too_many_execve()), "max is 14"),
         (
             _with(**_ev({"hook": "openat", "path_prefix": [f"/{i}" for i in range(17)]})),
-            "max is 16",
+            "max is 14",
         ),
         (_with(transitions=[]), "transitions"),
         (_with(transitions=["a"]), "mapping"),

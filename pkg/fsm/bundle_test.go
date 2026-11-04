@@ -185,7 +185,7 @@ func TestValidateRejects(t *testing.T) {
 			for range MaxBindingsPerHook {
 				b.Bindings = append(b.Bindings, b.Bindings[1])
 			}
-		}, "more than 16 bindings"},
+		}, "more than 14 bindings"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

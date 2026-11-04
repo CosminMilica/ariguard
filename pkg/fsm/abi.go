@@ -69,7 +69,7 @@ const (
 const (
 	PatternLen         = 32 // buffer size; patterns are at most PatternLen-1 bytes. 32 (not 64) keeps the per-hook match loop within the verifier budget at MaxBindingsPerHook=16 (16*32 == the known-good 8*64).
 	CommLen            = 16
-	MaxBindingsPerHook = 16 // ABI mirror of bpf/ariguard-common (bundle-wide per-hook budget)
+	MaxBindingsPerHook = 14 // ABI mirror of bpf/ariguard-common (bundle-wide per-hook budget)
 )
 
 // Fixed map capacities (zero-allocation budget, set at load time).
