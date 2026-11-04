@@ -18,11 +18,19 @@ function openSection(key: string) {
   <aside class="sidebar">
     <div class="brand"><img src="/logo.png" alt="AriGuard" /></div>
     <nav>
-      <a v-for="s in NAV" :key="s.key" :class="{ active: activeSection === s.key }" @click.prevent="openSection(s.key)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" v-html="s.icon"></svg>
-        {{ s.label }}
-        <span v-if="s.key === 'activity' && evCount" class="tag">{{ evCount }}</span>
-      </a>
+      <template v-for="s in NAV" :key="s.key">
+        <a :class="{ active: activeSection === s.key }" @click.prevent="openSection(s.key)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" v-html="s.icon"></svg>
+          {{ s.label }}
+          <span v-if="s.key === 'activity' && evCount" class="tag">{{ evCount }}</span>
+        </a>
+        <div v-if="activeSection === s.key && s.pages.length > 1" class="subnest">
+          <a v-for="p in s.pages" :key="p.page" class="subitem"
+            :class="{ active: store.page === p.page }" @click.prevent="store.page = p.page">
+            {{ p.label }}
+          </a>
+        </div>
+      </template>
       <div class="nav-label">System</div>
       <a :class="{ active: store.page === 'settings' }" @click.prevent="store.page = 'settings'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" v-html="settingsIcon"></svg>
@@ -32,3 +40,11 @@ function openSection(key: string) {
     <div class="sb-foot">ariguard console<br>{{ store.settings ? 'kernel ' + store.settings.kernel : 'connecting…' }}</div>
   </aside>
 </template>
+
+<style scoped>
+/* Nested sub-pages under the active section — a guide rail instead of a top-of-page tab bar. */
+.subnest { display:flex; flex-direction:column; gap:1px; margin:1px 0 4px 21px; padding-left:7px; border-left:1px solid var(--border-2); }
+.subitem { padding:5px 9px; border-radius:6px; color:var(--muted); font-size:12.5px; cursor:pointer; text-decoration:none; }
+.subitem:hover { background:var(--hover); color:var(--fg-2); }
+.subitem.active { color:var(--fg); font-weight:550; background:var(--sel); }
+</style>
