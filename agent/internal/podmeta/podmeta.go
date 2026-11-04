@@ -38,7 +38,7 @@ type Info struct {
 
 // podContext derives the workload owner and app label from a pod. The owner collapses the replica
 // hash so pods of one Deployment share an owner (a ReplicaSet "<deploy>-<hash>" -> "Deployment/<deploy>").
-func podContext(p *corev1.Pod) (owner, app string) {
+func podContext(p corev1.Pod) (owner, app string) {
 	if len(p.OwnerReferences) > 0 {
 		o := p.OwnerReferences[0]
 		kind, name := o.Kind, o.Name
@@ -197,7 +197,7 @@ func (r *Resolver) list(ctx context.Context) {
 	containers := make(map[string]Info)
 	byIP := make(map[string]Info)
 	for _, p := range pods.Items {
-		owner, app := podContext(&p)
+		owner, app := podContext(p)
 		var first Info
 		for _, statuses := range [][]corev1.ContainerStatus{
 			p.Status.ContainerStatuses, p.Status.InitContainerStatuses, p.Status.EphemeralContainerStatuses,

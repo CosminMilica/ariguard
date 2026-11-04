@@ -113,8 +113,8 @@ type Event struct {
 	Container string `json:"container"`
 	Image     string `json:"image"`
 	ImageID   string `json:"image_id"`
-	Owner     string `json:"owner,omitempty"` // controlling workload, e.g. "Deployment/frontend"
-	App       string `json:"app,omitempty"`   // app label, for grouping
+	Owner     string `json:"owner,omitempty"`    // controlling workload, e.g. "Deployment/frontend"
+	App       string `json:"app,omitempty"`      // app label, for grouping
 	DstIP     string `json:"dst_ip,omitempty"`   // observed IPv4 connect destination (B3)
 	DstPort   uint16 `json:"dst_port,omitempty"` // host byte order
 	DstPod    string `json:"dst_pod,omitempty"`  // target pod of DstIP, when it resolves to a pod (F2)

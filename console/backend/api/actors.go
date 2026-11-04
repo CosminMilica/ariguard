@@ -21,9 +21,9 @@ type actor struct {
 	Rules              []string `json:"rules"`
 	Comms              []string `json:"comms"`
 	AffectedNamespaces []string `json:"affected_namespaces"`
-	DstIPs             []string `json:"dst_ips"`  // observed outbound C2 destinations (B3/F4)
-	Owners             []string `json:"owners"`   // controlling workloads (e.g. Deployment/frontend)
-	Apps               []string `json:"apps"`     // app labels
+	DstIPs             []string `json:"dst_ips"`       // observed outbound C2 destinations (B3/F4)
+	Owners             []string `json:"owners"`        // controlling workloads (e.g. Deployment/frontend)
+	Apps               []string `json:"apps"`          // app labels
 	AffectedPods       []string `json:"affected_pods"` // pods this actor ran in (drill-down to chains)
 }
 
