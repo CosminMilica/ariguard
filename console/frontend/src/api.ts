@@ -22,7 +22,7 @@ export interface Rule {
 }
 export interface NodeInfo { node: string; kernel: string; hooks_attached: number; hooks_total: number; status: string; events_per_sec: number }
 export interface Settings { enforce: boolean; metrics_addr: string; bundle: { rules: unknown }; audit_ring_bytes: number; kernel: string }
-export interface Incident { pod: string; namespace: string; node: string; rule: string; started_ts_ns: number; ended_ts_ns: number; max_state: string; outcome: string; steps: number; quarantined?: boolean }
+export interface Incident { pod: string; namespace: string; node: string; owner?: string; app?: string; rule: string; started_ts_ns: number; ended_ts_ns: number; max_state: string; outcome: string; steps: number; quarantined?: boolean }
 export interface Quarantine { node: string; namespace: string; pod: string; rule: string; mode: string; released?: boolean; ts_ns: number }
 export interface ChainStep { ts_ns: number; state: string; event: string; action: string; enforced: boolean; comm?: string; pid?: number; ppid?: number; hook?: string }
 export interface PerfProgram { program: string; runs: number; ns_per_run: number }
@@ -47,6 +47,7 @@ export interface Actor {
   image_id: string; image: string; incidents: number; pods: number; namespaces: number; nodes: number
   killed: number; blocked: number; detected: number
   rules: string[]; comms: string[]; affected_namespaces: string[]; dst_ips: string[]
+  owners: string[]; apps: string[]; affected_pods: string[]
   first_ts_ns: number; last_ts_ns: number
 }
 export interface Containment {
@@ -65,7 +66,7 @@ export interface ActorTrail {
 }
 export interface Lateral { actors: ActorTrail[]; namespaces: string[] }
 export interface Edge {
-  src_namespace: string; src_pod: string; dst_namespace: string; dst_pod: string
+  src_namespace: string; src_pod: string; src_owner?: string; dst_namespace: string; dst_pod: string
   cross_ns: boolean; count: number; ports: number[]; rules: string[]; first_ts_ns: number; last_ts_ns: number
 }
 

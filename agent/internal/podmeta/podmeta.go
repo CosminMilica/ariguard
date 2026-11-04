@@ -32,6 +32,30 @@ type Info struct {
 	Container string
 	Image     string
 	ImageID   string
+	Owner     string // controlling workload, e.g. "Deployment/frontend" (empty for a bare pod)
+	App       string // app label (app / app.kubernetes.io/name), for human-friendly grouping
+}
+
+// podContext derives the workload owner and app label from a pod. The owner collapses the replica
+// hash so pods of one Deployment share an owner (a ReplicaSet "<deploy>-<hash>" -> "Deployment/<deploy>").
+func podContext(p corev1.Pod) (owner, app string) {
+	if len(p.OwnerReferences) > 0 {
+		o := p.OwnerReferences[0]
+		kind, name := o.Kind, o.Name
+		if kind == "ReplicaSet" {
+			if i := strings.LastIndex(name, "-"); i > 0 {
+				name, kind = name[:i], "Deployment"
+			}
+		}
+		owner = kind + "/" + name
+	}
+	for _, k := range []string{"app.kubernetes.io/name", "app", "k8s-app"} {
+		if v := p.Labels[k]; v != "" {
+			app = v
+			break
+		}
+	}
+	return owner, app
 }
 
 // Resolver maps cgroup ids to pod metadata, caching both cgroup paths and pods.
@@ -173,12 +197,13 @@ func (r *Resolver) list(ctx context.Context) {
 	containers := make(map[string]Info)
 	byIP := make(map[string]Info)
 	for _, p := range pods.Items {
+		owner, app := podContext(p)
 		var first Info
 		for _, statuses := range [][]corev1.ContainerStatus{
 			p.Status.ContainerStatuses, p.Status.InitContainerStatuses, p.Status.EphemeralContainerStatuses,
 		} {
 			for _, s := range statuses {
-				info := Info{Namespace: p.Namespace, Pod: p.Name, Container: s.Name, Image: s.Image, ImageID: s.ImageID}
+				info := Info{Namespace: p.Namespace, Pod: p.Name, Container: s.Name, Image: s.Image, ImageID: s.ImageID, Owner: owner, App: app}
 				if id := stripRuntime(s.ContainerID); id != "" {
 					containers[id] = info
 				}

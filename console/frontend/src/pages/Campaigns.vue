@@ -1,9 +1,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { store, clockNs, type CampaignRule, type CampaignNs } from '../api'
+import StatStrip from '../components/StatStrip.vue'
 
 const byRule = computed(() => store.campaigns?.by_rule ?? [])
 const byNs = computed(() => store.campaigns?.by_namespace ?? [])
+
+const stats = computed(() => {
+  const r = byRule.value, n = byNs.value
+  const widest = r.reduce((m, x) => (x.pods > m.pods ? x : m), { pods: 0 } as CampaignRule)
+  const hottest = n.reduce((m, x) => (x.incidents > m.incidents ? x : m), { incidents: 0 } as CampaignNs)
+  return [
+    { label: 'Active rules', value: r.length, hint: 'rules with incidents' },
+    { label: 'Widest campaign', value: widest.pods || 0, hint: widest.pods ? widest.rule : '—', tone: 'crit' as const },
+    { label: 'Namespaces hit', value: n.length, hint: hottest.incidents ? 'worst: ' + hottest.namespace : '', tone: 'warn' as const },
+    { label: 'Contained', value: r.filter(x => x.killed > 0).length, hint: 'rules with a kill', tone: 'teal' as const },
+  ]
+})
 
 const wide = (pods: number, spread: number) => pods >= 3 || spread >= 2
 
@@ -17,6 +30,13 @@ function chips(list: string[]) {
 
 <template>
   <div class="cols-stack">
+    <p class="intro">
+      <b>Blast radius</b> — how far each threat spread: one rule across many pods/namespaces (by rule),
+      and how many rules hit each namespace (by namespace). Widest spread is highlighted.
+    </p>
+
+    <StatStrip :stats="stats" />
+
     <section class="card">
       <div class="hd"><h2>Blast radius — by rule</h2><span class="c">{{ byRule.length }} rules</span></div>
       <div class="bd" v-if="!byRule.length"><div class="empty">No campaigns in this range.</div></div>
@@ -91,6 +111,8 @@ function chips(list: string[]) {
 
 <style scoped>
 .cols-stack { display:flex; flex-direction:column; gap:16px; }
+.intro { margin:0; font-size:12.5px; color:var(--fg-2); }
+.intro b { color:var(--fg); }
 tbody tr.campaign { background:color-mix(in srgb, var(--crit) 7%, transparent); }
 tbody tr.campaign:hover { background:color-mix(in srgb, var(--crit) 12%, transparent); }
 tbody tr.campaign td:first-child { box-shadow:inset 3px 0 0 var(--crit); }

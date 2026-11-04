@@ -1,10 +1,23 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { store, clockNs, openChainModal, type Edge } from '../api'
+import StatStrip from '../components/StatStrip.vue'
 
 // Observed network pivots (F2): real pod→pod connections, not image-correlation inference.
 const edges = computed<Edge[]>(() => store.edges ?? [])
 const crossNsEdges = computed(() => edges.value.filter(e => e.cross_ns).length)
+
+const stats = computed(() => {
+  const e = edges.value
+  const busiest = e.reduce((m, x) => (x.count > m.count ? x : m), { count: 0 } as Edge)
+  const srcs = new Set(e.map(x => x.src_owner || x.src_pod))
+  return [
+    { label: 'Pivots', value: e.length, hint: 'observed pod → pod edges' },
+    { label: 'Cross-namespace', value: crossNsEdges.value, hint: 'real lateral reach', tone: 'crit' as const },
+    { label: 'Sources', value: srcs.size, hint: 'distinct pivoting workloads', tone: 'warn' as const },
+    { label: 'Busiest edge', value: busiest.count || 0, hint: busiest.count ? busiest.src_pod + ' →' : '—' },
+  ]
+})
 const crossOnly = ref(false)
 const shown = computed(() => crossOnly.value ? edges.value.filter(e => e.cross_ns) : edges.value)
 
@@ -36,6 +49,8 @@ function chips(list: string[]) {
       click a row to inspect the source pod's chain.
     </p>
 
+    <StatStrip v-if="edges.length" :stats="stats" />
+
     <div class="toolbar" v-if="edges.length">
       <button class="chip-f" :class="{ on: crossOnly }" @click="crossOnly = !crossOnly">Cross-namespace only</button>
     </div>
@@ -57,6 +72,7 @@ function chips(list: string[]) {
           <tr v-for="(e, i) in shown" :key="i" class="clickable" :class="{ mover: e.cross_ns }"
             @click="openChainModal(e.src_pod)">
             <td class="pivot">
+              <span v-if="e.src_owner" class="wl">{{ e.src_owner }} </span>
               <span class="mono">{{ e.src_pod }}</span><span class="dim"> · {{ shortNs(e.src_namespace) }}</span>
               <span class="arr">→</span>
               <span class="mono">{{ e.dst_pod }}</span><span class="dim"> · {{ shortNs(e.dst_namespace) }}</span>
@@ -87,6 +103,7 @@ tbody tr.clickable { cursor:pointer; }
 tbody tr.clickable:hover { background:color-mix(in srgb, var(--teal) 8%, transparent); }
 
 td.pivot { white-space:nowrap; }
+.pivot .wl { font-weight:550; color:var(--fg); }
 .pivot .arr { color:var(--teal); margin:0 9px; font-family:var(--mono); }
 .chips { white-space:normal; max-width:220px; }
 .chip { display:inline-block; font-size:10.5px; padding:1px 7px; border-radius:999px; margin:1px 2px 1px 0; background:var(--surface-2); border:1px solid var(--border); color:var(--fg-2); }
