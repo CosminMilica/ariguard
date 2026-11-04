@@ -3,3 +3,9 @@
 !bin/ariguard.bpf.o
 !testdata/golden/policy.bin
 !testdata/golden/policy-full.bin
+# rulegen.Dockerfile needs the compiler + trace corpus (agent Dockerfile ignores these).
+!compiler
+!testdata/traces
+compiler/.venv
+**/__pycache__
+**/*.pyc

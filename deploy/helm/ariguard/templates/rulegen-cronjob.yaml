@@ -1,0 +1,47 @@
+{{- if .Values.rulegen.enabled }}
+# Autonomous rule-generation loop (F11): on a schedule, mine the trace corpus + ingest community
+# feeds, link the curated + generated + mined (shadow) rules into a bundle, read per-rule telemetry
+# from the console and promote/retire, then PUT the bundle to the console. Agents poll and hot-swap
+# it (no image rebuild). Talks only HTTP to the console, so it needs no RBAC.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ariguard-rulegen
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: ariguard-rulegen
+    {{- include "ariguard.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.rulegen.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ariguard-rulegen
+            {{- include "ariguard.labels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: rulegen
+              image: {{ include "ariguard.image" (dict "root" . "name" .Values.rulegen.image) | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args:
+                - --rules-dir=/app/compiler/rules
+                - --sigma-dir=/app/compiler/rules/sigma/generated
+                - --corpus=/app/corpus
+                {{- with .Values.rulegen.feedsDir }}
+                - --feeds={{ . }}
+                {{- end }}
+                - --console={{ include "ariguard.consoleUrl" . }}
+              {{- with .Values.rulegen.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+{{- end }}

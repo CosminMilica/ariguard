@@ -31,7 +31,7 @@ from pathlib import Path
 from . import autogen, feeds, mine, trace
 from .autogen import ENFORCE, RETIRE, SHADOW, AutoRule, ShadowMetrics, decide_mode
 from .emit import _validate, emit_bundle, rule_files
-from .schema import MAX_RULES, Rule, RuleError, load_rule, parse_rule
+from .schema import MAX_BINDINGS_PER_HOOK, MAX_RULES, Rule, RuleError, load_rule, parse_rule
 
 NS_PER_DAY = 86_400 * 1_000_000_000
 
@@ -96,6 +96,7 @@ class BuildResult:
         default_factory=dict
     )  # auto-rule name -> shadow|enforce|retire
     skipped_feeds: list[tuple[str, str]] = field(default_factory=list)
+    skipped_budget: list[str] = field(default_factory=list)  # proposals dropped: rule/binding cap
 
     @property
     def summary(self) -> str:
@@ -105,7 +106,7 @@ class BuildResult:
         return (
             f"{len(self.rules)} rules in bundle ({len(self.bundle)} bytes); "
             f"auto: {len(shadow)} shadow, {len(promoted)} promoted, {len(retired)} retired; "
-            f"feeds skipped: {len(self.skipped_feeds)}"
+            f"feeds skipped: {len(self.skipped_feeds)}; budget skipped: {len(self.skipped_budget)}"
         )
 
 
@@ -176,15 +177,35 @@ def build_bundle(
 
     if len(base) > MAX_RULES:
         raise RuleError(f"curated library alone has {len(base)} rules, over the {MAX_RULES} cap")
-    slots = MAX_RULES - len(base)
-    chosen = [r for r, _, _ in proposals[:slots]]
+
+    # Admit proposals that fit both the rule-count cap and the per-hook binding budget. The curated
+    # library has priority, so a busy hook (e.g. execve at capacity) can leave no room for a mined
+    # rule; that proposal is skipped this pass rather than failing the whole build.
+    tally: dict[int, int] = {}
+    for ru in base:
+        for b in ru.bindings:
+            tally[b.hook] = tally.get(b.hook, 0) + 1
+    chosen: list[Rule] = []
+    skipped_budget: list[str] = []
+    for rule, name, _ in proposals:
+        add: dict[int, int] = {}
+        for b in rule.bindings:
+            add[b.hook] = add.get(b.hook, 0) + 1
+        over_rules = len(base) + len(chosen) >= MAX_RULES
+        over_bindings = any(tally.get(h, 0) + n > MAX_BINDINGS_PER_HOOK for h, n in add.items())
+        if over_rules or over_bindings:
+            skipped_budget.append(name)
+            continue
+        for h, n in add.items():
+            tally[h] = tally.get(h, 0) + n
+        chosen.append(rule)
     rules = base + chosen
 
     _validate(rules)
     bundle = emit_bundle(rules)
     kept = {r.name for r in chosen}
     decisions = {n: m for n, m in decisions.items() if m == RETIRE or n in kept}
-    return BuildResult(rules, bundle, auto, decisions, feed_result.skipped)
+    return BuildResult(rules, bundle, auto, decisions, feed_result.skipped, skipped_budget)
 
 
 def _decide(name: str, telemetry: dict[str, ShadowMetrics]) -> str:

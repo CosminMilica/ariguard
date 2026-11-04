@@ -31,6 +31,24 @@ agent:
       cpu: 50m
       memory: 64Mi
 
+# Autonomous rule-generation loop (F11): a CronJob that mines the trace corpus + ingests community
+# feeds, links a policy bundle (curated + generated enforced, mined rules shadow), reads per-rule
+# telemetry from the console to promote/retire, and pushes the bundle to the control plane. Agents
+# hot-swap it. CPU-only, no LLM. Off by default.
+rulegen:
+  enabled: false
+  image: ariguard-rulegen
+  # Hourly, off the top of the hour. A quiet loop: an unchanged bundle is a no-op push.
+  schedule: "17 * * * *"
+  # Optional directory of community Sigma rules baked into the image to ingest.
+  feedsDir: ""
+  # Empty defaults to the in-cluster console backend.
+  consoleUrl: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
 console:
   enabled: true
   storage:

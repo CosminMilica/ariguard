@@ -20,3 +20,11 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- printf "http://ariguard-console-backend.%s.svc:8080" .Values.namespace -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "ariguard.consoleUrl" -}}
+{{- if .Values.rulegen.consoleUrl -}}
+{{- .Values.rulegen.consoleUrl -}}
+{{- else -}}
+{{- printf "http://ariguard-console-backend.%s.svc:8080" .Values.namespace -}}
+{{- end -}}
+{{- end -}}
