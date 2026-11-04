@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { store } from '../api'
 import { NAV, sectionOf } from '../nav'
 
@@ -7,9 +7,17 @@ const settingsIcon = '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.
 const activeSection = computed(() => sectionOf(store.page).key)
 const evCount = computed(() => store.allEvents.length)
 
-// Clicking a section enters its first page, unless the current page is already in it.
+// expanded is the section whose sub-pages are shown. Starts on the active section; navigating to a
+// page in another section opens that one.
+const expanded = ref(activeSection.value)
+watch(activeSection, (k) => { expanded.value = k })
+
+// Clicking a section: if it is already expanded, collapse its sub-menu; otherwise expand it and
+// enter its first page (unless the current page is already inside it).
 function openSection(key: string) {
   const sec = NAV.find(s => s.key === key)!
+  if (sec.pages.length > 1 && expanded.value === key) { expanded.value = '' ; return }
+  expanded.value = key
   if (!sec.pages.some(p => p.page === store.page)) store.page = sec.pages[0].page
 }
 </script>
@@ -24,7 +32,7 @@ function openSection(key: string) {
           {{ s.label }}
           <span v-if="s.key === 'activity' && evCount" class="tag">{{ evCount }}</span>
         </a>
-        <div v-if="activeSection === s.key && s.pages.length > 1" class="subnest">
+        <div v-if="expanded === s.key && s.pages.length > 1" class="subnest">
           <a v-for="p in s.pages" :key="p.page" class="subitem"
             :class="{ active: store.page === p.page }" @click.prevent="store.page = p.page">
             {{ p.label }}
