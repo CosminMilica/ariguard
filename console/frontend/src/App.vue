@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Sidebar from './components/Sidebar.vue'
-import SubNav from './components/SubNav.vue'
 import Topbar from './components/Topbar.vue'
 import Overview from './pages/Overview.vue'
 import Workloads from './pages/Workloads.vue'
@@ -26,7 +25,6 @@ import { store } from './api'
   <div class="content">
     <Topbar />
     <main>
-      <SubNav />
       <Overview v-if="store.page === 'overview'" />
       <Workloads v-else-if="store.page === 'workloads'" />
       <Events v-else-if="store.page === 'events'" />

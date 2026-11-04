@@ -1,7 +1,7 @@
 // Two-level navigation model: six top-level sections, each grouping one or more leaf pages.
 // The leaf page (store.page) stays the single source of truth for routing; the sidebar picks a
-// section and the SubNav switches between a section's pages. Keeps page components untouched while
-// collapsing the flat 14-tab list into a legible structure.
+// section and expands its leaf pages inline as nested sub-items. Keeps page components untouched
+// while collapsing the flat 14-tab list into a legible structure.
 import type { Page } from './api'
 
 export interface NavLeaf { page: Page; label: string }
