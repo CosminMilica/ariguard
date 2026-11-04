@@ -1,0 +1,7 @@
+{"source": "web-frontend", "events": [{"hook": "openat", "path": "/app/index.html"}, {"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/node"}]}
+{"source": "api-service", "events": [{"hook": "openat", "path": "/app/config.yml"}, {"hook": "connect", "inet": true}, {"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/python3"}]}
+{"source": "db-migrate", "events": [{"hook": "openat", "path": "/migrations/001.sql"}, {"hook": "execve", "path": "/usr/bin/psql"}]}
+{"source": "image-builder", "events": [{"hook": "openat", "path": "/src/Dockerfile"}, {"hook": "mount", "path": "/var/lib/buildkit"}, {"hook": "execve", "path": "/usr/bin/buildkitd"}]}
+{"source": "cron-backup", "events": [{"hook": "openat", "path": "/etc/cron.d/backup"}, {"hook": "execve", "path": "/usr/bin/restic"}]}
+{"source": "log-shipper", "events": [{"hook": "openat", "path": "/var/log/app.log"}, {"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/vector"}]}
+{"source": "sidecar-proxy", "events": [{"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/local/bin/envoy"}]}

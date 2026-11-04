@@ -51,3 +51,12 @@ attack trace and stay silent on every benign one). Fixtures in `testdata/traces/
 `container-escape`/`reverse-shell` and learns a new `finit_module -> bpf` chain.
 Limitation: hooks are mined literally, so dup2/dup3 (and other interchangeable hooks) are not yet
 an equivalence class — a future improvement. See [docs/backlog.md](../docs/backlog.md).
+
+Autonomous layer (`autogen.py`, `feeds.py`; see [docs/autonomous-rulegen.md](../docs/autonomous-rulegen.md)):
+no-LLM self-updating rule generation. `feeds.ingest_dir` compiles the expressible rules from a
+community Sigma feed (SigmaHQ/Atomic/Falco), skipping the rest. `autogen` learns a fleet baseline
+(`learn_baseline`), mines subsequences novel against it (`mine_novel`), gates them like any rule,
+and starts each in **shadow** (detect-only); `decide_mode` promotes to enforce only after measured
+attack catches with zero false positives, and retires on a benign fire. The engine is implemented
+and tested; the live fleet loop (trace capture, a mining job, live distribution) depends on the
+control plane (backlog F7).

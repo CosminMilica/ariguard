@@ -11,6 +11,7 @@ test = ["pytest>=8", "pytest-cov>=5"]
 [project.scripts]
 ariguard-compile = "ariguard_compiler.cli:main"
 ariguard-mine = "ariguard_compiler.mine:main"
+ariguard-autogen = "ariguard_compiler.autogen:main"
 
 [build-system]
 requires = ["hatchling"]
