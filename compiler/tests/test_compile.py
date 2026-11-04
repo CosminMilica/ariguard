@@ -122,21 +122,21 @@ def test_binding_order_and_padding():
     any_arg = (NO_ARG, ARG_ANY, 0)
     for i, prefix in enumerate(SOCKETS):
         assert b[i] == (h["openat"], 0, 0, 1, PATH_PREFIX, len(prefix), *any_arg,
-                        prefix.ljust(64, b"\0"))  # fmt: skip
+                        prefix.ljust(32, b"\0"))  # fmt: skip
         assert b[3 + i] == (h["connect"], 0, 0, 1, PATH_SUN_PREFIX, len(prefix), *any_arg,
-                            prefix.ljust(64, b"\0"))  # fmt: skip
+                            prefix.ljust(32, b"\0"))  # fmt: skip
     no_path = (NO_ARG, PATH_ANY, 0)
-    assert b[6] == (h["setns"], 0, 1, *no_path, 1, 3, 0x30020000, b"\0" * 64)
-    assert b[8] == (h["mount"], 0, 2, *no_path, 3, 4, 0x1E0000, b"\0" * 64)
+    assert b[6] == (h["setns"], 0, 1, *no_path, 1, 3, 0x30020000, b"\0" * 32)
+    assert b[8] == (h["mount"], 0, 2, *no_path, 3, 4, 0x1E0000, b"\0" * 32)
     assert [x[0] for x in b[9:13]] == [h["fsmount"], h["move_mount"], h["execve"], h["execveat"]]
     # fileless-exec
     assert b[13][:3] == (h["memfd_create"], 1, 0)
-    assert b[14] == (h["execveat"], 1, 1, *no_path, 4, 3, 0x1000, b"\0" * 64)
+    assert b[14] == (h["execveat"], 1, 1, *no_path, 4, 3, 0x1000, b"\0" * 32)
     assert b[15][:6] == (h["execve"], 1, 1, 0, PATH_PREFIX, len(b"/proc/self/fd/"))
     # reverse-shell
-    assert b[17] == (h["connect"], 2, 0, 1, PATH_INET, 0, *any_arg, b"\0" * 64)
-    assert b[18] == (h["dup2"], 2, 1, *no_path, 1, 2, 2, b"\0" * 64)
-    assert b[19] == (h["dup3"], 2, 1, *no_path, 1, 2, 2, b"\0" * 64)
+    assert b[17] == (h["connect"], 2, 0, 1, PATH_INET, 0, *any_arg, b"\0" * 32)
+    assert b[18] == (h["dup2"], 2, 1, *no_path, 1, 2, 2, b"\0" * 32)
+    assert b[19] == (h["dup3"], 2, 1, *no_path, 1, 2, 2, b"\0" * 32)
     assert [x[9].rstrip(b"\0") for x in b[20:24]] == [
         b"/bin/sh",
         b"/bin/bash",
@@ -262,11 +262,11 @@ def test_path_argument_per_hook(hook, arg):
 
 
 def test_pattern_limits_in_bytes():
-    ok = "/" + "a" * 62
+    ok = "/" + "a" * 30
     assert len(parse_rule(_with(**_ev({"hook": "openat", "path_prefix": [ok]}))).bindings) == 1
-    with pytest.raises(RuleError, match="1..63 bytes"):
+    with pytest.raises(RuleError, match="1..31 bytes"):
         parse_rule(_with(**_ev({"hook": "openat", "path_prefix": [ok + "a"]})))
-    with pytest.raises(RuleError, match="1..63 bytes"):
+    with pytest.raises(RuleError, match="1..31 bytes"):
         parse_rule(_with(**_ev({"hook": "openat", "path_prefix": ["/" + "é" * 32]})))
 
 
@@ -291,7 +291,7 @@ def test_rejects_duplicate_yaml_keys(tmp_path):
 
 
 def _too_many_execve() -> dict:
-    return {"events": {f"e{i}": [{"hook": "execve"}] for i in range(9)}}
+    return {"events": {f"e{i}": [{"hook": "execve"}] for i in range(17)}}
 
 
 @pytest.mark.parametrize(
@@ -332,7 +332,7 @@ def _too_many_execve() -> dict:
         (_with(**_ev({"hook": "openat", "sun_path_prefix": ["/x"]})), "only valid on connect"),
         (_with(**_ev({"hook": "openat", "path_prefix": []})), "non-empty list"),
         (_with(**_ev({"hook": "openat", "path_prefix": "/x"})), "non-empty list"),
-        (_with(**_ev({"hook": "openat", "path_prefix": [""]})), "1..63 bytes"),
+        (_with(**_ev({"hook": "openat", "path_prefix": [""]})), "1..31 bytes"),
         (_with(**_ev({"hook": "openat", "path_prefix": [1]})), "strings"),
         (_with(**_ev({"hook": "openat", "path_prefix": ["/a\0"]})), "NUL"),
         (_with(**_ev({"hook": "dup2", "arg": 1})), "arg must be a mapping"),
@@ -347,8 +347,11 @@ def _too_many_execve() -> dict:
         (_with(**_ev({"hook": "dup2", "arg": {"index": 1, "le": 2**64}})), r"2\^64"),
         (_with(**_ev({"hook": "dup2", "arg": {"index": 1, "le": True}})), r"2\^64"),
         (_with(**_ev({"hook": "dup2", "arg": {"index": 1, "le": "2"}})), r"2\^64"),
-        (_with(**_too_many_execve()), "max is 8"),
-        (_with(**_ev({"hook": "openat", "path_prefix": [f"/{i}" for i in range(9)]})), "max is 8"),
+        (_with(**_too_many_execve()), "max is 16"),
+        (
+            _with(**_ev({"hook": "openat", "path_prefix": [f"/{i}" for i in range(17)]})),
+            "max is 16",
+        ),
         (_with(transitions=[]), "transitions"),
         (_with(transitions=["a"]), "mapping"),
         (_with(transitions=[{"from": "x", "event": "e", "to": "b", "action": "kill"}]), "from"),
@@ -381,9 +384,9 @@ def _named(name: str, **changes) -> object:
 
 
 def test_link_rejects_too_many_bindings_across_rules():
-    a = _named("a", **_ev(*[{"hook": "execve"}] * 5))
-    b = _named("b", **_ev(*[{"hook": "execve"}] * 4))
-    with pytest.raises(RuleError, match="bundle: hook 'execve' has 9 bindings"):
+    a = _named("a", **_ev(*[{"hook": "execve"}] * 9))
+    b = _named("b", **_ev(*[{"hook": "execve"}] * 8))
+    with pytest.raises(RuleError, match="bundle: hook 'execve' has 17 bindings"):
         emit_bundle([a, b])
 
 

@@ -1,0 +1,29 @@
+# Generated for MITRE ATT&CK T1070.002 (Indicator Removal: Clear Linux System Logs) and T1070.003
+# (Clear Command History). Chain: an interactive shell truncates a system log or the shell history.
+# The O_TRUNC flag is the tell -- appending to a log (normal) never fires, only truncating it does,
+# and only after a shell. Validated by A4 + the behavioral gate before commit.
+title: interactive shell
+name: shell_logtamper
+tags: [attack.t1059.004]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: execve, path|startswith: [/bin/sh, /bin/bash]}
+  condition: sel
+---
+title: truncate a log or history file
+name: log_truncate
+tags: [attack.t1070.002, attack.t1070.003]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: openat, path|startswith: [/var/log/, /root/.bash_history], arg2|mask_any: 512}
+  condition: sel
+---
+title: log/history tampering from a shell
+name: defense-evasion-log-tamper
+tags: [attack.t1070.002, attack.t1070.003]
+correlation:
+  type: temporal_ordered
+  rules: [shell_logtamper, log_truncate]
+  timespan: 30s
+  scope: process
+  terminal_action: kill

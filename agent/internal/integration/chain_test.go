@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
@@ -104,8 +105,18 @@ func runSteps(steps []string) {
 			time.Sleep(200 * time.Millisecond)
 
 		// --- parameterized steps (name:arg) ---
-		case "openat": // openat:/some/path -> HookOpenat with that path
+		case "openat": // openat:/some/path -> HookOpenat with that path (read-only)
 			_, _ = unix.Open(arg, unix.O_RDONLY, 0)
+		case "openat-w": // openat-w:/some/path -> HookOpenat with write flags (O_WRONLY|O_CREAT)
+			_, _ = unix.Open(arg, unix.O_WRONLY|unix.O_CREAT|unix.O_APPEND, 0o644)
+		case "openat-trunc": // openat-trunc:/some/path -> HookOpenat with O_TRUNC (log/history tamper)
+			_, _ = unix.Open(arg, unix.O_WRONLY|unix.O_CREAT|unix.O_TRUNC, 0o644)
+		case "execve-probe": // execve-probe:/path -> sys_enter_execve fires with that path, then EFAULTs
+			// (bad argv) so the driver process survives -- drives a non-terminal execve step (e.g. a
+			// shell that then writes a persistence file in the same pid).
+			if p, err := unix.BytePtrFromString(arg); err == nil {
+				_, _, _ = unix.Syscall(unix.SYS_EXECVE, uintptr(unsafe.Pointer(p)), uintptr(1), 0)
+			}
 		case "connect-unix": // connect-unix:/sun/path -> HookConnect to that sun_path
 			connectUnix(arg)
 		case "unshare": // unshare:0x<hex> -> HookUnshare with those clone flags

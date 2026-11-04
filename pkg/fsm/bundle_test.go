@@ -175,7 +175,7 @@ func TestValidateRejects(t *testing.T) {
 		{"path arg", func(b *Bundle) { b.Bindings[0].PathArg = MaxSyscallArgs }, "path_arg 6"},
 		{"path arg no_arg", func(b *Bundle) { b.Bindings[0].PathArg = NoArg }, "path_arg"},
 		{"path len 0", func(b *Bundle) { b.Bindings[0].PathLen = 0 }, "path_len 0"},
-		{"path len 64", func(b *Bundle) { b.Bindings[0].PathLen = PatternLen }, "path_len 64"},
+		{"path len at cap", func(b *Bundle) { b.Bindings[0].PathLen = PatternLen }, "path_len 32"},
 		{"sun path len", func(b *Bundle) { b.Bindings[0].PathKind = PathSunPrefix; b.Bindings[0].PathLen = 0 }, "path_len 0"},
 		{"arg op", func(b *Bundle) { b.Bindings[1].ArgOp = ArgMaskNone + 1 }, "unknown arg op"},
 		{"arg any index", func(b *Bundle) { b.Bindings[0].ArgIndex = 0 }, "ARG_ANY"},
@@ -185,7 +185,7 @@ func TestValidateRejects(t *testing.T) {
 			for range MaxBindingsPerHook {
 				b.Bindings = append(b.Bindings, b.Bindings[1])
 			}
-		}, "more than 8 bindings"},
+		}, "more than 16 bindings"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

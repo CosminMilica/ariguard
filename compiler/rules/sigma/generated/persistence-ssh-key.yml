@@ -1,0 +1,29 @@
+# Generated for MITRE ATT&CK T1098.004 (Account Manipulation: SSH Authorized Keys). Chain: an
+# interactive shell writes an authorized_keys file, planting a backdoor key. The write flag
+# distinguishes planting a key from sshd reading the file for a legitimate login (sshd does not
+# execve a shell first in the same process). Validated by A4 + the behavioral gate before commit.
+title: interactive shell
+name: shell_ssh
+tags: [attack.t1059.004]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: execve, path|startswith: [/bin/sh, /bin/bash]}
+  condition: sel
+---
+title: write an authorized_keys file
+name: authkeys_write
+tags: [attack.t1098.004]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: openat, path|startswith: [/root/.ssh/authorized_keys], arg2|mask_any: 67}
+  condition: sel
+---
+title: ssh authorized_keys persistence from a shell
+name: persistence-ssh-key
+tags: [attack.t1098.004]
+correlation:
+  type: temporal_ordered
+  rules: [shell_ssh, authkeys_write]
+  timespan: 30s
+  scope: process
+  terminal_action: kill

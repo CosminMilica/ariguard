@@ -60,11 +60,15 @@ pub const NO_ARG: u32 = u32::MAX;
 pub const MAX_SYSCALL_ARGS: u32 = 6;
 
 /// Path buffer size; patterns are at most `PATTERN_LEN - 1` bytes.
-pub const PATTERN_LEN: usize = 64;
+pub const PATTERN_LEN: usize = 32;
 pub const COMM_LEN: usize = 16;
 
 /// Fixed map capacities (zero-allocation budget, set at load time).
-pub const MAX_BINDINGS_PER_HOOK: usize = 8;
+/// The per-hook binding budget is bundle-wide: all rules' bindings on one hook share it. Raised
+/// 8->16 so the library can grow persistence/indicator-removal chains (openat + execve are the
+/// busiest hooks). The hot-path match loop (main.rs) reads the path once and is bounded by this
+/// constant; the 5.15..7.0 verifier matrix gates the change.
+pub const MAX_BINDINGS_PER_HOOK: usize = 16;
 pub const MAX_RULES: u32 = 16;
 pub const MAX_TRANSITIONS: u32 = 1024;
 pub const MAX_TRACKED_WORKLOADS: u32 = 16384;

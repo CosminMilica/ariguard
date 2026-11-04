@@ -30,7 +30,7 @@ kind load docker-image ariguard-agent:dev --name statewall-dev
 exit
 ```
 
-The committed `testdata/golden/policy-full.bin` (7 rules) is baked into the image.
+The committed `testdata/golden/policy-full.bin` (11 rules) is baked into the image.
 
 ## 2. The demo — real web RCE → container escape
 

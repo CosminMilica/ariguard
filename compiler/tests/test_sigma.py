@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from ariguard_compiler.emit import HEADER, MAGIC, VERSION, emit_bundle
+from ariguard_compiler.emit import BINDING, HEADER, MAGIC, RULE, TRANSITION, VERSION, emit_bundle
 from ariguard_compiler.schema import (
     HOOK_VALUES,
     MAX_BINDINGS_PER_HOOK,
@@ -117,7 +117,11 @@ def test_sigma_bundle_within_limits() -> None:
     assert num_rules == len(rules)
     assert reserved == 0
     expected_len = (
-        HEADER.size + num_rules * 32 + num_transitions * 8 + num_bindings * 104 + meta_len
+        HEADER.size
+        + num_rules * RULE.size
+        + num_transitions * TRANSITION.size
+        + num_bindings * BINDING.size
+        + meta_len
     )
     assert len(bundle) == expected_len
 

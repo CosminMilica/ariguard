@@ -67,9 +67,9 @@ const (
 )
 
 const (
-	PatternLen         = 64 // buffer size; patterns are at most PatternLen-1 bytes
+	PatternLen         = 32 // buffer size; patterns are at most PatternLen-1 bytes. 32 (not 64) keeps the per-hook match loop within the verifier budget at MaxBindingsPerHook=16 (16*32 == the known-good 8*64).
 	CommLen            = 16
-	MaxBindingsPerHook = 8
+	MaxBindingsPerHook = 16 // ABI mirror of bpf/ariguard-common (bundle-wide per-hook budget)
 )
 
 // Fixed map capacities (zero-allocation budget, set at load time).
@@ -153,7 +153,7 @@ type Binding struct {
 	Pattern  [PatternLen]byte
 }
 
-// HookBindings is the AG_BINDINGS value, indexed by hook. 840 bytes.
+// HookBindings is the AG_BINDINGS value, indexed by hook (size = 8 + MaxBindingsPerHook*sizeof(Binding)).
 type HookBindings struct {
 	Count   uint32
 	_       uint32

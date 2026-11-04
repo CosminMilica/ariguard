@@ -1,0 +1,1 @@
+{"rule": "defense-evasion-log-tamper", "attack": ["execve-probe:/bin/sh", "openat-trunc:/var/log/syslog"], "benign": ["execve-probe:/bin/sh", "openat-w:/var/log/syslog"]}

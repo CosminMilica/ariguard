@@ -102,7 +102,7 @@ func TestMapCapacitiesMatchObject(t *testing.T) {
 	}{
 		{"AG_STATE", ebpf.LRUHash, MaxTrackedWorkloads, 16, 16},
 		{"AG_TRANSITIONS", ebpf.Array, MaxTransitions, 4, 8},
-		{"AG_BINDINGS", ebpf.Array, NumHooks, 4, 840},
+		{"AG_BINDINGS", ebpf.Array, NumHooks, 4, 1160},
 		{"AG_RULES", ebpf.Array, MaxRules, 4, 32},
 		{"AG_POLICY", ebpf.Array, 1, 4, 8},
 		{"AG_SCRATCH", ebpf.PerCPUArray, 1, 4, PatternLen},

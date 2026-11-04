@@ -98,7 +98,7 @@ argument predicates, more hooks. It replaces the phase 1 ABI (v2) and bundle (v2
 | E7 | `mount` ignores propagation-only changes (`MS_SHARED`, `MS_PRIVATE`, `MS_SLAVE`, `MS_UNBINDABLE`); `fsmount` and `move_mount` count as mounts | fixes `unshare -m` walking a chain by itself; closes the new-mount-API gap (`BPF-1.9`) |
 | E8 | States at or after `terminal_from` never expire | `compromised` must not silently return to the initial state |
 | E9 | State transitions are atomic: insert with `BPF_NOEXIST`, advance with compare-and-swap on `state` | no skipped or doubled step when one workload runs on several CPUs |
-| E10 | Patterns are at most `PATTERN_LEN - 1` bytes | the scratch buffer holds the NUL; a 64-byte pattern could never match |
+| E10 | Patterns are at most `PATTERN_LEN - 1` bytes | the scratch buffer holds the NUL; a full-length pattern could never match. `PATTERN_LEN` is 32 and `MAX_BINDINGS_PER_HOOK` is 16: the per-hook match loop cost is `MAX_BINDINGS_PER_HOOK × PATTERN_LEN`, kept at the verifier-safe 16×32 = the original 8×64 |
 | E11 | State, event and rule names travel in the bundle metadata, not in the ABI | rules define their own states; the kernel only sees numbers |
 | E12 | Audit records carry `comm`; the agent adds namespace, pod and container | readable audit; the checker can assert on pod names |
 | E13 | The engine must verify on every kernel in the CI matrix (5.15 → stable): bounded loops only, no `bpf_loop`, no kfuncs | the CI kernel gate is blocking |

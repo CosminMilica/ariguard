@@ -80,10 +80,10 @@ agent/internal/integration/chain_test.go   G4: chains in a child cgroup, asserts
 agent/internal/responder/*_test.go          G1: isolation — every mode, skip guards, mute, idempotency, retry, concurrency, report callback, NetworkPolicy spec (fake clientset, -race)
 console/backend/api/quarantine_test.go      G1: quarantine ingest + read API
 test/e2e/isolation_test.go                  G5: TestIsolation — quarantine label + deny-all NetworkPolicy on attackers, zero benign false positives, via the isolate overlay
-compiler/tests/test_bundle.py              G2: committed full rule bundle (testdata/golden/policy-full.bin, 7 rules, `make bundle`) matches the rule files
+compiler/tests/test_bundle.py              G2: committed full rule bundle (testdata/golden/policy-full.bin, 11 rules, `make bundle`) matches the rule files
 ```
 
-The agent image ships the full rule library (`testdata/golden/policy-full.bin`, 7 rules);
+The agent image ships the full rule library (`testdata/golden/policy-full.bin`, 11 rules);
 `testdata/golden/policy.bin` (3 native rules) stays the cross-language parity golden.
 
 Object tests skip when `bin/ariguard.bpf.o` is missing; CI sets `ARIGUARD_REQUIRE_OBJECT=1`

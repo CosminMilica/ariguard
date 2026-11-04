@@ -1,0 +1,1 @@
+{"rule": "persistence-cron", "attack": ["execve-probe:/bin/sh", "openat-w:/etc/cron.d/evil"], "benign": ["execve-probe:/bin/sh", "openat:/etc/cron.d/evil"]}
