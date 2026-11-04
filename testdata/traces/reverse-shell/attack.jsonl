@@ -1,0 +1,3 @@
+{"source": "revshell-1", "events": [{"hook": "connect", "inet": true}, {"hook": "dup2"}, {"hook": "execve", "path": "/bin/sh"}]}
+{"source": "revshell-2", "events": [{"hook": "openat", "path": "/tmp/stage"}, {"hook": "connect", "inet": true}, {"hook": "dup2"}, {"hook": "dup2"}, {"hook": "execve", "path": "/bin/bash"}]}
+{"source": "revshell-3", "events": [{"hook": "openat", "path": "/proc/self/fd"}, {"hook": "connect", "inet": true}, {"hook": "dup2"}, {"hook": "execve", "path": "/usr/bin/sh"}]}

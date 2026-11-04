@@ -31,6 +31,7 @@ import (
 	"github.com/CosminMilica/ariguard/agent/internal/podsync/podmap"
 	"github.com/CosminMilica/ariguard/agent/internal/policy"
 	"github.com/CosminMilica/ariguard/agent/internal/policy/kmap"
+	"github.com/CosminMilica/ariguard/agent/internal/policysync"
 	"github.com/CosminMilica/ariguard/agent/internal/responder"
 	"github.com/CosminMilica/ariguard/agent/internal/sink"
 	"github.com/CosminMilica/ariguard/pkg/fsm"
@@ -40,6 +41,9 @@ const podSyncInterval = 2 * time.Second
 
 // muteInterval is how often the agent refreshes the operator allowlist from the console (F5).
 const muteInterval = 10 * time.Second
+
+// policyInterval is how often the agent polls the control plane for a newer policy bundle (F7).
+const policyInterval = 15 * time.Second
 
 // mutedCgroups is a podsync.Source that drops muted pods' cgroups so AG_PODS (the kill-gate)
 // never contains them. src lists the node's pod cgroups; pods resolves cgroup id -> pod name.
@@ -81,6 +85,7 @@ func run(log *slog.Logger) error {
 	sinkURL := flag.String("sink-url", "", `console base URL such as "http://console:8080" (empty: disabled)`)
 	isolate := flag.String("isolate", "off", "autonomous workload isolation on a confirmed terminal mitigation: off|dryrun|on (on applies a deny-all NetworkPolicy; dryrun only labels the pod; needs Kubernetes API access)")
 	isolateFallback := flag.String("isolate-fallback", "off", "extra isolation for CNIs that ignore NetworkPolicy (e.g. kindnet): off|evict (evict deletes the quarantined pod to cut its network now; destructive)")
+	policySync := flag.Bool("policy-sync", true, "poll the console for a newer policy bundle and hot-swap it (control plane, F7; needs --sink-url)")
 	flag.Parse()
 	if *objectPath == "" || *bundlePath == "" {
 		flag.Usage()
@@ -154,6 +159,10 @@ func run(log *slog.Logger) error {
 	}
 	node := sink.NodeName(os.Getenv)
 
+	// policyMu serialises every policy hot-swap: the SIGHUP file reload and the control-plane
+	// poller must not write the kernel maps at the same time.
+	var policyMu sync.Mutex
+
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -163,7 +172,9 @@ func run(log *slog.Logger) error {
 			case <-ctx.Done():
 				return
 			case <-hup:
+				policyMu.Lock()
 				b, err := applyBundle(maps, &names, *bundlePath, *enforce)
+				policyMu.Unlock()
 				if err != nil {
 					log.Error("policy reload failed", "bundle", *bundlePath, "err", err)
 					continue
@@ -174,6 +185,24 @@ func run(log *slog.Logger) error {
 			}
 		}
 	}()
+
+	// Control plane (F7): poll the console for a newer bundle and hot-swap it, no image rebuild.
+	if snk != nil && *policySync {
+		go policysync.Poll(ctx, policyInterval,
+			snk.Policy,
+			func(data []byte) error {
+				policyMu.Lock()
+				b, err := applyBundleData(maps, &names, data, *enforce)
+				policyMu.Unlock()
+				if err != nil {
+					return err
+				}
+				snk.SetBundle(sink.RulesFromBundle(b))
+				snk.Register(ctx)
+				return nil
+			}, log)
+		log.Info("control-plane policy sync enabled", "interval", policyInterval)
+	}
 
 	client, err := podmeta.NewClient(*kubeconfig)
 	if err != nil {
@@ -256,12 +285,18 @@ func applyBundle(m policy.Maps, names *audit.Names, path string, enforce bool) (
 	if err != nil {
 		return fsm.Bundle{}, fmt.Errorf("read bundle: %w", err)
 	}
+	return applyBundleData(m, names, data, enforce)
+}
+
+// applyBundleData hot-swaps a bundle given as bytes (from a file or the control plane) into the
+// kernel maps without reloading programs.
+func applyBundleData(m policy.Maps, names *audit.Names, data []byte, enforce bool) (fsm.Bundle, error) {
 	b, err := fsm.UnmarshalBundle(data)
 	if err != nil {
-		return fsm.Bundle{}, fmt.Errorf("decode bundle %s: %w", path, err)
+		return fsm.Bundle{}, fmt.Errorf("decode bundle: %w", err)
 	}
 	if err := policy.Apply(m, b, policy.WithEnforce(enforce)); err != nil {
-		return fsm.Bundle{}, fmt.Errorf("apply bundle %s: %w", path, err)
+		return fsm.Bundle{}, fmt.Errorf("apply bundle: %w", err)
 	}
 	names.Store(b.Meta)
 	return *b, nil

@@ -61,6 +61,7 @@ helm upgrade --install ariguard deploy/helm/ariguard -n ariguard-system \
 | `agent.isolate` | `"off"` | `off` \| `dryrun` \| `on` → appends `--isolate=<mode>`; `on` quarantines a pod after a confirmed terminal mitigation (label + deny-all NetworkPolicy), `dryrun` labels only. NetworkPolicy enforcement is done by the CNI (Cilium/Calico); see `agent.isolateFallback` for CNIs that don't |
 | `agent.isolateFallback` | `"off"` | `off` \| `evict` → appends `--isolate-fallback=<mode>`; `evict` deletes a quarantined pod to cut its network on CNIs that ignore NetworkPolicy (e.g. kindnet). Destructive; only with `isolate: on` |
 | `agent.sinkUrl` | `""` | where the agent pushes audit; empty + console on → the console backend svc |
+| `agent.policySync` | `true` | poll the console for a newer policy bundle and hot-swap it without an image rebuild (control plane, F7); needs a sink URL. `false` appends `--policy-sync=false` to pin the baked-in bundle |
 | `agent.resources` | small requests | agent container resources |
 | `console.enabled` | `true` | deploy the console (false = agent only) |
 | `console.backend.image` | `ariguard-console-backend` | backend image name |

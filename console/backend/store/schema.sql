@@ -94,3 +94,12 @@ CREATE TABLE IF NOT EXISTS quarantine (
   PRIMARY KEY (node, namespace, pod)
 );
 CREATE INDEX IF NOT EXISTS idx_quarantine_pod ON quarantine(pod);
+
+-- The control plane's current policy bundle (F7): one row, pushed by the rule pipeline and polled
+-- by agents so rules distribute to the fleet without rebuilding the agent image.
+CREATE TABLE IF NOT EXISTS policy (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  version TEXT NOT NULL,
+  bundle BLOB NOT NULL,
+  ts_ns INTEGER NOT NULL DEFAULT 0
+);

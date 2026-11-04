@@ -1,0 +1,4 @@
+{"source": "web-app", "events": [{"hook": "openat", "path": "/app/config.yml"}, {"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/python3"}]}
+{"source": "db-client", "events": [{"hook": "openat", "path": "/etc/hosts"}, {"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/psql"}]}
+{"source": "build-worker", "events": [{"hook": "openat", "path": "/src/main.go"}, {"hook": "mount", "path": "/tmp/overlay"}, {"hook": "execve", "path": "/usr/bin/go"}]}
+{"source": "log-shipper", "events": [{"hook": "openat", "path": "/var/log/app.log"}, {"hook": "openat", "path": "/var/log/sys.log"}, {"hook": "execve", "path": "/usr/bin/vector"}]}

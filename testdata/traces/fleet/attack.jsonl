@@ -1,0 +1,3 @@
+{"source": "honeypot-userns-escape-1", "events": [{"hook": "openat", "path": "/proc/self/uid_map"}, {"hook": "unshare"}, {"hook": "mount", "path": "/mnt/host"}, {"hook": "execve", "path": "/mnt/host/sh"}]}
+{"source": "honeypot-userns-escape-2", "events": [{"hook": "unshare"}, {"hook": "connect", "inet": true}, {"hook": "mount", "path": "/mnt/root"}, {"hook": "execve", "path": "/mnt/root/busybox"}]}
+{"source": "honeypot-userns-escape-3", "events": [{"hook": "openat", "path": "/etc/subuid"}, {"hook": "unshare"}, {"hook": "mount", "path": "/mnt/esc"}, {"hook": "execve", "path": "/mnt/esc/id"}]}

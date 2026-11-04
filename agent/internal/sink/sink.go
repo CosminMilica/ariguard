@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -213,6 +214,37 @@ func (s *Sink) Mutes(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("decode mutes: %w", err)
 	}
 	return pods, nil
+}
+
+// Policy fetches the control plane's current bundle (F7). “have“ is the version the agent
+// already applied; the server answers 304 (changed=false) when it still matches, 204 (no policy
+// pushed; changed=false, data nil) or 200 with the bytes and the new version. Safe on a nil *Sink.
+func (s *Sink) Policy(ctx context.Context, have string) (data []byte, version string, changed bool, err error) {
+	if s == nil {
+		return nil, "", false, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/api/v1/policy?have="+url.QueryEscape(have), nil)
+	if err != nil {
+		return nil, "", false, err
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, "", false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusNotModified, http.StatusNoContent:
+		return nil, resp.Header.Get("X-Policy-Version"), false, nil
+	case http.StatusOK:
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		if err != nil {
+			return nil, "", false, err
+		}
+		return body, resp.Header.Get("X-Policy-Version"), true, nil
+	default:
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		return nil, "", false, fmt.Errorf("GET /api/v1/policy: status %d", resp.StatusCode)
+	}
 }
 
 // allowLocked reports whether e should be forwarded: non-observe events and new

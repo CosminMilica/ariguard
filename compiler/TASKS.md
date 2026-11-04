@@ -27,7 +27,7 @@ Contract: [docs/architecture.md](../docs/architecture.md#rule-file-schema-v3).
 | ID | Task | Depends | Done when |
 |---|---|---|---|
 | `[x]` CMP-3.1 | `sigma.py`: ATT&CK / Sigma rules → FSM transitions | CMP-1.1 | a Sigma rule compiles to a table |
-| `[ ]` CMP-3.2 | `mine.py`: sequence mining from labeled syscall traces (ML) | EVAL-1.*, CMP-1.1 | learned chain detects held-out attacks |
+| `[x]` CMP-3.2 | `mine.py`: sequence mining from labeled syscall traces (ML) | EVAL-1.*, CMP-1.1 | learned chain detects held-out attacks |
 | `[x]` CMP-3.3 | LLM path: NL/ATT&CK → FSM (co-author, no API key) + MITRE ingester + behavioral gate | CMP-3.1, CMP-3.4 | generated rule detects its attack, not its benign twin |
 | `[x]` CMP-3.4 | `validate.py`: round-trip + kernel map size limits | CMP-1.2 | oversized/invalid tables rejected |
 | `[ ]` CMP-3.5 | Rule-library expansion: more hooks + chains (persistence/cron, more MITRE techniques) to shrink the Coverage-page blind spots (new hooks land in `bpf`) (backlog F8) | CMP-3.3 | library covers more MITRE techniques; Coverage page gaps reduced |
@@ -42,5 +42,21 @@ cred-access-exfil, bpf-tampering) joins the three native rules for a 7-chain lib
 Control-plane / CRD fleet distribution remains deferred.
 See [docs/phase-3-rulegen-plan.md](../docs/phase-3-rulegen-plan.md).
 
-Backlog F9 (ML sequence mining for rule generation, the ML half of the AI bridge) is the existing
-`CMP-3.2` (`mine.py`) stub — still todo, not a new task. See [docs/backlog.md](../docs/backlog.md).
+Backlog F9 (ML sequence mining for rule generation, the ML half of the AI bridge) is `CMP-3.2`
+(`mine.py`), now implemented: `trace.py` loads labeled attack/benign syscall-hook traces;
+`mine.py` finds frequent ordered subsequences (gap-allowed PrefixSpan), keeps those frequent in
+attack and absent in benign (contrast score), renders each as a kill-chain rule and runs the same
+gate as a hand-written rule (schema + A4 round-trip + a behavioral replay that must fire on every
+attack trace and stay silent on every benign one). Fixtures in `testdata/traces/`; it re-discovers
+`container-escape`/`reverse-shell` and learns a new `finit_module -> bpf` chain.
+Limitation: hooks are mined literally, so dup2/dup3 (and other interchangeable hooks) are not yet
+an equivalence class — a future improvement. See [docs/backlog.md](../docs/backlog.md).
+
+Autonomous layer (`autogen.py`, `feeds.py`; see [docs/autonomous-rulegen.md](../docs/autonomous-rulegen.md)):
+no-LLM self-updating rule generation. `feeds.ingest_dir` compiles the expressible rules from a
+community Sigma feed (SigmaHQ/Atomic/Falco), skipping the rest. `autogen` learns a fleet baseline
+(`learn_baseline`), mines subsequences novel against it (`mine_novel`), gates them like any rule,
+and starts each in **shadow** (detect-only); `decide_mode` promotes to enforce only after measured
+attack catches with zero false positives, and retires on a benign fire. The engine is implemented
+and tested; the live fleet loop (trace capture, a mining job, live distribution) depends on the
+control plane (backlog F7).

@@ -1,0 +1,3 @@
+{"source": "api-call", "events": [{"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/curl"}]}
+{"source": "shell-script", "events": [{"hook": "openat", "path": "/home/app/run.sh"}, {"hook": "execve", "path": "/bin/sh"}]}
+{"source": "db-pool", "events": [{"hook": "connect", "inet": true}, {"hook": "connect", "inet": true}, {"hook": "execve", "path": "/usr/bin/python3"}]}
