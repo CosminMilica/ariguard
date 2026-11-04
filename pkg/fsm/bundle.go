@@ -16,7 +16,7 @@ const (
 	bundleHeaderSize        = 32
 	ruleSize                = 32
 	transitionSize          = 8
-	bindingSize             = 104
+	bindingSize             = 8*4 + 8 + PatternLen // 8 u32 + u64 + pattern[PatternLen]; mirrors the compiler's BINDING struct
 )
 
 // Bundle is a compiled policy: rules, their transition cells, hook bindings, names.

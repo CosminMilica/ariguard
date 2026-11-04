@@ -55,7 +55,7 @@ func TestCoverage(t *testing.T) {
 	if !openat.Attached || openat.Events != 2 || len(openat.Rules) != 1 || openat.Rules[0] != "r1" {
 		t.Fatalf("openat: %+v", openat)
 	}
-	if len(openat.Techniques) != 2 || openat.Techniques[0] != "T1552 Unsecured Credentials" {
+	if len(openat.Techniques) != 6 || openat.Techniques[0] != "T1552 Unsecured Credentials" {
 		t.Fatalf("openat techniques: %+v", openat.Techniques)
 	}
 	if byHook["ptrace"].Rules[0] != "r1" || byHook["connect"].Rules[0] != "r1" {

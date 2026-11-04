@@ -44,8 +44,8 @@ ARG_ANY = 0
 ARG_OPS = {"eq": 1, "le": 2, "mask_any": 3, "mask_none": 4}
 NO_ARG = 0xFFFFFFFF
 MAX_SYSCALL_ARGS = 6
-PATTERN_LEN = 64
-MAX_BINDINGS_PER_HOOK = 8
+PATTERN_LEN = 32  # ABI mirror; 32 keeps the match loop verifier-safe at 16 bindings (16*32 == 8*64)
+MAX_BINDINGS_PER_HOOK = 14  # ABI mirror of bpf/ariguard-common (bundle-wide per-hook budget)
 MAX_RULES = 16
 MAX_TRANSITIONS = 1024
 NS_PER_SECOND = 1_000_000_000

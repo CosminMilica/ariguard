@@ -1,0 +1,29 @@
+# Generated for MITRE ATT&CK T1053.003 (Scheduled Task/Job: Cron). Chain: an interactive shell
+# (post-exploit) writes a cron file. The write flag (O_WRONLY/O_RDWR/O_CREAT) distinguishes
+# dropping a job from merely reading crontab; a shell reading /etc/crontab (recon) never fires, and
+# a non-shell process touching cron never fires. Validated by A4 + the behavioral gate before commit.
+title: interactive shell
+name: shell_cron
+tags: [attack.t1059.004]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: execve, path|startswith: [/bin/sh, /bin/bash]}
+  condition: sel
+---
+title: write a cron job
+name: cron_write
+tags: [attack.t1053.003]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: openat, path|startswith: [/etc/cron, /var/spool/cron], arg2|mask_any: 67}
+  condition: sel
+---
+title: cron persistence from a shell
+name: persistence-cron
+tags: [attack.t1053.003]
+correlation:
+  type: temporal_ordered
+  rules: [shell_cron, cron_write]
+  timespan: 30s
+  scope: process
+  terminal_action: kill

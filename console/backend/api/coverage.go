@@ -15,7 +15,7 @@ var hookOrder = []string{
 
 // hookTechniques maps each hook to its static ATT&CK technique list.
 var hookTechniques = map[string][]string{
-	"openat":       {"T1552 Unsecured Credentials", "T1003.008 /etc/shadow"},
+	"openat":       {"T1552 Unsecured Credentials", "T1003.008 /etc/shadow", "T1053.003 Cron", "T1098.004 SSH Authorized Keys", "T1037.004/T1546.004 Startup Scripts", "T1070 Indicator Removal"},
 	"setns":        {"T1611 Escape to Host"},
 	"unshare":      {"T1611 Escape to Host"},
 	"mount":        {"T1611 Escape to Host"},

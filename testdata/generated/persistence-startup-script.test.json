@@ -1,0 +1,1 @@
+{"rule": "persistence-startup-script", "attack": ["execve-probe:/bin/sh", "openat-w:/etc/profile.d/evil.sh"], "benign": ["execve-probe:/bin/sh", "openat:/etc/profile.d/evil.sh"]}

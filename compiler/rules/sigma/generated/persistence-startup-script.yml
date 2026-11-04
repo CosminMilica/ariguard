@@ -1,0 +1,29 @@
+# Generated for MITRE ATT&CK T1037.004 (Boot/Logon Init Scripts: RC Scripts) and T1546.004 (Event
+# Triggered Execution: Unix Shell Configuration Modification). Chain: an interactive shell writes a
+# startup/profile script that runs on the next boot or login. The write flag distinguishes planting
+# a payload from reading the file. Validated by A4 + the behavioral gate before commit.
+title: interactive shell
+name: shell_startup
+tags: [attack.t1059.004]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: execve, path|startswith: [/bin/sh, /bin/bash]}
+  condition: sel
+---
+title: write a startup or profile script
+name: startup_write
+tags: [attack.t1037.004, attack.t1546.004]
+logsource: {product: linux, category: syscall}
+detection:
+  sel: {syscall: openat, path|startswith: [/etc/profile.d/, /root/.bashrc], arg2|mask_any: 67}
+  condition: sel
+---
+title: startup-script persistence from a shell
+name: persistence-startup-script
+tags: [attack.t1037.004, attack.t1546.004]
+correlation:
+  type: temporal_ordered
+  rules: [shell_startup, startup_write]
+  timespan: 30s
+  scope: process
+  terminal_action: kill

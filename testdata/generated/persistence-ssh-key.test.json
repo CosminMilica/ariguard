@@ -1,0 +1,1 @@
+{"rule": "persistence-ssh-key", "attack": ["execve-probe:/bin/bash", "openat-w:/root/.ssh/authorized_keys"], "benign": ["openat-w:/root/.ssh/authorized_keys"]}

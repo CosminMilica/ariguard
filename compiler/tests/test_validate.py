@@ -62,9 +62,9 @@ def test_valid_bundle_passes():
 
 
 def test_too_many_bindings_per_hook():
-    rule = _rule(bindings=[Binding(HOOK_VALUES["execve"], 0) for _ in range(9)])
+    rule = _rule(bindings=[Binding(HOOK_VALUES["execve"], 0) for _ in range(17)])
     problems = validate_rule(rule)
-    assert any("execve" in p and "max is 8" in p for p in problems)
+    assert any("execve" in p and "max is 14" in p for p in problems)
 
 
 def test_bundle_exceeds_max_rules():
@@ -87,9 +87,9 @@ def test_invalid_action():
 
 
 def test_oversized_pattern():
-    big = b"/" + b"a" * 64  # 65 bytes > PATTERN_LEN - 1 (63)
+    big = b"/" + b"a" * 32  # 33 bytes > PATTERN_LEN - 1 (31)
     rule = _rule(bindings=[Binding(HOOK_VALUES["openat"], 0, pattern=big)])
-    assert any("65 bytes" in p and "max is 63" in p for p in validate_rule(rule))
+    assert any("33 bytes" in p and "max is 31" in p for p in validate_rule(rule))
 
 
 def test_nul_in_pattern():

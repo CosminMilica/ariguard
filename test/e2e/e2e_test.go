@@ -68,7 +68,7 @@ var (
 
 // wantDeployedRules is the rule count the agent image ships (the full deploy bundle,
 // testdata/golden/policy-full.bin), kept in sync with `make bundle`.
-const wantDeployedRules = 7
+const wantDeployedRules = 11
 
 func TestDetectMode(t *testing.T) {
 	dir, agentPod := setupMode(t, "detect", "detect")
