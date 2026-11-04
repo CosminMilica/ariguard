@@ -6,6 +6,8 @@ type incident struct {
 	Pod         string `json:"pod"`
 	Namespace   string `json:"namespace"`
 	Node        string `json:"node"`
+	Owner       string `json:"owner"`
+	App         string `json:"app"`
 	Rule        string `json:"rule"`
 	StartedNS   int64  `json:"started_ts_ns"`
 	EndedNS     int64  `json:"ended_ts_ns"`
@@ -28,6 +30,7 @@ const incidentGroupsSQL = `SELECT pod, namespace, node, rule,
 		MAX(enforced = 1 AND action = 'deny') AS blocked,
 		MIN(ts_ns) AS first_ns, MAX(ts_ns) AS last_ns,
 		MAX(image_id) AS image_id, MAX(image) AS image, MAX(comm) AS comm,
+		MAX(owner) AS owner, MAX(app) AS app,
 		GROUP_CONCAT(DISTINCT CASE WHEN dst_ip != '' THEN dst_ip END) AS dst_ips
 	FROM audit_events
 	WHERE ts_ns >= ? AND ts_ns <= ? AND pod != ''
@@ -42,7 +45,7 @@ func (a *API) incidents(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	rows, err := a.DB.Query(`SELECT pod, namespace, node, rule, MIN(ts_ns), MAX(ts_ns), MAX(`+stateRank+`),
+	rows, err := a.DB.Query(`SELECT pod, namespace, node, MAX(owner), MAX(app), rule, MIN(ts_ns), MAX(ts_ns), MAX(`+stateRank+`),
 			MAX(enforced = 1 AND action = 'kill'), MAX(enforced = 1 AND action = 'deny'), COUNT(*)
 		FROM audit_events
 		WHERE ts_ns >= ? AND ts_ns <= ? AND pod != ''
@@ -58,7 +61,7 @@ func (a *API) incidents(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var i incident
 		var rank, killed, blocked int
-		if err := rows.Scan(&i.Pod, &i.Namespace, &i.Node, &i.Rule, &i.StartedNS, &i.EndedNS, &rank, &killed, &blocked, &i.Steps); err != nil {
+		if err := rows.Scan(&i.Pod, &i.Namespace, &i.Node, &i.Owner, &i.App, &i.Rule, &i.StartedNS, &i.EndedNS, &rank, &killed, &blocked, &i.Steps); err != nil {
 			fail(w, err)
 			return
 		}

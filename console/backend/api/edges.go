@@ -11,6 +11,7 @@ import (
 type edge struct {
 	SrcNamespace string   `json:"src_namespace"`
 	SrcPod       string   `json:"src_pod"`
+	SrcOwner     string   `json:"src_owner"` // source workload (e.g. Deployment/frontend)
 	DstNamespace string   `json:"dst_namespace"`
 	DstPod       string   `json:"dst_pod"`
 	CrossNs      bool     `json:"cross_ns"` // src and dst in different namespaces (true lateral reach)
@@ -25,7 +26,7 @@ type edge struct {
 // destination IP resolved to a pod. Cross-namespace edges (real lateral reach) sort first.
 func (a *API) edges(w http.ResponseWriter, r *http.Request) {
 	win := windowOf(r)
-	rows, err := a.DB.Query(`SELECT namespace, pod, dst_ns, dst_pod, dst_port, rule, ts_ns
+	rows, err := a.DB.Query(`SELECT namespace, pod, owner, dst_ns, dst_pod, dst_port, rule, ts_ns
 		FROM audit_events
 		WHERE dst_pod != '' AND pod != '' AND ts_ns >= ? AND ts_ns <= ?
 		ORDER BY ts_ns`, win.fromNS(), win.toNS())
@@ -43,9 +44,9 @@ func (a *API) edges(w http.ResponseWriter, r *http.Request) {
 	seen := map[string]*agg{}
 	order := []string{}
 	for rows.Next() {
-		var srcNs, srcPod, dstNs, dstPod, rule string
+		var srcNs, srcPod, srcOwner, dstNs, dstPod, rule string
 		var port, ts int64
-		if err := rows.Scan(&srcNs, &srcPod, &dstNs, &dstPod, &port, &rule, &ts); err != nil {
+		if err := rows.Scan(&srcNs, &srcPod, &srcOwner, &dstNs, &dstPod, &port, &rule, &ts); err != nil {
 			fail(w, err)
 			return
 		}
@@ -56,7 +57,7 @@ func (a *API) edges(w http.ResponseWriter, r *http.Request) {
 		ac := seen[key]
 		if ac == nil {
 			ac = &agg{
-				edge:  edge{SrcNamespace: srcNs, SrcPod: srcPod, DstNamespace: dstNs, DstPod: dstPod, CrossNs: srcNs != dstNs, FirstNS: ts},
+				edge:  edge{SrcNamespace: srcNs, SrcPod: srcPod, SrcOwner: srcOwner, DstNamespace: dstNs, DstPod: dstPod, CrossNs: srcNs != dstNs, FirstNS: ts},
 				ports: map[int64]bool{}, rules: map[string]bool{},
 			}
 			seen[key] = ac

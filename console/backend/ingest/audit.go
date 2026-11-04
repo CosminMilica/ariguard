@@ -23,6 +23,8 @@ type auditEvent struct {
 	Container string `json:"container"`
 	Image     string `json:"image"`
 	ImageID   string `json:"image_id"`
+	Owner     string `json:"owner"`
+	App       string `json:"app"`
 	DstIP     string `json:"dst_ip"`
 	DstPort   int64  `json:"dst_port"`
 	DstPod    string `json:"dst_pod"`
@@ -57,9 +59,9 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 		if e.Enforced {
 			enforced = 1
 		}
-		if _, err = tx.Exec(`INSERT INTO audit_events(ts_ns,node,pod,namespace,comm,rule,event,from_state,to_state,action,enforced,cgroup_id,pid,ppid,hook,image,image_id,dst_ip,dst_port,dst_pod,dst_ns)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			e.TsNS, e.Node, e.Pod, e.Namespace, e.Comm, e.Rule, e.Event, e.From, e.To, e.Action, enforced, e.CgroupID, e.PID, e.Ppid, e.Hook, e.Image, e.ImageID, e.DstIP, e.DstPort, e.DstPod, e.DstNs); err != nil {
+		if _, err = tx.Exec(`INSERT INTO audit_events(ts_ns,node,pod,namespace,comm,rule,event,from_state,to_state,action,enforced,cgroup_id,pid,ppid,hook,image,image_id,owner,app,dst_ip,dst_port,dst_pod,dst_ns)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			e.TsNS, e.Node, e.Pod, e.Namespace, e.Comm, e.Rule, e.Event, e.From, e.To, e.Action, enforced, e.CgroupID, e.PID, e.Ppid, e.Hook, e.Image, e.ImageID, e.Owner, e.App, e.DstIP, e.DstPort, e.DstPod, e.DstNs); err != nil {
 			break
 		}
 		if e.Pod == "" || e.Rule == "" || e.To == "" {
