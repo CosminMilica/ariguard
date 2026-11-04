@@ -61,12 +61,15 @@ func TestPollKeepsCurrentOnFetchError(t *testing.T) {
 	var mu sync.Mutex
 	applies := 0
 	calls := 0
-	fetch := func(_ context.Context, _ string) ([]byte, string, bool, error) {
+	fetch := func(_ context.Context, have string) ([]byte, string, bool, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		calls++
 		if calls == 1 {
 			return nil, "", false, errors.New("console down")
+		}
+		if have == "v1" {
+			return nil, "v1", false, nil // 304 once applied: must NOT re-apply, so the count settles at 1
 		}
 		return []byte("b"), "v1", true, nil
 	}
@@ -74,7 +77,7 @@ func TestPollKeepsCurrentOnFetchError(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go Poll(ctx, 5*time.Millisecond, fetch, apply, nil)
-	waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return applies == 1 }) // recovers after the error
+	waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return applies == 1 }) // recovers after the error, then holds
 	cancel()
 }
 

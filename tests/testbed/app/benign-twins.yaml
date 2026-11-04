@@ -1,0 +1,66 @@
+# Benign twins: workloads that exercise the SAME hooks as the attacks (openat, connect, dup2,
+# execve) but legitimately -- a normal client that reads config, connects to the db and runs a
+# normal binary, and a log processor that redirects its own stdout to a file and execs a tool.
+# They must never reach a terminal/alerting state: the proof that detection keys on the ordered
+# kill-chain, not on the individual syscalls. The suite asserts zero incidents for these pods.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: benign-src
+  namespace: ariguard-internal
+data:
+  client.py: |
+    # A normal service client: read config (openat), connect to the db (connect), run a tool (execve).
+    import socket, subprocess, time
+    while True:
+        try:
+            open("/etc/hostname").read()
+            s = socket.create_connection(("db.ariguard-internal.svc", 5432), 2)
+            s.sendall(b"ping"); s.recv(16); s.close()
+        except Exception:
+            pass
+        subprocess.run(["/bin/true"])
+        time.sleep(4)
+  logproc.py: |
+    # A normal log processor: redirect stdout to a file (dup2 to a non-socket fd) and run a tool.
+    import os, subprocess, time
+    while True:
+        fd = os.open("/tmp/out.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        os.dup2(fd, 1)       # dup2, but onto a file -- not a socket, and no shell follows
+        os.close(fd)
+        subprocess.run(["/bin/echo", "tick"])
+        time.sleep(4)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: benign-client, namespace: ariguard-internal, labels: {app: benign-client}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: benign-client}}
+  template:
+    metadata: {labels: {app: benign-client}}
+    spec:
+      containers:
+        - name: app
+          image: python:3.12-slim
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "/src/client.py"]
+          volumeMounts: [{name: src, mountPath: /src}]
+      volumes: [{name: src, configMap: {name: benign-src}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: benign-logproc, namespace: ariguard-internal, labels: {app: benign-logproc}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: benign-logproc}}
+  template:
+    metadata: {labels: {app: benign-logproc}}
+    spec:
+      containers:
+        - name: app
+          image: python:3.12-slim
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "/src/logproc.py"]
+          volumeMounts: [{name: src, mountPath: /src}]
+      volumes: [{name: src, configMap: {name: benign-src}}]
