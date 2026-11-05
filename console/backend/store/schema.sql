@@ -97,6 +97,17 @@ CREATE TABLE IF NOT EXISTS quarantine (
 );
 CREATE INDEX IF NOT EXISTS idx_quarantine_pod ON quarantine(pod);
 
+-- Honeypot-captured full-syscall traces (F11 discovery): a honeypot's strace output, parsed into
+-- attack-labeled traces and POSTed here; the rule-generation loop pulls them to mine new chains.
+CREATE TABLE IF NOT EXISTS honeypot_traces (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts_ns INTEGER NOT NULL,
+  label TEXT NOT NULL DEFAULT 'attack',
+  source TEXT NOT NULL DEFAULT '',
+  hash TEXT NOT NULL UNIQUE, -- content hash; dedups a re-posting sidecar
+  events TEXT NOT NULL DEFAULT '[]' -- the original trace JSON object (one mining run)
+);
+
 -- The control plane's current policy bundle (F7): one row, pushed by the rule pipeline and polled
 -- by agents so rules distribute to the fleet without rebuilding the agent image.
 CREATE TABLE IF NOT EXISTS policy (

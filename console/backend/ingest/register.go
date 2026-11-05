@@ -20,6 +20,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/policy", h.GetPolicy)
 	mux.HandleFunc("GET /api/v1/audit/export", h.AuditExport)
 	mux.HandleFunc("GET /api/v1/rules/telemetry", h.RuleTelemetry)
+	mux.HandleFunc("POST /api/v1/traces", h.Traces)
+	mux.HandleFunc("GET /api/v1/traces/export", h.TracesExport)
 }
 
 type registerReq struct {

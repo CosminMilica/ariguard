@@ -189,6 +189,83 @@ def autogenerate(
     return out
 
 
+# --- per-trace candidates (single-shot discovery from a honeypot) -----------------------------
+
+# Rare, high-signal syscalls: they almost never occur in benign workloads, so a single attack that
+# uses them is itself strong evidence — no frequency support across many runs needed. (Common hooks
+# like openat/execve are excluded; they are everywhere and would overfit a one-off trace.)
+RARE_HOOKS = frozenset(
+    {
+        "setns",
+        "unshare",
+        "mount",
+        "fsmount",
+        "move_mount",
+        "ptrace",
+        "memfd_create",
+        "init_module",
+        "finit_module",
+        "bpf",
+    }
+)
+# dup2/dup3 are deliberately excluded: shell redirections (2>/dev/null) use them constantly, so they
+# add noise to a one-off backbone. An inet connect still anchors reverse-shell-style sessions.
+
+
+def _backbone(t: trace.Trace) -> list[trace.Event]:
+    """The rare-hook backbone of a trace: its high-signal syscalls (plus an inet connect), with
+    consecutive duplicates collapsed and capped at MAX_LEN — the climax of the attack."""
+    kept = [e for e in t.events if e.hook in RARE_HOOKS or (e.hook == "connect" and e.inet)]
+    out: list[trace.Event] = []
+    for e in kept:
+        if out and out[-1].hook == e.hook:
+            continue
+        out.append(e)
+    return out[: mine.MAX_LEN]
+
+
+def backbone_rules(
+    attack_traces: list[trace.Trace],
+    baseline: list[trace.Trace],
+    *,
+    known_chains: set[tuple[str, ...]] = frozenset(),
+    name_prefix: str = "auto",
+    scope: str = "process",
+    window_seconds: int = mine.DEFAULT_WINDOW_SECONDS,
+) -> list[AutoRule]:
+    """Propose one shadow rule per distinct attack *backbone* — single-shot discovery from a honeypot.
+
+    Unlike contrast mining (which needs a pattern frequent across many runs), this turns each real
+    attack's rare-hook backbone into a candidate directly, then gates it the same way (fires on the
+    attack, silent on the benign baseline). Right for sparse, diverse honeypot traffic.
+    """
+    out: list[AutoRule] = []
+    seen: set[tuple[str, ...]] = set()
+    for t in attack_traces:
+        bb = _backbone(t)
+        hooks = tuple(e.hook for e in bb)
+        if len(hooks) < mine.MIN_LEN or hooks in known_chains or hooks in seen:
+            continue
+        seen.add(hooks)
+        preds = tuple({"inet": True} if (e.hook == "connect" and e.inet) else None for e in bb)
+        cand = mine.Candidate(hooks, attack_support=1.0, benign_support=0.0, predicates=preds)
+        name = f"{name_prefix}-{'-'.join(hooks)}"[:60].rstrip("-")
+        rule = mine.candidate_to_rule(
+            cand, name, scope=scope, window_seconds=window_seconds, enforce=False
+        )
+        out.append(
+            AutoRule(
+                name=name,
+                source="honeypot",
+                candidate=cand,
+                rule=rule,
+                problems=mine.gate(rule, [t, *baseline]),
+                mode=SHADOW,
+            )
+        )
+    return out
+
+
 # --- CLI --------------------------------------------------------------------------------------
 
 

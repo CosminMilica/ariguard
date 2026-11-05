@@ -13,6 +13,7 @@ ariguard-compile = "ariguard_compiler.cli:main"
 ariguard-mine = "ariguard_compiler.mine:main"
 ariguard-autogen = "ariguard_compiler.autogen:main"
 ariguard-rulegen-loop = "ariguard_compiler.loop:main"
+ariguard-trace-capture = "ariguard_compiler.strace:main"
 
 [build-system]
 requires = ["hatchling"]

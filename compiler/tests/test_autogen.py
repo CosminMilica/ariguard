@@ -111,3 +111,42 @@ def test_cli_writes_shadow_rule(tmp_path, capsys):
 
 def test_cli_bad_path_exits_2(tmp_path):
     assert autogen.main([str(tmp_path / "nope")]) == 2
+
+
+# --- per-trace backbone (single-shot honeypot discovery) --------------------------------------
+
+
+def test_backbone_rules_from_one_attack():
+    # one messy honeypot trace -> a clean rare-hook backbone rule, gated against a benign baseline.
+    atk = trace.Trace(
+        label="attack",
+        source="hp",
+        events=(
+            trace.Event("execve", path="/usr/bin/unshare"),
+            trace.Event("openat", path="/proc/self/uid_map"),
+            trace.Event("unshare"),
+            trace.Event("execve", path="/usr/bin/mount"),
+            trace.Event("mount"),
+            trace.Event("execve", path="/bin/sh"),
+        ),
+    )
+    benign = [
+        trace.Trace(
+            label="benign",
+            source="b",
+            events=(trace.Event("openat", path="/etc/x"), trace.Event("execve", path="/bin/true")),
+        )
+    ]
+    rules = autogen.backbone_rules([atk], benign)
+    assert len(rules) == 1
+    r = rules[0]
+    assert r.accepted and r.mode == autogen.SHADOW and r.source == "honeypot"
+    assert r.candidate.hooks == ("unshare", "mount")  # rare-hook backbone, common hooks dropped
+    assert r.rule["transitions"][-1]["action"] == "observe"  # shadow
+
+
+def test_backbone_skips_known_chains_and_too_short():
+    atk = trace.Trace(
+        label="attack", source="hp", events=(trace.Event("execve", path="/x"), trace.Event("bpf"))
+    )  # only 1 rare hook
+    assert autogen.backbone_rules([atk], []) == []  # below MIN_LEN

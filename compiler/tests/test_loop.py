@@ -48,15 +48,52 @@ def test_build_proposes_mined_rules_in_shadow():
     assert not _has_kill(rule), "a shadow rule must never carry a kill action"
 
 
-def test_skips_a_proposal_when_the_hook_budget_is_full():
-    # The full curated library (hand + generated) fills execve to the per-hook cap, so a mined
-    # execve-ending rule cannot be admitted this pass — it is skipped, not a build failure.
+def test_admits_mined_rule_into_the_full_library():
+    # The full curated library (hand + generated) has one free execve slot, so the fleet-mined
+    # rule is admitted as a shadow proposal — 12 rules, nothing skipped.
     result = loop.build_bundle(rules_dir=str(RULES), sigma_dir=str(SIGMA_GEN), corpus=str(FLEET))
+    autos = [r.name for r in result.rules if r.name.startswith("auto-")]
+    assert autos, "expected the mined rule to be admitted"
+    assert result.decisions[autos[0]] == SHADOW
+    assert not result.skipped_budget
+
+
+def _fill_execve_rule(path):
+    """A hand rule whose chain is MAX_BINDINGS_PER_HOOK execve steps — it alone fills the hook."""
+    import yaml
+
+    from ariguard_compiler.schema import MAX_BINDINGS_PER_HOOK
+
+    n = MAX_BINDINGS_PER_HOOK
+    states = [f"s{i}" for i in range(n + 1)]
+    rule = {
+        "name": "fill-execve",
+        "scope": "process",
+        "window_seconds": 10,
+        "states": states,
+        "terminal": [states[-1]],
+        "events": {f"e{i}": [{"hook": "execve"}] for i in range(n)},
+        "transitions": [
+            {
+                "from": states[i],
+                "event": f"e{i}",
+                "to": states[i + 1],
+                "action": "kill" if i == n - 1 else "observe",
+            }
+            for i in range(n)
+        ],
+    }
+    path.write_text(yaml.safe_dump(rule))
+
+
+def test_skips_a_proposal_when_a_hook_is_full(tmp_path):
+    # A base library that already fills execve leaves no room; the mined execve-ending rule is
+    # skipped this pass (recorded in skipped_budget), not a build failure.
+    _fill_execve_rule(tmp_path / "fill.yml")
+    result = loop.build_bundle(rules_dir=str(tmp_path), corpus=str(FLEET))
     assert len(result.bundle) > 0
-    assert result.skipped_budget, "expected the mined rule to be skipped on a full binding budget"
-    assert all(not r.name.startswith("auto-") for r in result.rules), (
-        "no mined rule should be added"
-    )
+    assert result.skipped_budget, "expected the mined execve rule to be skipped on a full budget"
+    assert all(not r.name.startswith("auto-") for r in result.rules)
 
 
 def test_promotes_on_clean_telemetry():
@@ -104,6 +141,12 @@ class _StubConsole(BaseHTTPRequestHandler):
         if self.path.startswith("/api/v1/audit/export"):
             body = b'{"id":1,"cgroup_id":42,"pid":7,"ts_ns":100,"hook":"execve","dst_ip":""}\n'
             self._send(200, "application/x-ndjson", body)
+        elif self.path.startswith("/api/v1/traces/export"):
+            body = (
+                b'{"label":"attack","source":"honeypot","events":'
+                b'[{"hook":"ptrace"},{"hook":"ptrace"},{"hook":"bpf"}]}\n'
+            )
+            self._send(200, "application/x-ndjson", body)
         elif self.path == "/api/v1/rules/telemetry":
             rows = [
                 {
@@ -142,6 +185,13 @@ def stub_console():
     srv.shutdown()
 
 
+def test_pull_traces(stub_console):
+    traces = loop.pull_traces(stub_console)
+    assert len(traces) == 1
+    assert traces[0].label == "attack"
+    assert traces[0].hooks == ("ptrace", "ptrace", "bpf")
+
+
 def test_console_roundtrip(stub_console):
     rows = loop.pull_audit(stub_console)
     assert rows == [
@@ -164,3 +214,23 @@ def test_cli_dry_run_writes_a_bundle(tmp_path):
     )
     assert rc == 0
     assert out.read_bytes()[:4]  # a non-empty bundle was written
+
+
+def test_build_mines_a_backbone_rule_from_honeypot_traces():
+    # a honeypot attack (rare-hook backbone) passed as extra_traces becomes a shadow rule, even
+    # though contrast mining alone would not (a single sparse trace has no frequency support).
+    import ariguard_compiler.trace as T
+
+    hp = T.Trace(
+        label="attack",
+        source="hp",
+        events=(
+            T.Event("execve", path="/usr/bin/unshare"),
+            T.Event("unshare"),
+            T.Event("execve", path="/usr/bin/setns"),
+            T.Event("setns"),
+        ),
+    )
+    result = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET), extra_traces=[hp])
+    autos = [r.name for r in result.rules if r.name.startswith("auto-")]
+    assert any("unshare" in n and "setns" in n for n in autos), f"backbone rule missing: {autos}"

@@ -46,7 +46,7 @@ logsource:
 detection:
   sel:
     syscall: execve
-    path|startswith: [/bin/sh, /bin/bash, /usr/bin/sh, /usr/bin/bash]
+    path|startswith: [/bin/sh, /bin/bash, /usr/bin/bash]
   condition: sel
 ---
 title: reverse shell

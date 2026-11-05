@@ -93,13 +93,20 @@ ariguard-rulegen-loop \
    `decide_mode` promote a proven rule (enough hits over enough days, zero benign fires) to enforce,
    hold it in shadow, or retire one that fired on benign traffic — then re-pushes. A newly mined
    rule therefore ships `observe`-only and can never kill until it has earned it on real traffic.
-4. **Full-syscall trace capture** — *remaining, and the honest gap*. The agent's audit stream (and
-   so `GET /api/v1/audit/export`, which feeds `trace.from_audit`) contains **only rule-matched**
-   events, so the fleet data can *confirm and tune* existing rules and drive promotion, but it
-   cannot *discover* brand-new chains. Discovery today comes from the correctly-labeled honeypot /
-   fixture corpus and the community feeds. Discovering novel chains from production would need an
-   agent "learn mode" capturing the full syscall-hook stream (benign from normal workloads, attack
-   from canaries) — a kernel-side change (verifier + perf budget) deliberately deferred.
+4. **Full-syscall trace capture + discovery** — **done via the honeypot** ([`tests/honeypot`](../tests/honeypot/README.md)),
+   no kernel change. The agent's audit stream carries **only rule-matched** events, so it confirms
+   rules and drives promotion but cannot *discover* new chains. A honeypot closes that gap: a
+   deliberately-vulnerable decoy runs each injected command under `strace -f`, a capture sidecar
+   (`ariguard-trace-capture`) parses the whole session into an attack-labeled trace (dropping
+   linker/locale noise) and POSTs it to the console (`POST /api/v1/traces`); the loop pulls it
+   (`--honeypot` / `GET /api/v1/traces/export`). Because a honeypot gives sparse, diverse one-off
+   attacks (no frequency support for contrast mining), the loop also runs **per-trace backbone
+   discovery** (`autogen.backbone_rules`): each attack's *rare-hook* backbone (unshare/mount/setns/
+   ptrace/bpf/module/memfd/fsmount/…, plus an inet connect) becomes a candidate directly, gated
+   against the benign baseline, admitted **shadow**. Proven live: a honeypot attack minted
+   `auto-unshare-mount-bpf` (observe), pushed via F7 and hot-swapped into the agent. A full-syscall
+   *benign* baseline (honeypot running benign commands) would sharpen it further; the agent-side
+   kernel "learn mode" stays deferred (verifier/perf) since the honeypot already covers discovery.
 
 Distribution, the scheduled mining service (CronJob) and the auto-promote telemetry are implemented
 and tested (`compiler/ariguard_compiler/loop.py`, `deploy/helm/.../rulegen-cronjob.yaml`,
