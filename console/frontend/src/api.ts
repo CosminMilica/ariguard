@@ -4,7 +4,7 @@ const BASE: string = (import.meta.env.VITE_API_BASE as string) || 'http://localh
 const POLL_MS = 3000
 
 export type Range = '15m' | '1h' | '24h'
-export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'triage' | 'campaigns' | 'actors' | 'lateral' | 'timeline' | 'coverage' | 'rules' | 'nodes' | 'performance' | 'autonomy' | 'settings'
+export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'triage' | 'campaigns' | 'fleet' | 'actors' | 'lateral' | 'timeline' | 'coverage' | 'rules' | 'nodes' | 'performance' | 'autonomy' | 'settings'
 
 export interface Point { t: number; v: number }
 export interface Overview {
@@ -43,6 +43,12 @@ export interface CampaignNs {
   affected_rules: string[]
 }
 export interface Campaigns { by_rule: CampaignRule[]; by_namespace: CampaignNs[] }
+export interface FleetNode { node: string; incidents: number; first_ts_ns: number; last_ts_ns: number }
+export interface FleetThreat {
+  kind: 'actor' | 'rule'; signature: string; image?: string; rule?: string
+  node_count: number; incidents: number; killed: number; blocked: number; detected: number
+  first_ts_ns: number; last_ts_ns: number; spreading: boolean; nodes: FleetNode[]
+}
 export interface Actor {
   image_id: string; image: string; incidents: number; pods: number; namespaces: number; nodes: number
   killed: number; blocked: number; detected: number
@@ -96,6 +102,7 @@ export const store = reactive({
   incidents: [] as Incident[],
   triage: [] as TriageRow[],
   campaigns: null as Campaigns | null,
+  fleet: [] as FleetThreat[],
   actors: [] as Actor[],
   containment: null as Containment | null,
   coverage: null as Coverage | null,
@@ -202,7 +209,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -223,8 +230,9 @@ export async function refresh() {
       get<Autonomy>('/api/autonomy'),
       get<string[]>('/api/observe-namespaces'),
       get<{ enforce: boolean; set: boolean }>('/api/mode'),
+      get<FleetThreat[]>('/api/fleet'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -244,6 +252,7 @@ export async function refresh() {
     if (aut.status === 'fulfilled') store.autonomy = aut.value
     if (obs.status === 'fulfilled') store.observeNamespaces = arr(obs.value)
     if (md.status === 'fulfilled' && md.value) store.mode = md.value
+    if (fl.status === 'fulfilled') store.fleet = arr(fl.value)
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()
@@ -324,7 +333,7 @@ export function closeRuleModal() { store.selectedRule = null }
 
 export function startPolling() {
   const fromHash = location.hash.replace('#/', '') as Page
-  if (['overview', 'workloads', 'events', 'incidents', 'triage', 'campaigns', 'actors', 'lateral', 'timeline', 'coverage', 'rules', 'nodes', 'performance', 'settings'].includes(fromHash)) store.page = fromHash
+  if (['overview', 'workloads', 'events', 'incidents', 'triage', 'campaigns', 'fleet', 'actors', 'lateral', 'timeline', 'coverage', 'rules', 'nodes', 'performance', 'settings'].includes(fromHash)) store.page = fromHash
   watch(() => store.page, p => { location.hash = '#/' + p; window.scrollTo(0, 0) })
   watch(() => [store.range, store.customFrom, store.customTo, store.evAll, store.wlFilter, store.wlQ, store.evSev, store.evQ, store.chainPod], () => refresh())
   refresh()

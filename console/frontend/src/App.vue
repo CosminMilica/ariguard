@@ -7,6 +7,7 @@ import Events from './pages/Events.vue'
 import Incidents from './pages/Incidents.vue'
 import Triage from './pages/Triage.vue'
 import Campaigns from './pages/Campaigns.vue'
+import Fleet from './pages/Fleet.vue'
 import Actors from './pages/Actors.vue'
 import Lateral from './pages/Lateral.vue'
 import Timeline from './pages/Timeline.vue'
@@ -32,6 +33,7 @@ import { store } from './api'
       <Incidents v-else-if="store.page === 'incidents'" />
       <Triage v-else-if="store.page === 'triage'" />
       <Campaigns v-else-if="store.page === 'campaigns'" />
+      <Fleet v-else-if="store.page === 'fleet'" />
       <Actors v-else-if="store.page === 'actors'" />
       <Lateral v-else-if="store.page === 'lateral'" />
       <Timeline v-else-if="store.page === 'timeline'" />
