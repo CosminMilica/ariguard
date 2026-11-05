@@ -4,6 +4,11 @@
 #
 # Images (kind): make honeypot-image rulegen-image, then kind load both. The capture sidecar reuses
 # the rulegen image (it ships ariguard-trace-capture).
+#
+# Auth: when the console runs with a control-plane token (auth.token), the capture sidecars must
+# present it to POST /api/v1/traces, or every post is 401 and no trace reaches the console. Create a
+# matching secret in this namespace before applying (skip it when the console is unauthenticated):
+#   kubectl -n ariguard-honeypot create secret generic ariguard-auth --from-literal=token=<token>
 apiVersion: v1
 kind: Namespace
 metadata: {name: ariguard-honeypot}
@@ -28,6 +33,11 @@ spec:
           image: ariguard-rulegen:dev
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c"]
+          # ariguard-trace-capture reads ARIGUARD_TOKEN for the control-plane bearer token.
+          env:
+            - name: ARIGUARD_TOKEN
+              valueFrom:
+                secretKeyRef: {name: ariguard-auth, key: token, optional: true}
           args:
             - |
               while true; do
@@ -70,6 +80,10 @@ spec:
           image: ariguard-rulegen:dev
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c"]
+          env:
+            - name: ARIGUARD_TOKEN
+              valueFrom:
+                secretKeyRef: {name: ariguard-auth, key: token, optional: true}
           args:
             - |
               while true; do
