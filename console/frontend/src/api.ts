@@ -52,7 +52,7 @@ export interface FleetThreat {
 export interface Actor {
   image_id: string; image: string; incidents: number; pods: number; namespaces: number; nodes: number
   killed: number; blocked: number; detected: number
-  rules: string[]; comms: string[]; affected_namespaces: string[]; dst_ips: string[]
+  rules: string[]; comms: string[]; affected_namespaces: string[]; dst_ips: string[]; shared_c2: string[]
   owners: string[]; apps: string[]; affected_pods: string[]
   first_ts_ns: number; last_ts_ns: number
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"net"
 	"net/http"
 	"sort"
 )
@@ -22,6 +23,7 @@ type actor struct {
 	Comms              []string `json:"comms"`
 	AffectedNamespaces []string `json:"affected_namespaces"`
 	DstIPs             []string `json:"dst_ips"`       // observed outbound C2 destinations (B3/F4)
+	SharedC2           []string `json:"shared_c2"`     // external dst IPs this actor shares with another image (F4)
 	Owners             []string `json:"owners"`        // controlling workloads (e.g. Deployment/frontend)
 	Apps               []string `json:"apps"`          // app labels
 	AffectedPods       []string `json:"affected_pods"` // pods this actor ran in (drill-down to chains)
@@ -72,7 +74,47 @@ func (a *API) actors(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	linkByC2(out)
 	writeJSON(w, out)
+}
+
+// linkByC2 flags, per actor, the external C2 destinations it shares with a *different* image. Two
+// images beaconing to the same public IP is a strong "same campaign" signal that image-only
+// correlation misses (the attacker rebuilt the payload but reused the infrastructure). Internal /
+// cluster IPs are ignored — every pod talks to DNS and the API server (that is lateral, not C2).
+func linkByC2(actors []actor) {
+	imagesByIP := map[string]map[string]bool{}
+	for _, a := range actors {
+		for _, ip := range a.DstIPs {
+			if !isExternalIP(ip) {
+				continue
+			}
+			if imagesByIP[ip] == nil {
+				imagesByIP[ip] = map[string]bool{}
+			}
+			imagesByIP[ip][a.ImageID] = true
+		}
+	}
+	for i := range actors {
+		var shared []string
+		for _, ip := range actors[i].DstIPs {
+			if len(imagesByIP[ip]) > 1 { // same external IP used by another image too
+				shared = append(shared, ip)
+			}
+		}
+		actors[i].SharedC2 = uniqueSorted(shared)
+	}
+}
+
+// isExternalIP reports whether ip is a routable public address (not private, loopback, link-local,
+// unspecified or multicast) — i.e., a candidate C2 destination rather than in-cluster traffic.
+func isExternalIP(s string) bool {
+	ip := net.ParseIP(s)
+	if ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	return true
 }
 
 // uniqueSorted dedups and sorts a list, dropping empty entries.
