@@ -54,7 +54,7 @@ const toggle = (i: number) => { open.value = open.value === i ? null : i }
             <template v-for="(a, i) in actors" :key="i">
               <tr class="clickable" :class="{ actor: a.pods >= 3 || a.namespaces >= 2, open: open === i }" @click="toggle(i)">
                 <td>
-                  <div class="wl">{{ workload(a) }}</div>
+                  <div class="wl">{{ workload(a) }}<span v-if="a.shared_c2?.length" class="linked" title="Shares a C2 destination with another image — likely the same campaign">linked</span></div>
                   <div class="mono dim sub">{{ a.image }}</div>
                 </td>
                 <td class="spread">
@@ -87,8 +87,8 @@ const toggle = (i: number) => { open.value = open.value === i ? null : i }
                       <span v-for="c in a.comms" :key="c" class="chip mono">{{ c }}</span>
                     </div>
                     <div class="dcol" v-if="a.dst_ips?.length">
-                      <div class="dh">C2 destinations</div>
-                      <span v-for="d in a.dst_ips" :key="d" class="chip mono c2">{{ d }}</span>
+                      <div class="dh">C2 destinations<span v-if="a.shared_c2?.length" class="dh-note"> · shared = same IP as another image</span></div>
+                      <span v-for="d in a.dst_ips" :key="d" class="chip mono c2" :class="{ shared: a.shared_c2?.includes(d) }" :title="a.shared_c2?.includes(d) ? 'Shared with another image' : ''">{{ d }}</span>
                     </div>
                     <div class="dcol" v-if="a.affected_namespaces?.length">
                       <div class="dh">Namespaces</div>
@@ -130,6 +130,9 @@ tr.detail > td { background:var(--bg-2); padding:14px 15px; }
 .pods { margin-top:14px; }
 .chip { display:inline-block; font-size:10.5px; padding:1px 7px; border-radius:999px; margin:2px 5px 2px 0; background:var(--surface-2); border:1px solid var(--border); color:var(--fg-2); }
 .chip.c2 { border-color:color-mix(in srgb, var(--orange) 40%, transparent); color:var(--orange); }
+.chip.c2.shared { border-color:color-mix(in srgb, var(--crit) 55%, transparent); color:var(--crit); background:color-mix(in srgb, var(--crit) 12%, transparent); font-weight:600; }
 .chip.pod { cursor:pointer; }
+.linked { display:inline-block; margin-left:8px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; padding:1px 6px; border-radius:999px; color:var(--crit); border:1px solid color-mix(in srgb, var(--crit) 45%, transparent); background:color-mix(in srgb, var(--crit) 12%, transparent); }
+.dh-note { font-weight:400; text-transform:none; letter-spacing:0; color:var(--faint); }
 .chip.pod:hover { border-color:var(--teal-dim); color:var(--fg); background:color-mix(in srgb, var(--teal) 14%, var(--surface-2)); }
 </style>

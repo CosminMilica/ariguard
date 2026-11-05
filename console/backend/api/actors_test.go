@@ -75,3 +75,46 @@ func TestActors(t *testing.T) {
 		t.Fatalf("legit actor: %+v", got[1])
 	}
 }
+
+func TestActorC2Link(t *testing.T) {
+	srv := newServer(t)
+	now := time.Now().UnixNano()
+	ev := func(ts int64, pod, img, imgID, dstIP string) string {
+		b, _ := json.Marshal(map[string]any{
+			"ts_ns": ts, "rule": "reverse-shell", "event": "connect", "from": "normal",
+			"to": "compromised", "action": "kill", "enforced": true, "namespace": "prod",
+			"pod": pod, "node": "n1", "comm": "sh", "image": img, "image_id": imgID, "dst_ip": dstIP,
+		})
+		return string(b)
+	}
+	body := "[" + strings.Join([]string{
+		// two different images beaconing to the same PUBLIC C2 = linked campaign
+		ev(now-5000, "p1", "evil:1", "sha256:evil", "203.0.113.9"),
+		ev(now-4000, "p2", "mal:1", "sha256:mal", "203.0.113.9"),
+		// evil also hits a second, unique public IP (not shared -> not in shared_c2)
+		ev(now-3500, "p1", "evil:1", "sha256:evil", "198.51.100.7"),
+		// a third image only talks to an internal/cluster IP (DNS) -> never a C2 link
+		ev(now-3000, "p3", "dnsonly:1", "sha256:dns", "10.96.0.10"),
+	}, ",") + "]"
+	mustPost(t, srv, "/api/v1/audit", body)
+
+	type actor struct {
+		ImageID  string   `json:"image_id"`
+		SharedC2 []string `json:"shared_c2"`
+	}
+	var got []actor
+	mustGet(t, srv, "/api/actors?range=1h", &got)
+	by := map[string][]string{}
+	for _, a := range got {
+		by[a.ImageID] = a.SharedC2
+	}
+	if strings.Join(by["sha256:evil"], ",") != "203.0.113.9" {
+		t.Fatalf("evil shared_c2 = %v, want [203.0.113.9] (not the unique 198.51.100.7)", by["sha256:evil"])
+	}
+	if strings.Join(by["sha256:mal"], ",") != "203.0.113.9" {
+		t.Fatalf("mal shared_c2 = %v, want [203.0.113.9]", by["sha256:mal"])
+	}
+	if len(by["sha256:dns"]) != 0 {
+		t.Fatalf("internal-only actor must have no shared_c2, got %v", by["sha256:dns"])
+	}
+}
