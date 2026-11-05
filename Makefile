@@ -200,7 +200,7 @@ ci-security: ## G6: vulnerability, license and secret scans
 
 ci-console: ## G7: console backend tests + frontend build + image builds (separate module)
 	cd console/backend && go build ./... && go test ./...
-	cd console/frontend && npm ci && npm run build
+	cd console/frontend && npm ci && npm run test && npm run build
 	docker build -t ariguard-console-backend:ci console/backend
 	docker build -t ariguard-console-frontend:ci console/frontend
 
