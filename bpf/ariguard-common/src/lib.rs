@@ -175,3 +175,15 @@ pub struct ConnDst {
     pub port: u16,
     pub _pad: u16,
 }
+
+/// Observed path of an exec/memfd hook (execve/execveat/memfd_create), written to AG_PATH keyed by
+/// tgid (B3) by the hook wrapper, so the agent can attach the concrete path IOC (the binary that ran,
+/// the fileless object name). `len` is the string length (no NUL), capped at PATTERN_LEN-1; `buf` is
+/// the NUL-terminated path prefix.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PathVal {
+    pub len: u32,
+    pub _pad: u32,
+    pub buf: [u8; PATTERN_LEN],
+}

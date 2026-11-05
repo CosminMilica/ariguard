@@ -19,7 +19,7 @@ import (
 
 // Stream reads AG_AUDIT and writes one JSON line per record to w until ctx is done.
 // Names are read per record, so a reload takes effect on the next line; pods may be nil.
-func Stream(ctx context.Context, m, ppid, conndst *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, reactor audit.Reactor, log *slog.Logger) error {
+func Stream(ctx context.Context, m, ppid, conndst, path *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, reactor audit.Reactor, log *slog.Logger) error {
 	rd, err := cringbuf.NewReader(m)
 	if err != nil {
 		return fmt.Errorf("open audit ring buffer: %w", err)
@@ -63,6 +63,10 @@ func Stream(ctx context.Context, m, ppid, conndst *ebpf.Map, w io.Writer, names 
 					}
 				}
 			}
+		} else if hookHasPath(r.Hook) { // observed path IOC (B3), from AG_PATH
+			if p, ok := lookupPath(path, ev.Pid); ok {
+				ev.Path = audit.PathString(p)
+			}
 		}
 		names.SetComm(ev.CgroupID, ev.Comm)
 		if err := audit.WriteLine(w, ev); err != nil {
@@ -85,6 +89,30 @@ func lookupPpid(m *ebpf.Map, pid uint32) uint32 {
 		return 0
 	}
 	return parent
+}
+
+// hookHasPath reports whether the kernel captures a path for this hook into AG_PATH
+// (execve/execveat/memfd_create — see stash_path). Other hooks either carry no path or are hot-path
+// (openat), so their AG_PATH entry would be stale or absent and must not be attached.
+func hookHasPath(hook uint32) bool {
+	switch hook {
+	case fsm.HookExecve, fsm.HookExecveat, fsm.HookMemfdCreate:
+		return true
+	}
+	return false
+}
+
+// lookupPath returns the observed path recorded for pid in AG_PATH (written by handle() on a
+// path-matching emit), or ok=false if none. Keyed by tgid, like AG_CONNDST.
+func lookupPath(m *ebpf.Map, pid uint32) (fsm.PathVal, bool) {
+	if m == nil {
+		return fsm.PathVal{}, false
+	}
+	var p fsm.PathVal
+	if err := m.Lookup(pid, &p); err != nil {
+		return fsm.PathVal{}, false
+	}
+	return p, true
 }
 
 // lookupConnDst returns the connect destination recorded for pid in AG_CONNDST (written by

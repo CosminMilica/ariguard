@@ -7,9 +7,9 @@
 // no enforcement (that is phase 2, BPF LSM).
 
 use ariguard_common::{
-    AuditRecord, ConnDst, FsmKey, FsmState, HookBindings, Policy, Rule, Transition, ACTION_DENY,
-    ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF,
-    HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE,
+    AuditRecord, ConnDst, FsmKey, FsmState, HookBindings, PathVal, Policy, Rule, Transition,
+    ACTION_DENY, ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE,
+    HOOK_BPF, HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE,
     HOOK_FSMOUNT, HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT,
     HOOK_PTRACE, HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRACKED_WORKLOADS,
     MAX_TRANSITIONS, PATH_ANY, PATH_INET, PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS,
@@ -127,6 +127,12 @@ static AG_PPID: LruHashMap<u32, u32, { MAX_TRACKED_WORKLOADS as usize }> = LruHa
 #[btf_map]
 static AG_CONNDST: LruHashMap<u32, ConnDst, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
 
+// tgid -> observed path of exec/memfd (B3). Written by the execve/execveat/memfd_create wrappers via
+// stash_path (not the shared handler, which is at the verifier's complexity limit). The agent reads
+// it to attach the concrete path IOC to those audit events.
+#[btf_map]
+static AG_PATH: LruHashMap<u32, PathVal, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
+
 // sched_process_fork format: common(8) + parent_comm[16]@8 + parent_pid@24 + child_comm[16]@28
 // + child_pid@44. Records child -> parent so the agent can resolve ppid for any later event.
 #[tracepoint(category = "sched", name = "sched_process_fork")]
@@ -161,6 +167,7 @@ pub fn sw_mount(ctx: TracePointContext) -> u32 {
 
 #[tracepoint(category = "syscalls", name = "sys_enter_execve")]
 pub fn sw_execve(ctx: TracePointContext) -> u32 {
+    stash_path(&ctx, 0); // execve(filename, argv, envp): filename is arg0
     handle(&ctx, HOOK_EXECVE)
 }
 
@@ -193,11 +200,13 @@ pub fn sw_dup3(ctx: TracePointContext) -> u32 {
 
 #[tracepoint(category = "syscalls", name = "sys_enter_memfd_create")]
 pub fn sw_memfd_create(ctx: TracePointContext) -> u32 {
+    stash_path(&ctx, 0); // memfd_create(name, flags): name is arg0
     handle(&ctx, HOOK_MEMFD_CREATE)
 }
 
 #[tracepoint(category = "syscalls", name = "sys_enter_execveat")]
 pub fn sw_execveat(ctx: TracePointContext) -> u32 {
+    stash_path(&ctx, 1); // execveat(dirfd, pathname, argv, envp, flags): pathname is arg1
     handle(&ctx, HOOK_EXECVEAT)
 }
 
@@ -588,6 +597,36 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
         done |= 1 << rule;
     }
     0
+}
+
+// B3: capture the path argument of a low-frequency, high-signal hook (execve/execveat/memfd_create)
+// into AG_PATH keyed by tgid, so the agent attaches the concrete IOC (the binary that ran, the
+// fileless object name). Done in the hook wrapper — like read_connect_dst — to keep it out of the
+// shared handler, which is already at the 5.15 verifier's complexity limit. openat is deliberately
+// excluded: it is the hot path, and a per-openat user read would regress the detector's overhead.
+#[inline(always)]
+fn stash_path(ctx: &TracePointContext, path_arg: u32) {
+    let Some(ptr) = read_arg(ctx, path_arg) else {
+        return;
+    };
+    if ptr == 0 {
+        return;
+    }
+    let mut pv = PathVal {
+        len: 0,
+        _pad: 0,
+        buf: [0u8; PATTERN_LEN],
+    };
+    let len = match unsafe { bpf_probe_read_user_str_bytes(ptr as *const u8, &mut pv.buf) } {
+        Ok(s) => s.len(),
+        Err(_) => return,
+    };
+    if len == 0 {
+        return;
+    }
+    pv.len = len as u32;
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    let _ = AG_PATH.insert(&tgid, &pv, 0);
 }
 
 #[cfg(not(test))]
