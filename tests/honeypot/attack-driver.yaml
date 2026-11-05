@@ -1,0 +1,62 @@
+# Attack-catalog driver (F11 discovery). Replays a catalog of distinct MITRE-style kill-chains
+# against the honeypot so the autonomous loop discovers a *rule per chain* instead of just the one
+# TTP a manual probe happens to run. Each entry fires >= 2 distinct rare syscalls (MIN_LEN) in a set
+# order, so its rare-hook backbone is unique and becomes its own candidate rule.
+#
+# Pairs with honeypot.yaml (needs the honeypot Service). Isolated cluster only. Apply after it:
+#   kubectl apply -f tests/honeypot/honeypot.yaml -f tests/honeypot/attack-driver.yaml
+#
+# Reuses ariguard-honeypot:dev purely for its python3; the driver only makes HTTP calls, so it needs
+# no extra capabilities (the honeypot pod holds SYS_PTRACE for strace).
+#
+# Operating next to an enforcing agent: a chain that matches a curated *enforce* rule gets the decoy
+# killed/quarantined (isolate=on), which stalls discovery. Muting the honeypot (F5) stops that, but a
+# muted pod's fires count as benign in the promotion telemetry, so honeypot-mined rules then retire.
+# A discovery honeypot therefore wants observe-only treatment: run it where the agent runs detect-only
+# (no --enforce), or restrict the catalog to novel chains the curated library does not already enforce.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: attack-driver, namespace: ariguard-honeypot, labels: {app: attack-driver}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: attack-driver}}
+  template:
+    metadata: {labels: {app: attack-driver}}
+    spec:
+      containers:
+        - name: driver
+          image: ariguard-honeypot:dev  # reused: ships python3
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              import urllib.request as u, urllib.parse, time
+              BASE = "http://honeypot.ariguard-honeypot.svc/exec"
+              # aarch64 (asm-generic) syscall numbers for the rare, high-signal hooks.
+              N = dict(unshare=97, setns=268, mount=40, move_mount=429, fsmount=432,
+                       ptrace=117, memfd_create=279, init_module=105, finit_module=273, bpf=280)
+              # One distinct kill-chain backbone per TTP; each -> one candidate rule.
+              TTPS = {
+                  "container-escape-netns": ("unshare", "setns"),
+                  "mount-escape":           ("mount", "move_mount"),
+                  "fsmount-escape":         ("fsmount", "move_mount", "setns"),
+                  "fileless-inject":        ("memfd_create", "ptrace"),
+                  "kernel-module-load":     ("init_module", "finit_module"),
+                  "bpf-tamper-inject":      ("ptrace", "bpf"),
+                  "full-escape":            ("unshare", "mount", "bpf"),
+              }
+              def fire(nums):
+                  inner = 'import ctypes;l=ctypes.CDLL(None);[l.syscall(n) for n in %r]' % (nums,)
+                  cmd = 'python3 -c "%s"' % inner.replace('"', '\\"')
+                  url = BASE + "?" + urllib.parse.urlencode({"cmd": cmd})
+                  u.urlopen(url, timeout=25).read()
+              while True:
+                  for name, hooks in TTPS.items():
+                      try:
+                          fire(tuple(N[h] for h in hooks))
+                          print("fired", name, "->", "-".join(hooks), flush=True)
+                      except Exception as e:  # noqa: BLE001 — never crash the driver loop
+                          print("error", name, e, flush=True)
+                      time.sleep(3)
+                  print("catalog cycle complete", flush=True)
+                  time.sleep(120)
