@@ -234,3 +234,47 @@ def test_build_mines_a_backbone_rule_from_honeypot_traces():
     result = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET), extra_traces=[hp])
     autos = [r.name for r in result.rules if r.name.startswith("auto-")]
     assert any("unshare" in n and "setns" in n for n in autos), f"backbone rule missing: {autos}"
+
+
+def _unshare_setns(label):
+    import ariguard_compiler.trace as T
+
+    return T.Trace(
+        label=label,
+        source="hp",
+        events=(
+            T.Event("execve", path="/usr/bin/unshare"),
+            T.Event("unshare"),
+            T.Event("execve", path="/usr/bin/setns"),
+            T.Event("setns"),
+        ),
+    )
+
+
+def test_benign_honeypot_baseline_suppresses_a_backbone():
+    # the same unshare+setns backbone, but now a benign honeypot trace exhibits it too. It must flow
+    # into the baseline (not be mined as an attack), so the backbone fires on benign and is gated out.
+    attack = _unshare_setns("attack")
+    benign = _unshare_setns("benign")
+    result = loop.build_bundle(
+        rules_dir=str(RULES), corpus=str(FLEET), extra_traces=[attack, benign]
+    )
+    autos = [r.name for r in result.rules if r.name.startswith("auto-")]
+    assert not any("unshare" in n and "setns" in n for n in autos), (
+        f"backbone should be suppressed by the benign baseline: {autos}"
+    )
+
+
+def test_thresholds_propagate_to_promotion():
+    # a window too short for the default (7d/1hit) still promotes once --min-days/--min-hits relax it.
+    base = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET))
+    auto = _auto_name(base)
+    telem = {auto: ShadowMetrics(attack_hits=1, benign_fires=0, days_observed=1.0)}
+
+    held = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET), telemetry=telem)
+    assert held.decisions[auto] == SHADOW
+
+    promoted = loop.build_bundle(
+        rules_dir=str(RULES), corpus=str(FLEET), telemetry=telem, min_days=1.0, min_hits=1
+    )
+    assert promoted.decisions[auto] == ENFORCE

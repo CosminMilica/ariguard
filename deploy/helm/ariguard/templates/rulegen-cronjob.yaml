@@ -39,6 +39,14 @@ spec:
                 {{- with .Values.rulegen.feedsDir }}
                 - --feeds={{ . }}
                 {{- end }}
+                {{- with .Values.rulegen.promotion }}
+                {{- if .minDays }}
+                - --min-days={{ .minDays }}
+                {{- end }}
+                {{- if .minHits }}
+                - --min-hits={{ .minHits }}
+                {{- end }}
+                {{- end }}
                 - --console={{ include "ariguard.consoleUrl" . }}
               {{- if .Values.auth.token }}
               env:
