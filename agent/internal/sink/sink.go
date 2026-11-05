@@ -99,6 +99,7 @@ type QuarantineEvent struct {
 // A nil *Sink is a no-op.
 type Sink struct {
 	base   string
+	token  string
 	info   Registration
 	client *http.Client
 	log    *slog.Logger
@@ -120,6 +121,16 @@ type throttleKey struct {
 }
 
 // New returns a sink posting to baseURL; info carries the static registration fields.
+// SetToken sets the shared bearer token sent on every control-plane request (empty = none).
+func (s *Sink) SetToken(t string) { s.token = t }
+
+// auth adds the bearer token to a control-plane request, if one is configured.
+func (s *Sink) auth(req *http.Request) {
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+}
+
 func New(baseURL string, info Registration, log *slog.Logger) *Sink {
 	return &Sink{
 		base:   strings.TrimRight(baseURL, "/"),
@@ -200,6 +211,7 @@ func (s *Sink) Mutes(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.auth(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -227,6 +239,7 @@ func (s *Sink) Policy(ctx context.Context, have string) (data []byte, version st
 	if err != nil {
 		return nil, "", false, err
 	}
+	s.auth(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, "", false, err
@@ -403,6 +416,7 @@ func (s *Sink) post(ctx context.Context, path string, body any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	s.auth(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return err

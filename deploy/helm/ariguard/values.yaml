@@ -6,6 +6,12 @@ image:
 
 namespace: ariguard-system
 
+# Shared bearer token for the control plane: the console requires it on the agent-facing /api/v1
+# endpoints (policy push/poll, register, audit, traces). Empty = disabled (dev). When set, it is
+# stored in a Secret and injected as ARIGUARD_TOKEN into the console, agents and the rulegen job.
+auth:
+  token: ""
+
 agent:
   image: ariguard-agent
   # true appends --enforce, false runs detect-only.

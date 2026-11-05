@@ -23,6 +23,10 @@ spec:
           image: {{ include "ariguard.image" (dict "root" . "name" .Values.console.backend.image) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["--addr", ":8080", "--db", "/data/ariguard-console.db"]
+          {{- if .Values.auth.token }}
+          env:
+            {{- include "ariguard.authEnvVar" . | nindent 12 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: 8080

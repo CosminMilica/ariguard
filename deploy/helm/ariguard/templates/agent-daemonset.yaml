@@ -61,6 +61,9 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            {{- if .Values.auth.token }}
+            {{- include "ariguard.authEnvVar" . | nindent 12 }}
+            {{- end }}
           ports:
             - name: metrics
               containerPort: 9102
