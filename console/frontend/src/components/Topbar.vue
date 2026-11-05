@@ -15,6 +15,7 @@ const meta = computed(() => {
     events: ['Events', 'terminal states & mitigations'],
     incidents: ['Incidents', 'attack history · what happened'],
     campaigns: ['Campaigns', 'blast radius · spread across pods & namespaces'],
+    fleet: ['Fleet', 'cross-node correlation · one threat active on many agents'],
     timeline: ['Timeline', 'global cross-workload event stream'],
     coverage: ['Coverage', 'detection sensors · ATT&CK × hooks'],
     rules: ['Rules', `compiled bundle · ${store.rules.length} rules`],
