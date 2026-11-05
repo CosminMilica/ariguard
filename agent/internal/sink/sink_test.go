@@ -107,6 +107,29 @@ func TestMutes(t *testing.T) {
 	}
 }
 
+func TestObserveNamespaces(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/observe-namespaces" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`["ariguard-honeypot","ns-b"]`))
+	}))
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+	got, err := s.ObserveNamespaces(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "ariguard-honeypot" || got[1] != "ns-b" {
+		t.Fatalf("observe-namespaces = %v", got)
+	}
+	var nilS *Sink
+	if ns, err := nilS.ObserveNamespaces(context.Background()); err != nil || ns != nil {
+		t.Errorf("nil sink ObserveNamespaces = %v, %v", ns, err)
+	}
+}
+
 func TestPolicy(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/policy" {
