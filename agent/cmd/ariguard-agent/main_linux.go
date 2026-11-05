@@ -83,6 +83,7 @@ func run(log *slog.Logger) error {
 	metricsAddr := flag.String("metrics-addr", "", `Prometheus listen address such as ":9102" (empty: disabled)`)
 	bpfStats := flag.Bool("bpf-stats", false, "enable BPF_STATS_RUN_TIME and expose per-program run-time metrics (small per-event overhead)")
 	sinkURL := flag.String("sink-url", "", `console base URL such as "http://console:8080" (empty: disabled)`)
+	authToken := flag.String("auth-token", os.Getenv("ARIGUARD_TOKEN"), "shared bearer token for the console control plane (empty: none)")
 	isolate := flag.String("isolate", "off", "autonomous workload isolation on a confirmed terminal mitigation: off|dryrun|on (on applies a deny-all NetworkPolicy; dryrun only labels the pod; needs Kubernetes API access)")
 	isolateFallback := flag.String("isolate-fallback", "off", "extra isolation for CNIs that ignore NetworkPolicy (e.g. kindnet): off|evict (evict deletes the quarantined pod to cut its network now; destructive)")
 	policySync := flag.Bool("policy-sync", true, "poll the console for a newer policy bundle and hot-swap it (control plane, F7; needs --sink-url)")
@@ -153,6 +154,7 @@ func run(log *slog.Logger) error {
 			AuditRingBytes: int(obj.Maps.Audit.MaxEntries()),
 			MetricsAddr:    sink.AdvertiseAddr(*metricsAddr, os.Getenv),
 		}, log)
+		snk.SetToken(*authToken)
 		snk.SetBundle(sink.RulesFromBundle(bundle))
 		snk.Register(ctx)
 		out = io.MultiWriter(out, snk)

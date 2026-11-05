@@ -21,6 +21,14 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- end -}}
 {{- end -}}
 
+{{- define "ariguard.authEnvVar" -}}
+- name: ARIGUARD_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: ariguard-auth
+      key: token
+{{- end -}}
+
 {{- define "ariguard.consoleUrl" -}}
 {{- if .Values.rulegen.consoleUrl -}}
 {{- .Values.rulegen.consoleUrl -}}

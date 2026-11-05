@@ -40,6 +40,10 @@ spec:
                 - --feeds={{ . }}
                 {{- end }}
                 - --console={{ include "ariguard.consoleUrl" . }}
+              {{- if .Values.auth.token }}
+              env:
+                {{- include "ariguard.authEnvVar" . | nindent 16 }}
+              {{- end }}
               {{- with .Values.rulegen.resources }}
               resources:
                 {{- toYaml . | nindent 16 }}

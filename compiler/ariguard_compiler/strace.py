@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.error
@@ -132,6 +133,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefix", default="sess", help="strace -o file prefix (default: sess)")
     parser.add_argument("--label", default=trace.ATTACK, choices=[trace.ATTACK, trace.BENIGN])
     parser.add_argument("--console", help="console base URL; POST traces to /api/v1/traces")
+    parser.add_argument(
+        "--token", default=os.environ.get("ARIGUARD_TOKEN", ""), help="control-plane bearer token"
+    )
     parser.add_argument("--state", help="file remembering posted traces (default: <dir>/.posted)")
     parser.add_argument("--out", help="also append the JSONL here")
     args = parser.parse_args(argv)
@@ -154,6 +158,8 @@ def main(argv: list[str] | None = None) -> int:
         url = f"{args.console.rstrip('/')}/api/v1/traces"
         req = urllib.request.Request(url, data=body.encode(), method="POST")
         req.add_header("Content-Type", "application/x-ndjson")
+        if args.token:
+            req.add_header("Authorization", "Bearer " + args.token)
         try:
             with urllib.request.urlopen(req, timeout=30):
                 pass

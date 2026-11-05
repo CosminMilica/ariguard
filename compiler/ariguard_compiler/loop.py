@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -39,8 +40,18 @@ NS_PER_DAY = 86_400 * 1_000_000_000
 # --- console I/O (F7) -------------------------------------------------------------------------
 
 
+def _request(
+    url: str, *, data: bytes | None = None, method: str, token: str
+) -> urllib.request.Request:
+    """Build a control-plane request carrying the shared bearer token, if one is set."""
+    req = urllib.request.Request(url, data=data, method=method)
+    if token:
+        req.add_header("Authorization", "Bearer " + token)
+    return req
+
+
 def pull_audit(
-    console: str, *, since: int = 0, limit: int = 20_000, timeout: float = 30.0
+    console: str, *, since: int = 0, limit: int = 20_000, timeout: float = 30.0, token: str = ""
 ) -> list[dict]:
     """Pull raw audit events (JSONL) from the console for a mining pass.
 
@@ -48,28 +59,30 @@ def pull_audit(
     id. An empty/204 response yields ``[]``.
     """
     url = f"{console.rstrip('/')}/api/v1/audit/export?since={int(since)}&limit={int(limit)}"
-    req = urllib.request.Request(url, method="GET")
+    req = _request(url, method="GET", token=token)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
     return [json.loads(line) for line in body.splitlines() if line.strip()]
 
 
 def pull_traces(
-    console: str, *, since: int = 0, limit: int = 20_000, timeout: float = 30.0
+    console: str, *, since: int = 0, limit: int = 20_000, timeout: float = 30.0, token: str = ""
 ) -> list[trace.Trace]:
     """Pull honeypot-captured full-syscall traces (attack-labeled) for mining new chains."""
     url = f"{console.rstrip('/')}/api/v1/traces/export?since={int(since)}&limit={int(limit)}"
-    req = urllib.request.Request(url, method="GET")
+    req = _request(url, method="GET", token=token)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
     objs = [json.loads(line) for line in body.splitlines() if line.strip()]
     return trace.from_records(objs, default_label=trace.ATTACK)
 
 
-def fetch_telemetry(console: str, *, timeout: float = 30.0) -> dict[str, ShadowMetrics]:
+def fetch_telemetry(
+    console: str, *, timeout: float = 30.0, token: str = ""
+) -> dict[str, ShadowMetrics]:
     """Read per-rule observed behavior from the console and map it to :class:`ShadowMetrics`."""
     url = f"{console.rstrip('/')}/api/v1/rules/telemetry"
-    req = urllib.request.Request(url, method="GET")
+    req = _request(url, method="GET", token=token)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         rows = json.loads(resp.read().decode("utf-8") or "[]")
     return {r["rule"]: _metrics(r) for r in rows}
@@ -85,10 +98,10 @@ def _metrics(row: dict) -> ShadowMetrics:
     )
 
 
-def push_bundle(console: str, bundle: bytes, *, timeout: float = 30.0) -> str:
+def push_bundle(console: str, bundle: bytes, *, timeout: float = 30.0, token: str = "") -> str:
     """PUT the compiled bundle to the control plane (F7); returns the stored version."""
     url = f"{console.rstrip('/')}/api/v1/policy"
-    req = urllib.request.Request(url, data=bundle, method="PUT")
+    req = _request(url, data=bundle, method="PUT", token=token)
     req.add_header("Content-Type", "application/octet-stream")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.headers.get("X-Policy-Version", "")
@@ -265,6 +278,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--corpus", help="labeled trace corpus to mine (fleet baseline + honeypot)")
     parser.add_argument("--feeds", help="directory of community Sigma rules to ingest")
     parser.add_argument("--console", help="console base URL; pull telemetry, push the bundle (F7)")
+    parser.add_argument(
+        "--token", default=os.environ.get("ARIGUARD_TOKEN", ""), help="control-plane bearer token"
+    )
     parser.add_argument("--honeypot", help="console base URL to pull honeypot traces from and mine")
     parser.add_argument("--out", help="also write the compiled bundle here")
     parser.add_argument("--name-prefix", default="auto")
@@ -279,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     telemetry: dict[str, ShadowMetrics] = {}
     if args.console and not args.dry_run:
         try:
-            telemetry = fetch_telemetry(args.console)
+            telemetry = fetch_telemetry(args.console, token=args.token)
         except (urllib.error.URLError, OSError) as exc:
             print(
                 f"ariguard-rulegen-loop: telemetry fetch failed, treating all as shadow: {exc}",
@@ -290,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     extra_traces: list[trace.Trace] = []
     if honeypot_url:
         try:
-            extra_traces = pull_traces(honeypot_url)
+            extra_traces = pull_traces(honeypot_url, token=args.token)
             if extra_traces:
                 print(f"pulled {len(extra_traces)} honeypot trace(s) from {honeypot_url}")
         except (urllib.error.URLError, OSError) as exc:
@@ -325,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.console and not args.dry_run:
         try:
-            version = push_bundle(args.console, result.bundle)
+            version = push_bundle(args.console, result.bundle, token=args.token)
         except (urllib.error.URLError, OSError) as exc:
             print(f"ariguard-rulegen-loop: push failed: {exc}", file=sys.stderr)
             return 1

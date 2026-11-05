@@ -20,6 +20,8 @@ import (
 func main() {
 	dbPath := flag.String("db", "./ariguard-console.db", "SQLite database file")
 	addr := flag.String("addr", ":8080", "HTTP listen address")
+	authToken := flag.String("auth-token", os.Getenv("ARIGUARD_TOKEN"),
+		"shared bearer token required on the /api/v1 control-plane endpoints (empty = disabled)")
 	flag.Parse()
 
 	db, err := store.Open(*dbPath)
@@ -40,7 +42,12 @@ func main() {
 		log.Printf("serving static frontend from ./public")
 	}
 
-	srv := &http.Server{Addr: *addr, Handler: api.CORS(mux)}
+	if *authToken == "" {
+		log.Printf("WARNING: no --auth-token set; the /api/v1 control-plane endpoints are unauthenticated")
+	} else {
+		log.Printf("control-plane auth enabled on %s*", ingest.AuthPrefix)
+	}
+	srv := &http.Server{Addr: *addr, Handler: api.CORS(ingest.Auth(*authToken, mux))}
 	go func() {
 		<-ctx.Done()
 		srv.Shutdown(context.Background())
