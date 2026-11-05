@@ -57,6 +57,9 @@ rulegen:
 
 console:
   enabled: true
+  # Delete audit events / metric samples / honeypot traces older than this so the SQLite DB stays
+  # bounded on a long-running console. Empty keeps everything forever.
+  retention: "168h"
   storage:
     size: 1Gi
     # Empty uses the cluster default StorageClass.
