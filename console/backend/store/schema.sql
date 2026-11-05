@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS mutes (
   pod TEXT PRIMARY KEY
 );
 
+-- Observe-only namespaces: the agent detects but never kills or quarantines pods here, yet their
+-- events still count as attack traffic (unlike muted pods). Lets a discovery honeypot run alongside
+-- an enforcing fleet so its mined rules both appear and promote.
+CREATE TABLE IF NOT EXISTS observe_namespaces (
+  namespace TEXT PRIMARY KEY
+);
+
 CREATE TABLE IF NOT EXISTS quarantine (
   node TEXT NOT NULL,
   namespace TEXT NOT NULL DEFAULT '',

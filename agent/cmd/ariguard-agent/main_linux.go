@@ -45,19 +45,23 @@ const muteInterval = 10 * time.Second
 // policyInterval is how often the agent polls the control plane for a newer policy bundle (F7).
 const policyInterval = 15 * time.Second
 
-// mutedCgroups is a podsync.Source that drops muted pods' cgroups so AG_PODS (the kill-gate)
-// never contains them. src lists the node's pod cgroups; pods resolves cgroup id -> pod name.
+// mutedCgroups is a podsync.Source that drops muted pods' cgroups so AG_PODS (the kill-gate) never
+// contains them. src lists the node's pod cgroups; pods resolves cgroup id -> pod metadata. It also
+// drops pods in observe-only namespaces: those are detected but never killed (yet, unlike mutes,
+// their events still count as attack, because they are not on the mute list the console reads).
 type mutedCgroups struct {
-	src   podsync.Source
-	pods  *podmeta.Resolver
-	muted *mutes.Set
+	src     podsync.Source
+	pods    *podmeta.Resolver
+	muted   *mutes.Set
+	observe *mutes.Set // observe-only namespaces
 }
 
 func (m mutedCgroups) PodCgroups() []uint64 {
 	all := m.src.PodCgroups()
 	out := make([]uint64, 0, len(all))
 	for _, c := range all {
-		if m.muted.Has(m.pods.Lookup(context.Background(), c).Pod) {
+		info := m.pods.Lookup(context.Background(), c)
+		if m.muted.Has(info.Pod) || m.observe.Has(info.Namespace) {
 			continue
 		}
 		out = append(out, c)
@@ -227,11 +231,16 @@ func run(log *slog.Logger) error {
 	// from AG_PODS below) nor quarantined (responder consults muteSet.Has). Muting an already
 	// quarantined pod also releases it (F6), via the responder's ReleaseLoop.
 	muteSet := mutes.New()
+	// Observe-only namespaces: like mutes (no kill, no quarantine, release of an already-isolated
+	// pod), but keyed by namespace and NOT reported as muted, so the console still counts the traffic
+	// as attack. Lets a discovery honeypot run next to an enforcing fleet and still promote its rules.
+	observeSet := mutes.New()
 	if snk != nil {
 		go mutes.Poll(ctx, muteSet, muteInterval, snk.Mutes, log)
+		go mutes.Poll(ctx, observeSet, muteInterval, snk.ObserveNamespaces, log)
 	}
 
-	rsp := responder.New(client, isolateMode, isolateFb, muteSet.Has, func(ns, pod, rule, mode string) {
+	rsp := responder.New(client, isolateMode, isolateFb, muteSet.Has, observeSet.Has, func(ns, pod, rule, mode string) {
 		snk.Quarantine(context.Background(), ns, pod, rule, mode)
 	}, func(ns, pod string) {
 		snk.Release(context.Background(), ns, pod)
@@ -246,10 +255,11 @@ func run(log *slog.Logger) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Kill-gating honors mutes: drop muted pods' cgroups from AG_PODS so no SIGKILL fires.
+		// Kill-gating honors mutes and observe-only namespaces: drop their cgroups from AG_PODS so no
+		// SIGKILL fires.
 		src := podsync.Source(pods)
 		if snk != nil {
-			src = mutedCgroups{src: pods, pods: pods, muted: muteSet}
+			src = mutedCgroups{src: pods, pods: pods, muted: muteSet, observe: observeSet}
 		}
 		podsync.Run(ctx, podmap.Map{M: obj.Maps.Pods}, src, podSyncInterval, log)
 	}()

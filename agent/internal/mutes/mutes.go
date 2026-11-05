@@ -1,6 +1,7 @@
 // Package mutes holds the operator allowlist the agent pulls from the console: muted pods are
 // neither killed (excluded from AG_PODS) nor quarantined (the responder skips them). Safe for
-// concurrent use.
+// concurrent use. Set is a plain concurrent string set, also reused for the observe-only namespace
+// list (same no-kill/no-quarantine treatment, but keyed by namespace and still counted as attack).
 package mutes
 
 import (

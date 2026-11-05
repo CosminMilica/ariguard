@@ -70,7 +70,7 @@ func TestParseFallback(t *testing.T) {
 
 func TestEvictFallbackDeletesPod(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	r := New(c, ModeOn, FallbackEvict, nil, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackEvict, nil, nil, nil, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -89,7 +89,7 @@ func TestReleaseLoopUnquarantinesMutedPod(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
 	var muted bool
 	released := make(chan string, 1)
-	r := New(c, ModeOn, FallbackOff, func(string) bool { return muted }, nil,
+	r := New(c, ModeOn, FallbackOff, func(string) bool { return muted }, nil, nil,
 		func(ns, pod string) { released <- ns + "/" + pod }, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	waitLabeled(t, c, "ariguard-eval", "attacker")
@@ -120,18 +120,67 @@ func TestReleaseLoopUnquarantinesMutedPod(t *testing.T) {
 	}
 }
 
+func TestObserveNamespaceSkipsQuarantine(t *testing.T) {
+	c := fake.NewSimpleClientset(newPod("ariguard-honeypot", "decoy"))
+	r := New(c, ModeOn, FallbackOff, nil, func(ns string) bool { return ns == "ariguard-honeypot" }, nil, nil, quiet)
+	r.React(context.Background(), kill("ariguard-honeypot", "decoy"))
+
+	p, err := c.CoreV1().Pods("ariguard-honeypot").Get(context.Background(), "decoy", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if p.Labels[QuarantineLabel] != "" {
+		t.Error("a pod in an observe-only namespace must not be quarantined")
+	}
+	r.mu.Lock()
+	n := len(r.seen)
+	r.mu.Unlock()
+	if n != 0 {
+		t.Errorf("observe-only namespace should not be tracked as quarantined, seen=%d", n)
+	}
+}
+
+func TestReleaseLoopReleasesObservedNamespace(t *testing.T) {
+	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
+	var observe bool
+	released := make(chan string, 1)
+	r := New(c, ModeOn, FallbackOff, nil, func(string) bool { return observe }, nil,
+		func(ns, pod string) { released <- ns + "/" + pod }, quiet)
+	r.React(context.Background(), kill("ariguard-eval", "attacker"))
+	waitLabeled(t, c, "ariguard-eval", "attacker")
+
+	observe = true // the namespace is now observe-only -> the quarantined pod must be released
+	r.reconcileReleases(context.Background())
+
+	p, err := c.CoreV1().Pods("ariguard-eval").Get(context.Background(), "attacker", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if p.Labels[QuarantineLabel] != "" {
+		t.Error("released pod must not keep the quarantine label")
+	}
+	select {
+	case got := <-released:
+		if got != "ariguard-eval/attacker" {
+			t.Errorf("release reported %q", got)
+		}
+	default:
+		t.Error("release callback not fired")
+	}
+}
+
 func TestNewOffIsNil(t *testing.T) {
-	if r := New(fake.NewSimpleClientset(), ModeOff, FallbackOff, nil, nil, nil, quiet); r != nil {
+	if r := New(fake.NewSimpleClientset(), ModeOff, FallbackOff, nil, nil, nil, nil, quiet); r != nil {
 		t.Error("New with ModeOff should return nil")
 	}
-	if r := New(nil, ModeOn, FallbackOff, nil, nil, nil, quiet); r != nil {
+	if r := New(nil, ModeOn, FallbackOff, nil, nil, nil, nil, quiet); r != nil {
 		t.Error("New with nil client should return nil")
 	}
 }
 
 func TestReactOnQuarantines(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	r := New(c, ModeOn, FallbackOff, nil, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	waitLabeled(t, c, "ariguard-eval", "attacker")
 	if !hasNetpol(c, "ariguard-eval") {
@@ -141,7 +190,7 @@ func TestReactOnQuarantines(t *testing.T) {
 
 func TestReactDryRunLabelsButNoNetpol(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	r := New(c, ModeDryRun, FallbackOff, nil, nil, nil, quiet)
+	r := New(c, ModeDryRun, FallbackOff, nil, nil, nil, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	waitLabeled(t, c, "ariguard-eval", "attacker")
 	if hasNetpol(c, "ariguard-eval") {
@@ -162,7 +211,7 @@ func TestReactSkips(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := fake.NewSimpleClientset(newPod(tc.ev.Namespace, "a"))
-			r := New(c, ModeOn, FallbackOff, nil, nil, nil, quiet)
+			r := New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet)
 			r.React(context.Background(), tc.ev)
 			time.Sleep(100 * time.Millisecond)
 			if p, err := c.CoreV1().Pods(tc.ev.Namespace).Get(context.Background(), "a", metav1.GetOptions{}); err == nil && p.Labels[QuarantineLabel] != "" {
@@ -174,7 +223,7 @@ func TestReactSkips(t *testing.T) {
 
 func TestReactRespectsMute(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "muted"))
-	r := New(c, ModeOn, FallbackOff, func(pod string) bool { return pod == "muted" }, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, func(pod string) bool { return pod == "muted" }, nil, nil, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "muted"))
 	time.Sleep(100 * time.Millisecond)
 	if p, _ := c.CoreV1().Pods("ariguard-eval").Get(context.Background(), "muted", metav1.GetOptions{}); p.Labels[QuarantineLabel] != "" {
@@ -184,7 +233,7 @@ func TestReactRespectsMute(t *testing.T) {
 
 func TestReactIdempotent(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	r := New(c, ModeOn, FallbackOff, nil, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet)
 	for i := 0; i < 3; i++ {
 		r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	}

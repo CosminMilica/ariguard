@@ -228,6 +228,34 @@ func (s *Sink) Mutes(ctx context.Context) ([]string, error) {
 	return pods, nil
 }
 
+// ObserveNamespaces fetches the observe-only namespace list from the console. Pods in these
+// namespaces are detected but never killed or quarantined, yet their events still count as attack
+// traffic (unlike muted pods). Safe on a nil *Sink (returns an empty list).
+func (s *Sink) ObserveNamespaces(ctx context.Context) ([]string, error) {
+	if s == nil {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/api/v1/observe-namespaces", nil)
+	if err != nil {
+		return nil, err
+	}
+	s.auth(req)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		return nil, fmt.Errorf("GET /api/v1/observe-namespaces: status %d", resp.StatusCode)
+	}
+	var namespaces []string
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&namespaces); err != nil {
+		return nil, fmt.Errorf("decode observe-namespaces: %w", err)
+	}
+	return namespaces, nil
+}
+
 // Policy fetches the control plane's current bundle (F7). “have“ is the version the agent
 // already applied; the server answers 304 (changed=false) when it still matches, 204 (no policy
 // pushed; changed=false, data nil) or 200 with the bytes and the new version. Safe on a nil *Sink.
