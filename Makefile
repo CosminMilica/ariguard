@@ -78,6 +78,10 @@ bench: build-bench ## Run the performance benchmark suite against a live agent (
 bench-go: ## Run the deterministic Go micro-benchmarks (CPU hot paths; no kernel, CI-safe)
 	go test -run '^$$' -bench=. -benchmem ./pkg/fsm/...
 
+fuzz: ## Fuzz the untrusted-input parser (control-plane bundle) for FUZZTIME (default 60s)
+	go test -run '^$$' -fuzz=FuzzUnmarshalBundle -fuzztime=$(FUZZTIME) ./pkg/fsm/
+FUZZTIME ?= 60s
+
 image: ## Package the agent image (run make build-agent build-bpf golden first; in the VM)
 	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/Dockerfile -t $(IMAGE) .
 
