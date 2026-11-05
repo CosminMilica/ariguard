@@ -1,0 +1,17 @@
+program,run_count,run_time_ns,ns_per_run
+sw_bpf,24807,81151729,3271
+sw_connect,155,2044793,13192
+sw_dup2,0,0,0
+sw_dup3,16,94750,5921
+sw_execve,16,72707,4544
+sw_execveat,0,0,0
+sw_finit_module,0,0,0
+sw_fsmount,0,0,0
+sw_init_module,0,0,0
+sw_memfd_create,0,0,0
+sw_mount,0,0,0
+sw_move_mount,0,0,0
+sw_openat,10123920,33117126002,3271
+sw_ptrace,0,0,0
+sw_setns,0,0,0
+sw_unshare,0,0,0

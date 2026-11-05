@@ -69,6 +69,15 @@ HELM_CHART ?= deploy/helm/ariguard
 HELM_RELEASE ?= ariguard
 HELM_NS ?= ariguard-system
 
+build-bench: ## Build the ariguard-bench performance CLI (Linux VM)
+	GOOS=linux go build -o bin/ariguard-bench ./agent/cmd/ariguard-bench
+
+bench: build-bench ## Run the performance benchmark suite against a live agent (in the VM, as root)
+	bash tests/bench/run.sh
+
+bench-go: ## Run the deterministic Go micro-benchmarks (CPU hot paths; no kernel, CI-safe)
+	go test -run '^$$' -bench=. -benchmem ./pkg/fsm/...
+
 image: ## Package the agent image (run make build-agent build-bpf golden first; in the VM)
 	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/Dockerfile -t $(IMAGE) .
 
