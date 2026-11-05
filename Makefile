@@ -59,6 +59,7 @@ ingest: ## Fetch MITRE ATT&CK and regenerate the Linux technique catalog
 
 IMAGE ?= ariguard-agent:dev
 RULEGEN_IMAGE ?= ariguard-rulegen:dev
+HONEYPOT_IMAGE ?= ariguard-honeypot:dev
 IMAGE_PLATFORM ?= linux/$(shell go env GOARCH)
 
 # Release / Helm
@@ -73,6 +74,9 @@ image: ## Package the agent image (run make build-agent build-bpf golden first; 
 
 rulegen-image: ## Package the autonomous rule-generation CronJob image (F11)
 	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/rulegen.Dockerfile -t $(RULEGEN_IMAGE) .
+
+honeypot-image: ## Package the honeypot decoy image (F11 discovery; isolated cluster only)
+	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/honeypot/Dockerfile -t $(HONEYPOT_IMAGE) deploy/docker/honeypot
 
 kind-load: ## Load the agent image into the kind cluster (in the VM)
 	kind load docker-image $(IMAGE) --name ariguard-dev

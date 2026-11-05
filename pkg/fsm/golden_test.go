@@ -46,7 +46,7 @@ func TestGoldenPolicy(t *testing.T) {
 			[]string{"normal", "connected", "stdio_redirected", "compromised"},
 			[]string{"outbound_connect", "stdio_redirect", "shell_exec"}},
 	}
-	if len(b.Rules) != len(rules) || len(b.Transitions) != 38 || len(b.Bindings) != 24 {
+	if len(b.Rules) != len(rules) || len(b.Transitions) != 38 || len(b.Bindings) != 23 {
 		t.Fatalf("rules=%d transitions=%d bindings=%d", len(b.Rules), len(b.Transitions), len(b.Bindings))
 	}
 	for i, want := range rules {
@@ -86,7 +86,7 @@ func TestGoldenPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	counts := map[uint32]uint32{
-		HookOpenat: 3, HookSetns: 1, HookUnshare: 1, HookMount: 1, HookExecve: 7, HookConnect: 4,
+		HookOpenat: 3, HookSetns: 1, HookUnshare: 1, HookMount: 1, HookExecve: 6, HookConnect: 4,
 		HookDup2: 1, HookDup3: 1, HookMemfdCreate: 1, HookExecveat: 2, HookFsmount: 1, HookMoveMount: 1,
 	}
 	for h := range NumHooks {
@@ -123,13 +123,13 @@ func TestGoldenPolicy(t *testing.T) {
 		t.Errorf("fileless execveat binding = %+v", e)
 	}
 	var shells []string
-	for _, e := range g[HookExecve].Entries[3:7] {
+	for _, e := range g[HookExecve].Entries[3:6] {
 		if e.Rule != 2 || e.PathArg != 0 || e.PathKind != PathPrefix {
 			t.Errorf("shell binding = %+v", e)
 		}
 		shells = append(shells, string(e.Pattern[:e.PathLen]))
 	}
-	if got := strings.Join(shells, " "); got != "/bin/sh /bin/bash /usr/bin/sh /usr/bin/bash" {
+	if got := strings.Join(shells, " "); got != "/bin/sh /bin/bash /usr/bin/bash" {
 		t.Errorf("shell prefixes = %s", got)
 	}
 }

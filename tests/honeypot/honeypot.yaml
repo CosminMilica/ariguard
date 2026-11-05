@@ -1,0 +1,46 @@
+# Honeypot (F11 discovery). A deliberately-vulnerable decoy: injected commands run under strace, a
+# capture sidecar parses the syscalls into attack-labeled traces and POSTs them to the console, and
+# the rule-generation CronJob mines them for new kill-chains. Isolated cluster only.
+#
+# Images (kind): make honeypot-image rulegen-image, then kind load both. The capture sidecar reuses
+# the rulegen image (it ships ariguard-trace-capture).
+apiVersion: v1
+kind: Namespace
+metadata: {name: ariguard-honeypot}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: honeypot, namespace: ariguard-honeypot, labels: {app: honeypot}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: honeypot}}
+  template:
+    metadata: {labels: {app: honeypot}}
+    spec:
+      containers:
+        - name: app
+          image: ariguard-honeypot:dev
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          securityContext: {capabilities: {add: ["SYS_PTRACE"]}}  # strace needs ptrace
+          volumeMounts: [{name: traces, mountPath: /traces}]
+        - name: capture
+          image: ariguard-rulegen:dev
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                ariguard-trace-capture --dir /traces --label attack \
+                  --console "http://ariguard-console-backend.ariguard-system.svc:8080" || true
+                sleep 20
+              done
+          volumeMounts: [{name: traces, mountPath: /traces}]
+      volumes: [{name: traces, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: honeypot, namespace: ariguard-honeypot}
+spec:
+  selector: {app: honeypot}
+  ports: [{port: 80, targetPort: 8080}]

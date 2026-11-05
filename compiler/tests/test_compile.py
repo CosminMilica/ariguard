@@ -77,7 +77,7 @@ def test_header_bytes():
         "03000000"  # version 3
         "03000000"  # num_rules 3
         "26000000"  # num_transitions 38
-        "18000000"  # num_bindings 24
+        "17000000"  # num_bindings 23
         "06020000"  # meta_len 518
         "0000000000000000"  # reserved
     )
@@ -137,10 +137,9 @@ def test_binding_order_and_padding():
     assert b[17] == (h["connect"], 2, 0, 1, PATH_INET, 0, *any_arg, b"\0" * 32)
     assert b[18] == (h["dup2"], 2, 1, *no_path, 1, 2, 2, b"\0" * 32)
     assert b[19] == (h["dup3"], 2, 1, *no_path, 1, 2, 2, b"\0" * 32)
-    assert [x[9].rstrip(b"\0") for x in b[20:24]] == [
+    assert [x[9].rstrip(b"\0") for x in b[20:23]] == [
         b"/bin/sh",
         b"/bin/bash",
-        b"/usr/bin/sh",
         b"/usr/bin/bash",
     ]
 
@@ -155,7 +154,7 @@ def test_bindings_per_hook():
         h["setns"]: 1,
         h["unshare"]: 1,
         h["mount"]: 1,
-        h["execve"]: 7,
+        h["execve"]: 6,
         h["connect"]: 4,
         h["dup2"]: 1,
         h["dup3"]: 1,
@@ -196,7 +195,7 @@ def test_cli(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", argv)
     cli.main()
     assert "compiled 2 rules (container-escape, reverse-shell)" in capsys.readouterr().out
-    assert _header(out.read_bytes())[2:5] == (2, 32, 20)
+    assert _header(out.read_bytes())[2:5] == (2, 32, 19)
 
 
 def test_cli_reports_rule_errors(tmp_path, monkeypatch):

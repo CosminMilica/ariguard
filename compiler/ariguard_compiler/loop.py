@@ -54,6 +54,18 @@ def pull_audit(
     return [json.loads(line) for line in body.splitlines() if line.strip()]
 
 
+def pull_traces(
+    console: str, *, since: int = 0, limit: int = 20_000, timeout: float = 30.0
+) -> list[trace.Trace]:
+    """Pull honeypot-captured full-syscall traces (attack-labeled) for mining new chains."""
+    url = f"{console.rstrip('/')}/api/v1/traces/export?since={int(since)}&limit={int(limit)}"
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read().decode("utf-8")
+    objs = [json.loads(line) for line in body.splitlines() if line.strip()]
+    return trace.from_records(objs, default_label=trace.ATTACK)
+
+
 def fetch_telemetry(console: str, *, timeout: float = 30.0) -> dict[str, ShadowMetrics]:
     """Read per-rule observed behavior from the console and map it to :class:`ShadowMetrics`."""
     url = f"{console.rstrip('/')}/api/v1/rules/telemetry"
@@ -127,6 +139,7 @@ def build_bundle(
     corpus: str | None = None,
     feeds_dir: str | None = None,
     telemetry: dict[str, ShadowMetrics] | None = None,
+    extra_traces: list[trace.Trace] | None = None,
     name_prefix: str = "auto",
     **autogen_kwargs,
 ) -> BuildResult:
@@ -142,9 +155,14 @@ def build_bundle(
 
     feed_result = feeds.ingest_dir(feeds_dir) if feeds_dir else feeds.FeedResult()
 
+    # The mining corpus: the baked fixture scenarios (benign baseline + honeypot/attack) plus any
+    # live honeypot traces pulled from the console. The benign baseline the miner needs comes from
+    # the corpus; honeypot traces add fresh attack behavior to discover novel chains against it.
+    traces = list(trace.load(corpus)) if corpus else []
+    traces += extra_traces or []
+
     auto: list[AutoRule] = []
-    if corpus:
-        traces = trace.load(corpus)
+    if traces:
         auto = [
             r
             for r in autogen.autogenerate(traces, name_prefix=name_prefix, **autogen_kwargs)
@@ -228,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--corpus", help="labeled trace corpus to mine (fleet baseline + honeypot)")
     parser.add_argument("--feeds", help="directory of community Sigma rules to ingest")
     parser.add_argument("--console", help="console base URL; pull telemetry, push the bundle (F7)")
+    parser.add_argument("--honeypot", help="console base URL to pull honeypot traces from and mine")
     parser.add_argument("--out", help="also write the compiled bundle here")
     parser.add_argument("--name-prefix", default="auto")
     parser.add_argument("--scope", default="process", choices=["process", "cgroup"])
@@ -248,6 +267,19 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
+    honeypot_url = args.honeypot or args.console
+    extra_traces: list[trace.Trace] = []
+    if honeypot_url:
+        try:
+            extra_traces = pull_traces(honeypot_url)
+            if extra_traces:
+                print(f"pulled {len(extra_traces)} honeypot trace(s) from {honeypot_url}")
+        except (urllib.error.URLError, OSError) as exc:
+            print(
+                f"ariguard-rulegen-loop: honeypot pull failed, mining corpus only: {exc}",
+                file=sys.stderr,
+            )
+
     try:
         result = build_bundle(
             rules_dir=args.rules_dir,
@@ -255,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             corpus=args.corpus,
             feeds_dir=args.feeds,
             telemetry=telemetry,
+            extra_traces=extra_traces,
             name_prefix=args.name_prefix,
             scope=args.scope,
             window_seconds=args.window_seconds,

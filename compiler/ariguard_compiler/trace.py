@@ -136,6 +136,11 @@ def load(path: str | Path) -> list[Trace]:
     return load_dir(p) if p.is_dir() else load_jsonl(p)
 
 
+def from_records(objs: list[dict], default_label: str | None = None) -> list[Trace]:
+    """Parse already-decoded trace objects (e.g. pulled from the console) into traces."""
+    return [_run(o, f"record[{i}]", default_label) for i, o in enumerate(objs)]
+
+
 def from_audit(lines: list[dict], label: str) -> list[Trace]:
     """Group agent audit-event objects into per-process traces (live capture of covered events).
 
