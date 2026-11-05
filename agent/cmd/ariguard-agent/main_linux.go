@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -122,12 +123,23 @@ func run(log *slog.Logger) error {
 		Bindings:    obj.Maps.Bindings,
 	}
 
+	// enforceMode is the live fleet mode: the launch flag initially, then whatever the console's
+	// global toggle sets (hot-swapped below). lastBundle holds the bytes last written to the kernel
+	// so a mode switch can re-apply them under the new mode. Both are guarded by policyMu once the
+	// goroutines below start; here, before any goroutine, no lock is needed.
+	enforceMode := &atomic.Bool{}
+	enforceMode.Store(*enforce)
+
 	var names audit.Names
-	bundle, err := applyBundle(maps, &names, *bundlePath, *enforce)
+	lastBundle, err := os.ReadFile(*bundlePath)
+	if err != nil {
+		return fmt.Errorf("read bundle: %w", err)
+	}
+	bundle, err := applyBundleData(maps, &names, lastBundle, enforceMode.Load())
 	if err != nil {
 		return err
 	}
-	log.Info("policy applied", "bundle", *bundlePath, "enforce", *enforce)
+	log.Info("policy applied", "bundle", *bundlePath, "enforce", enforceMode.Load())
 
 	if err := obj.Attach(); err != nil {
 		return err
@@ -152,7 +164,7 @@ func run(log *slog.Logger) error {
 		snk = sink.New(*sinkURL, sink.Registration{
 			Node:           sink.NodeName(os.Getenv),
 			Kernel:         kernelRelease(),
-			Enforce:        *enforce,
+			Enforce:        enforceMode.Load(),
 			HooksAttached:  obj.HooksAttached(),
 			HooksTotal:     int(fsm.NumHooks),
 			AuditRingBytes: int(obj.Maps.Audit.MaxEntries()),
@@ -178,8 +190,16 @@ func run(log *slog.Logger) error {
 			case <-ctx.Done():
 				return
 			case <-hup:
+				data, rerr := os.ReadFile(*bundlePath)
+				if rerr != nil {
+					log.Error("policy reload failed", "bundle", *bundlePath, "err", rerr)
+					continue
+				}
 				policyMu.Lock()
-				b, err := applyBundle(maps, &names, *bundlePath, *enforce)
+				b, err := applyBundleData(maps, &names, data, enforceMode.Load())
+				if err == nil {
+					lastBundle = data
+				}
 				policyMu.Unlock()
 				if err != nil {
 					log.Error("policy reload failed", "bundle", *bundlePath, "err", err)
@@ -198,7 +218,10 @@ func run(log *slog.Logger) error {
 			snk.Policy,
 			func(data []byte) error {
 				policyMu.Lock()
-				b, err := applyBundleData(maps, &names, data, *enforce)
+				b, err := applyBundleData(maps, &names, data, enforceMode.Load())
+				if err == nil {
+					lastBundle = data
+				}
 				policyMu.Unlock()
 				if err != nil {
 					return err
@@ -208,6 +231,44 @@ func run(log *slog.Logger) error {
 				return nil
 			}, log)
 		log.Info("control-plane policy sync enabled", "interval", policyInterval)
+	}
+
+	// Global enforcement mode (F10 UI): poll the console's desired detect/enforce mode and hot-swap
+	// the current bundle under it, no restart. Unset on the console = keep the launch-flag mode.
+	if snk != nil {
+		go func() {
+			tick := time.NewTicker(muteInterval)
+			defer tick.Stop()
+			switchMode := func() {
+				enf, set, err := snk.Mode(ctx)
+				if err != nil || !set || enf == enforceMode.Load() {
+					return
+				}
+				policyMu.Lock()
+				b, aerr := applyBundleData(maps, &names, lastBundle, enf)
+				if aerr == nil {
+					enforceMode.Store(enf)
+				}
+				policyMu.Unlock()
+				if aerr != nil {
+					log.Error("enforcement mode switch failed", "enforce", enf, "err", aerr)
+					return
+				}
+				snk.SetEnforce(enf)
+				snk.SetBundle(sink.RulesFromBundle(b))
+				snk.Register(ctx)
+				log.Info("enforcement mode switched", "enforce", enf)
+			}
+			switchMode()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					switchMode()
+				}
+			}
+		}()
 	}
 
 	client, err := podmeta.NewClient(*kubeconfig)
@@ -290,14 +351,6 @@ func run(log *slog.Logger) error {
 	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, obj.Maps.ConnDst, out, &names, pods, rsp, log)
 	stop()
 	return err
-}
-
-func applyBundle(m policy.Maps, names *audit.Names, path string, enforce bool) (fsm.Bundle, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fsm.Bundle{}, fmt.Errorf("read bundle: %w", err)
-	}
-	return applyBundleData(m, names, data, enforce)
 }
 
 // applyBundleData hot-swaps a bundle given as bytes (from a file or the control plane) into the

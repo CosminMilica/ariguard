@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS observe_namespaces (
   namespace TEXT PRIMARY KEY
 );
 
+-- Operator key/value settings. Holds the desired fleet enforcement mode ("enforce_mode" = enforce |
+-- detect): agents poll it and hot-swap the current bundle under the new mode, no restart. Absent =
+-- agents keep their launch-flag mode.
+CREATE TABLE IF NOT EXISTS config (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS quarantine (
   node TEXT NOT NULL,
   namespace TEXT NOT NULL DEFAULT '',

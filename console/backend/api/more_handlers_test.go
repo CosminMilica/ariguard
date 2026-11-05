@@ -161,3 +161,34 @@ func TestObserveNamespaceRoundTrip(t *testing.T) {
 		t.Fatalf("still observed: %+v", agent)
 	}
 }
+
+func TestEnforceModeRoundTrip(t *testing.T) {
+	srv := newServer(t)
+	type mode struct {
+		Enforce bool `json:"enforce"`
+		Set     bool `json:"set"`
+	}
+	// unset by default: agents keep their own mode
+	var m mode
+	mustGet(t, srv, "/api/v1/mode", &m)
+	if m.Set {
+		t.Fatalf("mode should start unset: %+v", m)
+	}
+	// set to detect
+	mustPost(t, srv, "/api/mode", `{"enforce":false}`)
+	mustGet(t, srv, "/api/v1/mode", &m) // agent poll endpoint
+	if !m.Set || m.Enforce {
+		t.Fatalf("after detect: %+v", m)
+	}
+	var ui mode
+	mustGet(t, srv, "/api/mode", &ui) // frontend read endpoint
+	if !ui.Set || ui.Enforce {
+		t.Fatalf("ui after detect: %+v", ui)
+	}
+	// flip to enforce
+	mustPost(t, srv, "/api/mode", `{"enforce":true}`)
+	mustGet(t, srv, "/api/v1/mode", &m)
+	if !m.Set || !m.Enforce {
+		t.Fatalf("after enforce: %+v", m)
+	}
+}

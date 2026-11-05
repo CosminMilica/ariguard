@@ -107,6 +107,43 @@ func TestMutes(t *testing.T) {
 	}
 }
 
+func TestMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/mode" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"enforce":true,"set":true}`))
+	}))
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+	enf, set, err := s.Mode(context.Background())
+	if err != nil || !enf || !set {
+		t.Fatalf("Mode = %v, %v, %v", enf, set, err)
+	}
+	var nilS *Sink
+	if enf, set, err := nilS.Mode(context.Background()); err != nil || enf || set {
+		t.Errorf("nil sink Mode = %v, %v, %v", enf, set, err)
+	}
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+	if _, _, err := New(errSrv.URL, Registration{Node: "n1"}, quiet).Mode(context.Background()); err == nil {
+		t.Error("Mode should error on a non-2xx status")
+	}
+}
+
+func TestSetEnforce(t *testing.T) {
+	s := New("http://unused", Registration{Node: "n1", Enforce: false}, quiet)
+	s.SetEnforce(true)
+	if !s.Registration().Enforce {
+		t.Error("SetEnforce(true) should be reflected in the registration")
+	}
+	var nilS *Sink
+	nilS.SetEnforce(true) // must not panic
+}
+
 func TestObserveNamespaces(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/observe-namespaces" {

@@ -41,6 +41,8 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/observe-namespaces", a.observeNamespaces)
 	mux.HandleFunc("POST /api/observe-namespaces", a.observeNamespace)
 	mux.HandleFunc("DELETE /api/observe-namespaces/{ns}", a.unobserveNamespace)
+	mux.HandleFunc("GET /api/mode", a.mode)
+	mux.HandleFunc("POST /api/mode", a.setMode)
 }
 
 // CORS allows any origin to call the API (used by the Vite dev server).

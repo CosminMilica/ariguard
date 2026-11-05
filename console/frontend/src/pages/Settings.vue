@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { store, fmtBytes, observeNamespace, unobserveNamespace } from '../api'
+import { store, fmtBytes, observeNamespace, unobserveNamespace, setMode } from '../api'
 
 const s = computed(() => store.settings)
 const ruleCount = computed(() => {
@@ -26,13 +26,13 @@ function addNs() {
 
 <template>
   <section class="card">
-    <div class="hd"><h2>Agent</h2><span class="c">read-only</span></div>
+    <div class="hd"><h2>Agent</h2></div>
     <div class="bd">
       <div v-if="!s" class="empty">Waiting for the backend…</div>
       <template v-else>
         <div class="setrow">
-          <div><div class="t">Enforcement mode</div><div class="d">Detect observes only; Enforce kills at terminal states (pod cgroups only). Reflects the agent; not changeable here.</div></div>
-          <div class="ctl"><div class="seg ro"><button disabled :class="{ on: !s.enforce }">Detect</button><button disabled :class="{ on: s.enforce }">Enforce</button></div></div>
+          <div><div class="t">Enforcement mode</div><div class="d">Detect observes only; Enforce kills at terminal states (pod cgroups only). Sets the fleet mode on the control plane; agents hot-swap it, no restart. The shown state reflects the agents.</div></div>
+          <div class="ctl"><div class="seg"><button :class="{ on: !s.enforce }" @click="setMode(false)">Detect</button><button :class="{ on: s.enforce }" @click="setMode(true)">Enforce</button></div></div>
         </div>
         <div class="setrow"><div><div class="t">Metrics endpoint</div><div class="d">Prometheus scrape target.</div></div><div class="ctl kv">{{ s.metrics_addr || '—' }}</div></div>
         <div class="setrow"><div><div class="t">Policy bundle</div><div class="d">Active compiled ruleset.</div></div><div class="ctl kv">{{ ruleCount }} rules<template v-if="hooks"> · {{ hooks }} hooks</template></div></div>

@@ -268,6 +268,11 @@ export async function unmute(pod: string) {
   await refresh()
 }
 
+export async function setMode(enforce: boolean) {
+  await req('POST', '/api/mode', {}, { enforce })
+  await refresh()
+}
+
 export async function observeNamespace(ns: string) {
   await req('POST', '/api/observe-namespaces', {}, { namespace: ns })
   if (!store.observeNamespaces.includes(ns)) store.observeNamespaces.push(ns)
