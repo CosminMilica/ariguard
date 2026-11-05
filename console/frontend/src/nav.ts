@@ -43,6 +43,7 @@ export const NAV: NavSection[] = [
     pages: [
       { page: 'coverage', label: 'Coverage' },
       { page: 'rules', label: 'Rules' },
+      { page: 'autonomy', label: 'Autonomy' },
       { page: 'nodes', label: 'Nodes' },
       { page: 'performance', label: 'Performance' },
     ],
