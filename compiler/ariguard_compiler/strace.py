@@ -42,7 +42,9 @@ _NOISE_OPENAT = (
     "/etc/ld.so.cache",
 )
 
-_CALL = re.compile(r"^(?:\[pid\s+\d+\]\s+)?(\w+)\(")
+# strace prefixes a syscall line with the pid under -f ("1234  execve(...") or -ff with a header
+# ("[pid 1234] execve(...") — strip either, bare or empty, before the syscall name.
+_CALL = re.compile(r"^(?:\[pid\s+\d+\]\s+|\d+\s+)?(\w+)\(")
 _QUOTED = re.compile(r'"((?:[^"\\]|\\.)*)"')
 _LOOPBACK = re.compile(r'inet_addr\("127\.')
 
@@ -73,23 +75,29 @@ def parse_text(text: str, *, label: str = trace.ATTACK, source: str = "honeypot"
 
 
 def parse_dir(
-    path: str | Path, *, prefix: str = "st", label: str = trace.ATTACK, skip: set[str] = frozenset()
+    path: str | Path,
+    *,
+    prefix: str = "sess",
+    label: str = trace.ATTACK,
+    skip: set[str] = frozenset(),
 ) -> tuple[list[trace.Trace], set[str]]:
-    """Parse every ``<prefix>.<pid>`` strace file under ``path`` not already in ``skip``.
+    """Parse each ``<prefix>*`` strace file under ``path`` not already in ``skip`` into one trace.
 
-    Returns the new traces and the names consumed, so a caller can post each file once. A file is
-    keyed by ``name:size`` so a still-growing trace is re-read when it next grows.
+    With ``strace -f`` (follow, single file per session), each file holds one whole attack session
+    time-ordered across its processes — so a cross-process chain (e.g. unshare then mount in two
+    children) is captured as one trace. Files are keyed by ``name:size`` so a still-growing session
+    is re-read when it next grows.
     """
     out: list[trace.Trace] = []
     seen: set[str] = set()
-    for f in sorted(Path(path).glob(f"{prefix}.*")):
+    for f in sorted(Path(path).glob(f"{prefix}*")):
+        if not f.is_file():
+            continue
         key = f"{f.name}:{f.stat().st_size}"
         seen.add(key)
         if key in skip:
             continue
-        t = parse_text(
-            f.read_text(errors="replace"), label=label, source=f"{prefix}:{f.suffix.lstrip('.')}"
-        )
+        t = parse_text(f.read_text(errors="replace"), label=label, source=f.name)
         if t.events:
             out.append(t)
     return out, seen
@@ -121,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         "the console for the rule-generation loop to mine.",
     )
     parser.add_argument("--dir", required=True, help="directory of strace -ff files")
-    parser.add_argument("--prefix", default="st", help="strace -o prefix (default: st)")
+    parser.add_argument("--prefix", default="sess", help="strace -o file prefix (default: sess)")
     parser.add_argument("--label", default=trace.ATTACK, choices=[trace.ATTACK, trace.BENIGN])
     parser.add_argument("--console", help="console base URL; POST traces to /api/v1/traces")
     parser.add_argument("--state", help="file remembering posted traces (default: <dir>/.posted)")

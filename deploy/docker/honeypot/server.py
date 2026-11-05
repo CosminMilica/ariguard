@@ -37,9 +37,11 @@ class Handler(BaseHTTPRequestHandler):
         if cmd:
             # command injection by design: run it under strace so the attack's syscalls are captured.
             try:
+                # -f (follow, single file) keeps the whole session time-ordered across processes,
+                # so a cross-process chain (unshare in one child, mount in the next) stays together.
+                sess = f"{TRACES}/sess-{int(time.time() * 1000)}"
                 r = subprocess.run(
-                    ["strace", "-ff", "-qq", "-e", f"trace={HOOKS}", "-o", f"{TRACES}/st",
-                     "sh", "-c", cmd],
+                    ["strace", "-f", "-qq", "-e", f"trace={HOOKS}", "-o", sess, "sh", "-c", cmd],
                     capture_output=True, timeout=15,
                 )
                 out = r.stdout or b"ok\n"

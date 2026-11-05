@@ -214,3 +214,23 @@ def test_cli_dry_run_writes_a_bundle(tmp_path):
     )
     assert rc == 0
     assert out.read_bytes()[:4]  # a non-empty bundle was written
+
+
+def test_build_mines_a_backbone_rule_from_honeypot_traces():
+    # a honeypot attack (rare-hook backbone) passed as extra_traces becomes a shadow rule, even
+    # though contrast mining alone would not (a single sparse trace has no frequency support).
+    import ariguard_compiler.trace as T
+
+    hp = T.Trace(
+        label="attack",
+        source="hp",
+        events=(
+            T.Event("execve", path="/usr/bin/unshare"),
+            T.Event("unshare"),
+            T.Event("execve", path="/usr/bin/setns"),
+            T.Event("setns"),
+        ),
+    )
+    result = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET), extra_traces=[hp])
+    autos = [r.name for r in result.rules if r.name.startswith("auto-")]
+    assert any("unshare" in n and "setns" in n for n in autos), f"backbone rule missing: {autos}"

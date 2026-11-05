@@ -169,6 +169,25 @@ def build_bundle(
             if r.accepted
         ]
 
+    # Per-trace discovery from the honeypot: contrast mining needs a pattern frequent across many
+    # runs, which sparse honeypot traffic rarely gives, so also turn each attack's rare-hook backbone
+    # into a candidate directly (gated against the corpus benign baseline).
+    if extra_traces:
+        baseline = [t for t in traces if t.label == trace.BENIGN]
+        known = {r.candidate.hooks for r in auto}
+        auto += [
+            r
+            for r in autogen.backbone_rules(
+                extra_traces,
+                baseline,
+                known_chains=known,
+                name_prefix=name_prefix,
+                scope=autogen_kwargs.get("scope", "process"),
+                window_seconds=autogen_kwargs.get("window_seconds", mine.DEFAULT_WINDOW_SECONDS),
+            )
+            if r.accepted and r.candidate.hooks not in known
+        ]
+
     # Decide each proposal's mode from its measured behavior, newest rule = shadow by default.
     proposals: list[tuple[Rule, str, str]] = []  # (rule, name, mode), highest score first
     decisions: dict[str, str] = {}

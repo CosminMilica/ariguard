@@ -5,10 +5,10 @@ from __future__ import annotations
 from ariguard_compiler import strace, trace
 
 SAMPLE = """\
-execve("/bin/sh", ["sh", "-c", "echo x > /etc/cron.d/evil"], 0x7ffc) = 0
-openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
-openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY) = 3
-openat(AT_FDCWD, "/etc/cron.d/evil", O_WRONLY|O_CREAT|O_TRUNC, 0644) = 3
+16    execve("/bin/sh", ["sh", "-c", "echo x > /etc/cron.d/evil"], 0x7ffc) = 0
+16    openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
+17    openat(AT_FDCWD, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY) = 3
+17    openat(AT_FDCWD, "/etc/cron.d/evil", O_WRONLY|O_CREAT|O_TRUNC, 0644) = 3
 connect(5, {sa_family=AF_INET, sin_port=htons(4444), sin_addr=inet_addr("10.0.0.9")}, 16) = 0
 connect(6, {sa_family=AF_INET, sin_port=htons(80), sin_addr=inet_addr("127.0.0.1")}, 16) = 0
 getpid()                                = 7
@@ -29,13 +29,14 @@ def test_parse_text_extracts_hooks_paths_and_inet():
     assert all(not (e.path or "").startswith(("/lib/", "/etc/ld.so")) for e in t.events)
 
 
-def test_parse_dir_one_trace_per_pid_and_dedup(tmp_path):
-    (tmp_path / "st.100").write_text(SAMPLE)
-    (tmp_path / "st.101").write_text('openat(AT_FDCWD, "/tmp/x", O_RDONLY) = 3\n')
-    (tmp_path / "st.102").write_text("")  # empty → dropped
+def test_parse_dir_one_trace_per_session_and_dedup(tmp_path):
+    (tmp_path / "sess-100").write_text(SAMPLE)
+    (tmp_path / "sess-101").write_text('[pid 9] openat(AT_FDCWD, "/tmp/x", O_RDONLY) = 3\n')
+    (tmp_path / "sess-102").write_text("")  # empty → dropped
+    (tmp_path / ".posted").write_text("x")  # state file is not a session file
     traces, seen = strace.parse_dir(tmp_path)
     assert len(traces) == 2
-    assert len(seen) == 3  # all files keyed, even the empty one
+    assert len(seen) == 3  # the three sess files keyed, even the empty one (.posted ignored)
     # a second pass skipping what we saw yields nothing new
     again, _ = strace.parse_dir(tmp_path, skip=seen)
     assert again == []
@@ -50,7 +51,7 @@ def test_to_jsonl_roundtrips_through_the_loader():
 
 
 def test_cli_writes_jsonl(tmp_path):
-    (tmp_path / "st.100").write_text(SAMPLE)
+    (tmp_path / "sess-100").write_text(SAMPLE)
     out = tmp_path / "out.jsonl"
     rc = strace.main(["--dir", str(tmp_path), "--out", str(out)])
     assert rc == 0
