@@ -9,6 +9,11 @@ const ruleCount = computed(() => {
 })
 const hooks = computed(() => store.nodes.reduce((a, n) => Math.max(a, n.hooks_total), 0))
 
+// The toggle reflects the operator's chosen mode immediately; the agents converge within a poll
+// interval. desiredEnforce falls back to the reported agent mode until a mode has been set.
+const desiredEnforce = computed(() => (store.mode.set ? store.mode.enforce : !!s.value?.enforce))
+const applying = computed(() => store.mode.set && !!s.value && store.mode.enforce !== s.value.enforce)
+
 // Per-namespace enforcement: namespaces seen on workloads plus any already observe-only, sorted.
 const namespaces = computed(() => {
   const set = new Set<string>(store.observeNamespaces)
@@ -31,8 +36,8 @@ function addNs() {
       <div v-if="!s" class="empty">Waiting for the backend…</div>
       <template v-else>
         <div class="setrow">
-          <div><div class="t">Enforcement mode</div><div class="d">Detect observes only; Enforce kills at terminal states (pod cgroups only). Sets the fleet mode on the control plane; agents hot-swap it, no restart. The shown state reflects the agents.</div></div>
-          <div class="ctl"><div class="seg"><button :class="{ on: !s.enforce }" @click="setMode(false)">Detect</button><button :class="{ on: s.enforce }" @click="setMode(true)">Enforce</button></div></div>
+          <div><div class="t">Enforcement mode</div><div class="d">Detect observes only; Enforce kills at terminal states (pod cgroups only). Sets the fleet mode on the control plane; agents hot-swap it within ~10s, no restart.<span v-if="applying" class="applying"> · applying to agents…</span></div></div>
+          <div class="ctl"><div class="seg"><button :class="{ on: !desiredEnforce }" @click="setMode(false)">Detect</button><button :class="{ on: desiredEnforce }" @click="setMode(true)">Enforce</button></div></div>
         </div>
         <div class="setrow"><div><div class="t">Metrics endpoint</div><div class="d">Prometheus scrape target.</div></div><div class="ctl kv">{{ s.metrics_addr || '—' }}</div></div>
         <div class="setrow"><div><div class="t">Policy bundle</div><div class="d">Active compiled ruleset.</div></div><div class="ctl kv">{{ ruleCount }} rules<template v-if="hooks"> · {{ hooks }} hooks</template></div></div>
@@ -69,6 +74,7 @@ function addNs() {
 
 <style scoped>
 .note { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }
+.applying { color: var(--teal); }
 .ctl.add { display: flex; gap: 6px; }
 .ctl.add input { background: var(--surface); border: 1px solid var(--border); color: inherit; border-radius: 6px; padding: 4px 8px; font-size: 12px; }
 </style>

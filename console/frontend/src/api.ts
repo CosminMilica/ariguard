@@ -104,6 +104,7 @@ export const store = reactive({
   edges: [] as Edge[],
   muted: [] as string[],
   observeNamespaces: [] as string[],
+  mode: { enforce: false, set: false },
   overview: null as Overview | null,
   allWorkloads: [] as Workload[],
   workloads: [] as Workload[],
@@ -201,7 +202,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -221,8 +222,9 @@ export async function refresh() {
       get<Edge[]>('/api/edges'),
       get<Autonomy>('/api/autonomy'),
       get<string[]>('/api/observe-namespaces'),
+      get<{ enforce: boolean; set: boolean }>('/api/mode'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -241,6 +243,7 @@ export async function refresh() {
     if (edg.status === 'fulfilled') store.edges = arr(edg.value)
     if (aut.status === 'fulfilled') store.autonomy = aut.value
     if (obs.status === 'fulfilled') store.observeNamespaces = arr(obs.value)
+    if (md.status === 'fulfilled' && md.value) store.mode = md.value
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()
@@ -269,6 +272,7 @@ export async function unmute(pod: string) {
 }
 
 export async function setMode(enforce: boolean) {
+  store.mode = { enforce, set: true } // optimistic: the agents converge within a poll interval
   await req('POST', '/api/mode', {}, { enforce })
   await refresh()
 }
