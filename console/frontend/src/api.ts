@@ -4,7 +4,7 @@ const BASE: string = (import.meta.env.VITE_API_BASE as string) || 'http://localh
 const POLL_MS = 3000
 
 export type Range = '15m' | '1h' | '24h'
-export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'triage' | 'campaigns' | 'actors' | 'lateral' | 'timeline' | 'coverage' | 'rules' | 'nodes' | 'performance' | 'settings'
+export type Page = 'overview' | 'workloads' | 'events' | 'incidents' | 'triage' | 'campaigns' | 'actors' | 'lateral' | 'timeline' | 'coverage' | 'rules' | 'nodes' | 'performance' | 'autonomy' | 'settings'
 
 export interface Point { t: number; v: number }
 export interface Overview {
@@ -59,6 +59,13 @@ export interface CoverageHook {
   hook: string; attached: boolean; rules: string[]; techniques: string[]; events: number
 }
 export interface Coverage { attached: number; total: number; hooks: CoverageHook[] }
+export interface AutoRule {
+  name: string; scope: string; mode: string; source: string
+  hits: number; distinct_pods: number; benign_fires: number; days_observed: number; status: string
+}
+export interface Autonomy {
+  rules: AutoRule[]; policy_version: string; policy_updated_ns: number; min_days: number; min_hits: number
+}
 export interface ActorTrail {
   image_id: string; image: string; path: string[]
   hops: number; namespaces: number; pods: number; incidents: number; killed: number; blocked: number
@@ -92,6 +99,7 @@ export const store = reactive({
   actors: [] as Actor[],
   containment: null as Containment | null,
   coverage: null as Coverage | null,
+  autonomy: null as Autonomy | null,
   lateral: null as Lateral | null,
   edges: [] as Edge[],
   muted: [] as string[],
@@ -192,7 +200,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -210,8 +218,9 @@ export async function refresh() {
       get<Actor[]>('/api/actors'),
       get<Lateral>('/api/lateral'),
       get<Edge[]>('/api/edges'),
+      get<Autonomy>('/api/autonomy'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -228,6 +237,7 @@ export async function refresh() {
     if (act.status === 'fulfilled') store.actors = arr(act.value)
     if (lat.status === 'fulfilled') store.lateral = lat.value
     if (edg.status === 'fulfilled') store.edges = arr(edg.value)
+    if (aut.status === 'fulfilled') store.autonomy = aut.value
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()

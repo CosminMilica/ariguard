@@ -14,6 +14,7 @@ import Coverage from './pages/Coverage.vue'
 import ChainModal from './components/ChainModal.vue'
 import RuleModal from './components/RuleModal.vue'
 import Rules from './pages/Rules.vue'
+import Autonomy from './pages/Autonomy.vue'
 import Nodes from './pages/Nodes.vue'
 import Performance from './pages/Performance.vue'
 import Settings from './pages/Settings.vue'
@@ -36,6 +37,7 @@ import { store } from './api'
       <Timeline v-else-if="store.page === 'timeline'" />
       <Coverage v-else-if="store.page === 'coverage'" />
       <Rules v-else-if="store.page === 'rules'" />
+      <Autonomy v-else-if="store.page === 'autonomy'" />
       <Nodes v-else-if="store.page === 'nodes'" />
       <Performance v-else-if="store.page === 'performance'" />
       <Settings v-else />
