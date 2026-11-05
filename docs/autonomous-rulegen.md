@@ -73,11 +73,14 @@ ariguard-rulegen-loop \
   --console http://ariguard-console                        # F7: pull telemetry, push the bundle
 ```
 
-1. **Mining service** — **done**. `build_bundle` runs `autogenerate` over the labeled corpus
-   (fleet baseline + honeypot) and `feeds.ingest_dir` over the community Sigma snapshot, links the
-   curated library + the survivors into one bundle, capped at `MAX_RULES` (library first, then the
-   highest-scoring proposals). Run it on a timer (CronJob) — it is CPU-only and offline but for the
-   two console calls.
+1. **Mining service** — **done**, and scheduled. `build_bundle` runs `autogenerate` over the labeled
+   corpus (fleet baseline + honeypot) and `feeds.ingest_dir` over the community Sigma snapshot, links
+   the curated library + the survivors into one bundle. Admission respects both `MAX_RULES` and the
+   per-hook binding budget (`MAX_BINDINGS_PER_HOOK`): the curated library has priority, so a proposal
+   that would overflow a busy hook (e.g. `execve` at capacity after the F8 library) is skipped this
+   pass rather than failing the build. It runs as a Kubernetes **CronJob** (`deploy/helm`
+   `rulegen.enabled`, image `make rulegen-image`) — CPU-only and offline but for the two console
+   calls, so the fleet's policy stays current with no operator in the loop.
 2. **Live distribution (F7)** — **done**. The console is the control plane: the loop
    `PUT /api/v1/policy` (the compiled bundle), and every agent polls `GET /api/v1/policy?have=<version>`
    every `policyInterval` and hot-swaps a new version into the kernel maps (the existing SIGHUP
@@ -98,7 +101,8 @@ ariguard-rulegen-loop \
    agent "learn mode" capturing the full syscall-hook stream (benign from normal workloads, attack
    from canaries) — a kernel-side change (verifier + perf budget) deliberately deferred.
 
-Distribution, the mining service and the auto-promote telemetry are implemented and tested
-(`compiler/ariguard_compiler/loop.py`, `console/backend/ingest/{policy,export}.go`,
+Distribution, the scheduled mining service (CronJob) and the auto-promote telemetry are implemented
+and tested (`compiler/ariguard_compiler/loop.py`, `deploy/helm/.../rulegen-cronjob.yaml`,
+`console/backend/ingest/{policy,export}.go`,
 `agent/internal/policysync`); full-syscall capture for novel-chain discovery is the one remaining
 piece, tracked as backlog F11.

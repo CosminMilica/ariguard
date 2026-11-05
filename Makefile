@@ -58,6 +58,7 @@ ingest: ## Fetch MITRE ATT&CK and regenerate the Linux technique catalog
 	cd compiler && $(PYTHON) -m ariguard_compiler.ingest_attack --out ../compiler/techniques/attack-linux.yml
 
 IMAGE ?= ariguard-agent:dev
+RULEGEN_IMAGE ?= ariguard-rulegen:dev
 IMAGE_PLATFORM ?= linux/$(shell go env GOARCH)
 
 # Release / Helm
@@ -69,6 +70,9 @@ HELM_NS ?= ariguard-system
 
 image: ## Package the agent image (run make build-agent build-bpf golden first; in the VM)
 	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/Dockerfile -t $(IMAGE) .
+
+rulegen-image: ## Package the autonomous rule-generation CronJob image (F11)
+	docker build --platform $(IMAGE_PLATFORM) -f deploy/docker/rulegen.Dockerfile -t $(RULEGEN_IMAGE) .
 
 kind-load: ## Load the agent image into the kind cluster (in the VM)
 	kind load docker-image $(IMAGE) --name ariguard-dev
@@ -187,6 +191,7 @@ ci-helm: ## G8: Helm chart lint + rendered-manifest schema validation
 	helm lint $(HELM_CHART)
 	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS) | kubeconform -strict -summary -ignore-missing-schemas -
 	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS) --set console.enabled=false >/dev/null
+	helm template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NS) --set rulegen.enabled=true | kubeconform -strict -summary -ignore-missing-schemas -
 
 ci-compiler: ## G9: compiler tests + Sigma rules compile into a bundle that loads within the kernel limits
 	cd compiler && $(PYTHON) -m pytest

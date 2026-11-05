@@ -16,6 +16,7 @@ from ariguard_compiler.autogen import ENFORCE, RETIRE, SHADOW, ShadowMetrics
 
 ROOT = Path(__file__).resolve().parents[2]
 RULES = ROOT / "compiler" / "rules"
+SIGMA_GEN = ROOT / "compiler" / "rules" / "sigma" / "generated"
 FLEET = ROOT / "testdata" / "traces" / "fleet"
 NS_PER_DAY = loop.NS_PER_DAY
 
@@ -45,6 +46,17 @@ def test_build_proposes_mined_rules_in_shadow():
     assert result.decisions[auto] == SHADOW
     rule = next(r for r in result.rules if r.name == auto)
     assert not _has_kill(rule), "a shadow rule must never carry a kill action"
+
+
+def test_skips_a_proposal_when_the_hook_budget_is_full():
+    # The full curated library (hand + generated) fills execve to the per-hook cap, so a mined
+    # execve-ending rule cannot be admitted this pass — it is skipped, not a build failure.
+    result = loop.build_bundle(rules_dir=str(RULES), sigma_dir=str(SIGMA_GEN), corpus=str(FLEET))
+    assert len(result.bundle) > 0
+    assert result.skipped_budget, "expected the mined rule to be skipped on a full binding budget"
+    assert all(not r.name.startswith("auto-") for r in result.rules), (
+        "no mined rule should be added"
+    )
 
 
 def test_promotes_on_clean_telemetry():
