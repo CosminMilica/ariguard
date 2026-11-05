@@ -54,7 +54,9 @@ def test_feed_ingest_skips_bad_rules(tmp_path):
     # never fatal.
     (tmp_path / "garbage.yml").write_text(": not valid yaml : [")
     (tmp_path / "empty.yml").write_text("")
-    (tmp_path / "wrong.yml").write_text("title: x\ndetection: {sel: {syscall: nope}}\ncondition: sel\n")
+    (tmp_path / "wrong.yml").write_text(
+        "title: x\ndetection: {sel: {syscall: nope}}\ncondition: sel\n"
+    )
     result = feeds.ingest_dir(tmp_path)
     assert result.expressible == 0
     assert len(result.skipped) >= 1  # recorded, not raised
