@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -45,19 +46,23 @@ const muteInterval = 10 * time.Second
 // policyInterval is how often the agent polls the control plane for a newer policy bundle (F7).
 const policyInterval = 15 * time.Second
 
-// mutedCgroups is a podsync.Source that drops muted pods' cgroups so AG_PODS (the kill-gate)
-// never contains them. src lists the node's pod cgroups; pods resolves cgroup id -> pod name.
+// mutedCgroups is a podsync.Source that drops muted pods' cgroups so AG_PODS (the kill-gate) never
+// contains them. src lists the node's pod cgroups; pods resolves cgroup id -> pod metadata. It also
+// drops pods in observe-only namespaces: those are detected but never killed (yet, unlike mutes,
+// their events still count as attack, because they are not on the mute list the console reads).
 type mutedCgroups struct {
-	src   podsync.Source
-	pods  *podmeta.Resolver
-	muted *mutes.Set
+	src     podsync.Source
+	pods    *podmeta.Resolver
+	muted   *mutes.Set
+	observe *mutes.Set // observe-only namespaces
 }
 
 func (m mutedCgroups) PodCgroups() []uint64 {
 	all := m.src.PodCgroups()
 	out := make([]uint64, 0, len(all))
 	for _, c := range all {
-		if m.muted.Has(m.pods.Lookup(context.Background(), c).Pod) {
+		info := m.pods.Lookup(context.Background(), c)
+		if m.muted.Has(info.Pod) || m.observe.Has(info.Namespace) {
 			continue
 		}
 		out = append(out, c)
@@ -118,12 +123,23 @@ func run(log *slog.Logger) error {
 		Bindings:    obj.Maps.Bindings,
 	}
 
+	// enforceMode is the live fleet mode: the launch flag initially, then whatever the console's
+	// global toggle sets (hot-swapped below). lastBundle holds the bytes last written to the kernel
+	// so a mode switch can re-apply them under the new mode. Both are guarded by policyMu once the
+	// goroutines below start; here, before any goroutine, no lock is needed.
+	enforceMode := &atomic.Bool{}
+	enforceMode.Store(*enforce)
+
 	var names audit.Names
-	bundle, err := applyBundle(maps, &names, *bundlePath, *enforce)
+	lastBundle, err := os.ReadFile(*bundlePath)
+	if err != nil {
+		return fmt.Errorf("read bundle: %w", err)
+	}
+	bundle, err := applyBundleData(maps, &names, lastBundle, enforceMode.Load())
 	if err != nil {
 		return err
 	}
-	log.Info("policy applied", "bundle", *bundlePath, "enforce", *enforce)
+	log.Info("policy applied", "bundle", *bundlePath, "enforce", enforceMode.Load())
 
 	if err := obj.Attach(); err != nil {
 		return err
@@ -148,7 +164,7 @@ func run(log *slog.Logger) error {
 		snk = sink.New(*sinkURL, sink.Registration{
 			Node:           sink.NodeName(os.Getenv),
 			Kernel:         kernelRelease(),
-			Enforce:        *enforce,
+			Enforce:        enforceMode.Load(),
 			HooksAttached:  obj.HooksAttached(),
 			HooksTotal:     int(fsm.NumHooks),
 			AuditRingBytes: int(obj.Maps.Audit.MaxEntries()),
@@ -174,8 +190,16 @@ func run(log *slog.Logger) error {
 			case <-ctx.Done():
 				return
 			case <-hup:
+				data, rerr := os.ReadFile(*bundlePath)
+				if rerr != nil {
+					log.Error("policy reload failed", "bundle", *bundlePath, "err", rerr)
+					continue
+				}
 				policyMu.Lock()
-				b, err := applyBundle(maps, &names, *bundlePath, *enforce)
+				b, err := applyBundleData(maps, &names, data, enforceMode.Load())
+				if err == nil {
+					lastBundle = data
+				}
 				policyMu.Unlock()
 				if err != nil {
 					log.Error("policy reload failed", "bundle", *bundlePath, "err", err)
@@ -194,7 +218,10 @@ func run(log *slog.Logger) error {
 			snk.Policy,
 			func(data []byte) error {
 				policyMu.Lock()
-				b, err := applyBundleData(maps, &names, data, *enforce)
+				b, err := applyBundleData(maps, &names, data, enforceMode.Load())
+				if err == nil {
+					lastBundle = data
+				}
 				policyMu.Unlock()
 				if err != nil {
 					return err
@@ -204,6 +231,44 @@ func run(log *slog.Logger) error {
 				return nil
 			}, log)
 		log.Info("control-plane policy sync enabled", "interval", policyInterval)
+	}
+
+	// Global enforcement mode (F10 UI): poll the console's desired detect/enforce mode and hot-swap
+	// the current bundle under it, no restart. Unset on the console = keep the launch-flag mode.
+	if snk != nil {
+		go func() {
+			tick := time.NewTicker(muteInterval)
+			defer tick.Stop()
+			switchMode := func() {
+				enf, set, err := snk.Mode(ctx)
+				if err != nil || !set || enf == enforceMode.Load() {
+					return
+				}
+				policyMu.Lock()
+				b, aerr := applyBundleData(maps, &names, lastBundle, enf)
+				if aerr == nil {
+					enforceMode.Store(enf)
+				}
+				policyMu.Unlock()
+				if aerr != nil {
+					log.Error("enforcement mode switch failed", "enforce", enf, "err", aerr)
+					return
+				}
+				snk.SetEnforce(enf)
+				snk.SetBundle(sink.RulesFromBundle(b))
+				snk.Register(ctx)
+				log.Info("enforcement mode switched", "enforce", enf)
+			}
+			switchMode()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					switchMode()
+				}
+			}
+		}()
 	}
 
 	client, err := podmeta.NewClient(*kubeconfig)
@@ -227,11 +292,16 @@ func run(log *slog.Logger) error {
 	// from AG_PODS below) nor quarantined (responder consults muteSet.Has). Muting an already
 	// quarantined pod also releases it (F6), via the responder's ReleaseLoop.
 	muteSet := mutes.New()
+	// Observe-only namespaces: like mutes (no kill, no quarantine, release of an already-isolated
+	// pod), but keyed by namespace and NOT reported as muted, so the console still counts the traffic
+	// as attack. Lets a discovery honeypot run next to an enforcing fleet and still promote its rules.
+	observeSet := mutes.New()
 	if snk != nil {
 		go mutes.Poll(ctx, muteSet, muteInterval, snk.Mutes, log)
+		go mutes.Poll(ctx, observeSet, muteInterval, snk.ObserveNamespaces, log)
 	}
 
-	rsp := responder.New(client, isolateMode, isolateFb, muteSet.Has, func(ns, pod, rule, mode string) {
+	rsp := responder.New(client, isolateMode, isolateFb, muteSet.Has, observeSet.Has, func(ns, pod, rule, mode string) {
 		snk.Quarantine(context.Background(), ns, pod, rule, mode)
 	}, func(ns, pod string) {
 		snk.Release(context.Background(), ns, pod)
@@ -246,10 +316,11 @@ func run(log *slog.Logger) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Kill-gating honors mutes: drop muted pods' cgroups from AG_PODS so no SIGKILL fires.
+		// Kill-gating honors mutes and observe-only namespaces: drop their cgroups from AG_PODS so no
+		// SIGKILL fires.
 		src := podsync.Source(pods)
 		if snk != nil {
-			src = mutedCgroups{src: pods, pods: pods, muted: muteSet}
+			src = mutedCgroups{src: pods, pods: pods, muted: muteSet, observe: observeSet}
 		}
 		podsync.Run(ctx, podmap.Map{M: obj.Maps.Pods}, src, podSyncInterval, log)
 	}()
@@ -280,14 +351,6 @@ func run(log *slog.Logger) error {
 	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, obj.Maps.ConnDst, out, &names, pods, rsp, log)
 	stop()
 	return err
-}
-
-func applyBundle(m policy.Maps, names *audit.Names, path string, enforce bool) (fsm.Bundle, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fsm.Bundle{}, fmt.Errorf("read bundle: %w", err)
-	}
-	return applyBundleData(m, names, data, enforce)
 }
 
 // applyBundleData hot-swaps a bundle given as bytes (from a file or the control plane) into the

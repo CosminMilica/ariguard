@@ -134,3 +134,61 @@ func TestMuteRoundTrip(t *testing.T) {
 		t.Fatalf("still muted: %+v", muted)
 	}
 }
+
+func TestObserveNamespaceRoundTrip(t *testing.T) {
+	srv := newServer(t)
+	mustPost(t, srv, "/api/observe-namespaces", `{"namespace":"ariguard-honeypot"}`)
+	// the frontend reads /api/observe-namespaces; the agent polls /api/v1/observe-namespaces
+	var ui, agent []string
+	mustGet(t, srv, "/api/observe-namespaces", &ui)
+	mustGet(t, srv, "/api/v1/observe-namespaces", &agent)
+	if len(ui) != 1 || ui[0] != "ariguard-honeypot" || len(agent) != 1 || agent[0] != "ariguard-honeypot" {
+		t.Fatalf("ui=%+v agent=%+v", ui, agent)
+	}
+	// empty namespace is rejected
+	resp, _ := http.Post(srv.URL+"/api/observe-namespaces", "application/json", strings.NewReader(`{"namespace":""}`))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty observe: status=%d", resp.StatusCode)
+	}
+	// remove it
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/observe-namespaces/ariguard-honeypot", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("unobserve: status=%d", resp.StatusCode)
+	}
+	mustGet(t, srv, "/api/v1/observe-namespaces", &agent)
+	if len(agent) != 0 {
+		t.Fatalf("still observed: %+v", agent)
+	}
+}
+
+func TestEnforceModeRoundTrip(t *testing.T) {
+	srv := newServer(t)
+	type mode struct {
+		Enforce bool `json:"enforce"`
+		Set     bool `json:"set"`
+	}
+	// unset by default: agents keep their own mode
+	var m mode
+	mustGet(t, srv, "/api/v1/mode", &m)
+	if m.Set {
+		t.Fatalf("mode should start unset: %+v", m)
+	}
+	// set to detect
+	mustPost(t, srv, "/api/mode", `{"enforce":false}`)
+	mustGet(t, srv, "/api/v1/mode", &m) // agent poll endpoint
+	if !m.Set || m.Enforce {
+		t.Fatalf("after detect: %+v", m)
+	}
+	var ui mode
+	mustGet(t, srv, "/api/mode", &ui) // frontend read endpoint
+	if !ui.Set || ui.Enforce {
+		t.Fatalf("ui after detect: %+v", ui)
+	}
+	// flip to enforce
+	mustPost(t, srv, "/api/mode", `{"enforce":true}`)
+	mustGet(t, srv, "/api/v1/mode", &m)
+	if !m.Set || !m.Enforce {
+		t.Fatalf("after enforce: %+v", m)
+	}
+}

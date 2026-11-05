@@ -16,6 +16,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/audit", h.Audit)
 	mux.HandleFunc("POST /api/v1/quarantine", h.Quarantine)
 	mux.HandleFunc("GET /api/v1/mutes", h.Mutes)
+	mux.HandleFunc("GET /api/v1/observe-namespaces", h.ObserveNamespaces)
+	mux.HandleFunc("GET /api/v1/mode", h.Mode)
 	mux.HandleFunc("PUT /api/v1/policy", h.SetPolicy)
 	mux.HandleFunc("GET /api/v1/policy", h.GetPolicy)
 	mux.HandleFunc("GET /api/v1/audit/export", h.AuditExport)

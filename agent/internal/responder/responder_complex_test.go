@@ -23,7 +23,7 @@ func deny(ns, pod string) audit.Event {
 // An enforced deny (not only a kill) must also quarantine.
 func TestReactDenyAlsoQuarantines(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "esc"))
-	New(c, ModeOn, FallbackOff, nil, nil, nil, quiet).React(context.Background(), deny("ariguard-eval", "esc"))
+	New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet).React(context.Background(), deny("ariguard-eval", "esc"))
 	waitLabeled(t, c, "ariguard-eval", "esc")
 }
 
@@ -32,7 +32,7 @@ func TestReactPreservesExistingLabels(t *testing.T) {
 	pod := newPod("ariguard-eval", "attacker")
 	pod.Labels = map[string]string{"app": "attacker", "team": "sec"}
 	c := fake.NewSimpleClientset(pod)
-	New(c, ModeOn, FallbackOff, nil, nil, nil, quiet).React(context.Background(), kill("ariguard-eval", "attacker"))
+	New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet).React(context.Background(), kill("ariguard-eval", "attacker"))
 	waitLabeled(t, c, "ariguard-eval", "attacker")
 	p, _ := c.CoreV1().Pods("ariguard-eval").Get(context.Background(), "attacker", metav1.GetOptions{})
 	if p.Labels["app"] != "attacker" || p.Labels["team"] != "sec" {
@@ -46,7 +46,7 @@ func TestReactPreservesExistingLabels(t *testing.T) {
 // The deny-all NetworkPolicy must select quarantined pods and allow nothing in either direction.
 func TestNetworkPolicySpec(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "attacker"))
-	New(c, ModeOn, FallbackOff, nil, nil, nil, quiet).React(context.Background(), kill("ariguard-eval", "attacker"))
+	New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet).React(context.Background(), kill("ariguard-eval", "attacker"))
 	waitLabeled(t, c, "ariguard-eval", "attacker")
 	np, err := c.NetworkingV1().NetworkPolicies("ariguard-eval").Get(context.Background(), netpolName, metav1.GetOptions{})
 	if err != nil {
@@ -73,7 +73,7 @@ func TestReactReportsOnSuccess(t *testing.T) {
 		got = append(got, fmt.Sprintf("%s/%s/%s/%s", ns, pod, rule, mode))
 		mu.Unlock()
 	}
-	r := New(c, ModeOn, FallbackOff, nil, report, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, nil, nil, report, nil, quiet)
 	for i := 0; i < 3; i++ {
 		r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	}
@@ -108,7 +108,7 @@ func TestReactRetriesAfterFailure(t *testing.T) {
 		}
 		return false, nil, nil // subsequent calls fall through to the default (success)
 	})
-	r := New(c, ModeOn, FallbackOff, nil, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet)
 
 	r.React(context.Background(), kill("ariguard-eval", "attacker"))
 	// After the failed attempt the pod must be eligible again (seen cleared).
@@ -141,7 +141,7 @@ func TestReactConcurrent(t *testing.T) {
 		objs[i] = newPod("ariguard-eval", p)
 	}
 	c := fake.NewSimpleClientset(objs...)
-	r := New(c, ModeOn, FallbackOff, nil, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 60; i++ {
@@ -169,7 +169,7 @@ func TestReactMultipleNamespaces(t *testing.T) {
 	c := fake.NewSimpleClientset(
 		newPod("ns-a", "attacker"), newPod("ns-a", "attacker2"), newPod("ns-b", "attacker"),
 	)
-	r := New(c, ModeOn, FallbackOff, nil, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, nil, nil, nil, nil, quiet)
 	r.React(context.Background(), kill("ns-a", "attacker"))
 	r.React(context.Background(), kill("ns-a", "attacker2"))
 	r.React(context.Background(), kill("ns-b", "attacker"))

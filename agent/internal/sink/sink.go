@@ -143,6 +143,16 @@ func New(baseURL string, info Registration, log *slog.Logger) *Sink {
 	}
 }
 
+// SetEnforce updates the enforcement mode reported by subsequent registrations.
+func (s *Sink) SetEnforce(enforce bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.info.Enforce = enforce
+	s.mu.Unlock()
+}
+
 // SetBundle records the rules reported by subsequent registrations.
 func (s *Sink) SetBundle(rules []Rule) {
 	if s == nil {
@@ -226,6 +236,64 @@ func (s *Sink) Mutes(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("decode mutes: %w", err)
 	}
 	return pods, nil
+}
+
+// ObserveNamespaces fetches the observe-only namespace list from the console. Pods in these
+// namespaces are detected but never killed or quarantined, yet their events still count as attack
+// traffic (unlike muted pods). Safe on a nil *Sink (returns an empty list).
+func (s *Sink) ObserveNamespaces(ctx context.Context) ([]string, error) {
+	if s == nil {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/api/v1/observe-namespaces", nil)
+	if err != nil {
+		return nil, err
+	}
+	s.auth(req)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		return nil, fmt.Errorf("GET /api/v1/observe-namespaces: status %d", resp.StatusCode)
+	}
+	var namespaces []string
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&namespaces); err != nil {
+		return nil, fmt.Errorf("decode observe-namespaces: %w", err)
+	}
+	return namespaces, nil
+}
+
+// Mode fetches the operator's desired fleet enforcement mode from the console. "set" is false when
+// no mode is configured, in which case the agent keeps its launch-flag default. Safe on a nil *Sink.
+func (s *Sink) Mode(ctx context.Context) (enforce, set bool, err error) {
+	if s == nil {
+		return false, false, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/api/v1/mode", nil)
+	if err != nil {
+		return false, false, err
+	}
+	s.auth(req)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return false, false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		return false, false, fmt.Errorf("GET /api/v1/mode: status %d", resp.StatusCode)
+	}
+	var m struct {
+		Enforce bool `json:"enforce"`
+		Set     bool `json:"set"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&m); err != nil {
+		return false, false, fmt.Errorf("decode mode: %w", err)
+	}
+	return m.Enforce, m.Set, nil
 }
 
 // Policy fetches the control plane's current bundle (F7). “have“ is the version the agent

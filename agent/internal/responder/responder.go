@@ -103,13 +103,14 @@ var systemNamespaces = map[string]bool{
 
 // Responder isolates pods on confirmed terminal mitigations. Safe for concurrent use.
 type Responder struct {
-	client   kubernetes.Interface
-	mode     Mode
-	fallback Fallback
-	muted    func(pod string) bool
-	report   func(ns, pod, rule, mode string) // optional: notify the console of a quarantine
-	release  func(ns, pod string)             // optional: notify the console of a release
-	log      *slog.Logger
+	client    kubernetes.Interface
+	mode      Mode
+	fallback  Fallback
+	muted     func(pod string) bool
+	observeNs func(ns string) bool             // observe-only namespaces: never quarantined
+	report    func(ns, pod, rule, mode string) // optional: notify the console of a quarantine
+	release   func(ns, pod string)             // optional: notify the console of a release
+	log       *slog.Logger
 
 	mu   sync.Mutex
 	seen map[string]bool // namespace/pod already quarantined (idempotent)
@@ -117,13 +118,17 @@ type Responder struct {
 
 // New returns a Responder, or nil when mode is off (the stream then skips reaction entirely).
 // report and release, when non-nil, are called after a successful quarantine / release (e.g. to
-// tell the console).
-func New(client kubernetes.Interface, mode Mode, fallback Fallback, muted func(string) bool, report func(ns, pod, rule, mode string), release func(ns, pod string), log *slog.Logger) *Responder {
+// tell the console). observeNs, when non-nil, marks namespaces that are detected but never
+// quarantined (an already-isolated pod in one is released, like a mute).
+func New(client kubernetes.Interface, mode Mode, fallback Fallback, muted func(string) bool, observeNs func(string) bool, report func(ns, pod, rule, mode string), release func(ns, pod string), log *slog.Logger) *Responder {
 	if mode == ModeOff || client == nil {
 		return nil
 	}
-	return &Responder{client: client, mode: mode, fallback: fallback, muted: muted, report: report, release: release, log: log, seen: map[string]bool{}}
+	return &Responder{client: client, mode: mode, fallback: fallback, muted: muted, observeNs: observeNs, report: report, release: release, log: log, seen: map[string]bool{}}
 }
+
+func (r *Responder) isMuted(pod string) bool   { return r.muted != nil && r.muted(pod) }
+func (r *Responder) isObserved(ns string) bool { return r.observeNs != nil && r.observeNs(ns) }
 
 // React quarantines the pod behind a confirmed terminal mitigation. It returns immediately and
 // does the API calls in the background so it never blocks the audit drain.
@@ -137,7 +142,7 @@ func (r *Responder) React(ctx context.Context, e audit.Event) {
 	if e.Pod == "" || e.Namespace == "" || systemNamespaces[e.Namespace] {
 		return
 	}
-	if r.muted != nil && r.muted(e.Pod) {
+	if r.isMuted(e.Pod) || r.isObserved(e.Namespace) {
 		return
 	}
 	key := e.Namespace + "/" + e.Pod
@@ -231,7 +236,7 @@ func (r *Responder) ensureDenyAll(ctx context.Context, ns string) error {
 // reversible: the mute list is the single operator lever (no kill, no quarantine, and release of
 // an already-isolated pod). It runs until ctx is done. A nil Responder is a no-op.
 func (r *Responder) ReleaseLoop(ctx context.Context, interval time.Duration) {
-	if r == nil || r.muted == nil {
+	if r == nil || (r.muted == nil && r.observeNs == nil) {
 		return
 	}
 	tick := time.NewTicker(interval)
@@ -251,8 +256,8 @@ func (r *Responder) reconcileReleases(ctx context.Context) {
 	r.mu.Lock()
 	var toRelease []string
 	for key := range r.seen {
-		_, pod, ok := splitKey(key)
-		if ok && r.muted(pod) {
+		ns, pod, ok := splitKey(key)
+		if ok && (r.isMuted(pod) || r.isObserved(ns)) {
 			toRelease = append(toRelease, key)
 		}
 	}
@@ -270,7 +275,7 @@ func (r *Responder) reconcileReleases(ctx context.Context) {
 		r.mu.Lock()
 		delete(r.seen, key)
 		r.mu.Unlock()
-		r.log.Info("workload released (muted)", "pod", key)
+		r.log.Info("workload released", "pod", key)
 		if r.release != nil {
 			r.release(ns, pod)
 		}
