@@ -22,9 +22,14 @@ const steps = computed(() => (props.chain ?? store.chain).map(s => ({
             <span class="ts">{{ clockNs(s.ts_ns) }}</span>
             <div class="st2">{{ s.state }}</div>
             <div class="sc">{{ s.event }}<template v-if="s.action && s.action !== 'observe'"> · <b>{{ s.action }}{{ s.enforced ? '' : ' (detect)' }}</b></template></div>
+            <div v-if="s.path" class="path mono" :title="s.path">{{ s.path }}</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.path { font-size: 11px; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+</style>

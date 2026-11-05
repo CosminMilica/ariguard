@@ -24,7 +24,7 @@ export interface NodeInfo { node: string; kernel: string; hooks_attached: number
 export interface Settings { enforce: boolean; metrics_addr: string; bundle: { rules: unknown }; audit_ring_bytes: number; kernel: string }
 export interface Incident { pod: string; namespace: string; node: string; owner?: string; app?: string; rule: string; started_ts_ns: number; ended_ts_ns: number; max_state: string; outcome: string; steps: number; quarantined?: boolean }
 export interface Quarantine { node: string; namespace: string; pod: string; rule: string; mode: string; released?: boolean; ts_ns: number }
-export interface ChainStep { ts_ns: number; state: string; event: string; action: string; enforced: boolean; comm?: string; pid?: number; ppid?: number; hook?: string }
+export interface ChainStep { ts_ns: number; state: string; event: string; action: string; enforced: boolean; comm?: string; pid?: number; ppid?: number; hook?: string; path?: string }
 export interface PerfProgram { program: string; runs: number; ns_per_run: number }
 export interface Perf { bpf_map_bytes: number; events_per_sec: number; audit_dropped: number; programs: PerfProgram[] }
 export interface TriageRow {
