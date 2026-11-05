@@ -128,6 +128,15 @@ func TestObserveNamespaces(t *testing.T) {
 	if ns, err := nilS.ObserveNamespaces(context.Background()); err != nil || ns != nil {
 		t.Errorf("nil sink ObserveNamespaces = %v, %v", ns, err)
 	}
+
+	// a non-2xx response is an error, not an empty list (fail-closed; the poller keeps the last set)
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+	if _, err := New(errSrv.URL, Registration{Node: "n1"}, quiet).ObserveNamespaces(context.Background()); err == nil {
+		t.Error("ObserveNamespaces should error on a non-2xx status")
+	}
 }
 
 func TestPolicy(t *testing.T) {
