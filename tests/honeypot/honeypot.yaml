@@ -38,6 +38,48 @@ spec:
           volumeMounts: [{name: traces, mountPath: /traces}]
       volumes: [{name: traces, emptyDir: {}}]
 ---
+# Benign baseline generator (discovery quality). Runs ordinary workload under the same strace so the
+# loop learns what normal activity looks like; its traces are labeled benign and feed the baseline
+# that backbone discovery gates against, suppressing kill-chains that also occur in normal use.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: benign-gen, namespace: ariguard-honeypot, labels: {app: benign-gen}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: benign-gen}}
+  template:
+    metadata: {labels: {app: benign-gen}}
+    spec:
+      containers:
+        - name: gen
+          image: ariguard-honeypot:dev  # reused: ships strace + python3 + sh
+          imagePullPolicy: IfNotPresent
+          securityContext: {capabilities: {add: ["SYS_PTRACE"]}}  # strace needs ptrace
+          command: ["sh", "-c"]
+          args:
+            # The 16 hooked syscalls, mirrored from the honeypot server so benign traces match the ABI.
+            - |
+              HOOKS=openat,connect,execve,execveat,setns,unshare,mount,fsmount,move_mount,ptrace,dup2,dup3,memfd_create,init_module,finit_module,bpf
+              while true; do
+                strace -f -qq -e "trace=$HOOKS" -o "/traces/sess-$(date +%s%3N)" \
+                  sh -c 'cat /etc/hostname /etc/hosts >/dev/null; ls -la /usr/bin >/dev/null 2>&1; python3 -c "open(\"/etc/os-release\").read()"; grep -r root /etc/passwd >/dev/null 2>&1' || true
+                sleep 30
+              done
+          volumeMounts: [{name: traces, mountPath: /traces}]
+        - name: capture
+          image: ariguard-rulegen:dev
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                ariguard-trace-capture --dir /traces --label benign \
+                  --console "http://ariguard-console-backend.ariguard-system.svc:8080" || true
+                sleep 20
+              done
+          volumeMounts: [{name: traces, mountPath: /traces}]
+      volumes: [{name: traces, emptyDir: {}}]
+---
 apiVersion: v1
 kind: Service
 metadata: {name: honeypot, namespace: ariguard-honeypot}

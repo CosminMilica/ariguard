@@ -50,6 +50,12 @@ rulegen:
   feedsDir: ""
   # Empty defaults to the in-cluster console backend.
   consoleUrl: ""
+  # Shadow-to-enforce promotion gate: a proposal promotes only once it has observed for at least
+  # minDays and caught at least minHits real attacks (and never fired on benign). Empty uses the
+  # loop defaults (7 days / 1 hit). Lower them to promote faster in a demo or a short soak.
+  promotion:
+    minDays: ""
+    minHits: ""
   resources:
     requests:
       cpu: 50m

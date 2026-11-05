@@ -154,6 +154,8 @@ def build_bundle(
     telemetry: dict[str, ShadowMetrics] | None = None,
     extra_traces: list[trace.Trace] | None = None,
     name_prefix: str = "auto",
+    min_days: float = 7.0,
+    min_hits: int = 1,
     **autogen_kwargs,
 ) -> BuildResult:
     """One deterministic loop pass: learn + ingest + build (+ promote), returning the linked bundle.
@@ -184,14 +186,17 @@ def build_bundle(
 
     # Per-trace discovery from the honeypot: contrast mining needs a pattern frequent across many
     # runs, which sparse honeypot traffic rarely gives, so also turn each attack's rare-hook backbone
-    # into a candidate directly (gated against the corpus benign baseline).
-    if extra_traces:
+    # into a candidate directly (gated against the corpus + honeypot benign baseline). Only attack
+    # traces seed backbones; benign honeypot traffic flows into the baseline above to suppress chains
+    # that also occur in normal activity.
+    attack_extra = [t for t in (extra_traces or []) if t.label == trace.ATTACK]
+    if attack_extra:
         baseline = [t for t in traces if t.label == trace.BENIGN]
         known = {r.candidate.hooks for r in auto}
         auto += [
             r
             for r in autogen.backbone_rules(
-                extra_traces,
+                attack_extra,
                 baseline,
                 known_chains=known,
                 name_prefix=name_prefix,
@@ -205,14 +210,14 @@ def build_bundle(
     proposals: list[tuple[Rule, str, str]] = []  # (rule, name, mode), highest score first
     decisions: dict[str, str] = {}
     for fr in feed_result.rules:
-        mode = _decide(fr.name, telemetry)
+        mode = _decide(fr.name, telemetry, min_days=min_days, min_hits=min_hits)
         if mode == RETIRE:
             decisions[fr.name] = RETIRE
             continue
         decisions[fr.name] = mode
         proposals.append((fr, fr.name, mode))  # feed rules keep their authored actions
     for ar in sorted(auto, key=lambda r: -r.candidate.score):
-        mode = _decide(ar.name, telemetry)
+        mode = _decide(ar.name, telemetry, min_days=min_days, min_hits=min_hits)
         decisions[ar.name] = mode
         if mode == RETIRE:
             continue
@@ -258,10 +263,16 @@ def build_bundle(
     return BuildResult(rules, bundle, auto, decisions, feed_result.skipped, skipped_budget)
 
 
-def _decide(name: str, telemetry: dict[str, ShadowMetrics]) -> str:
+def _decide(
+    name: str,
+    telemetry: dict[str, ShadowMetrics],
+    *,
+    min_days: float = 7.0,
+    min_hits: int = 1,
+) -> str:
     """A proposed rule's mode: shadow until the console's telemetry promotes or retires it."""
     m = telemetry.get(name)
-    return decide_mode(m) if m else SHADOW
+    return decide_mode(m, min_days=min_days, min_hits=min_hits) if m else SHADOW
 
 
 # --- CLI ---------------------------------------------------------------------------------------
@@ -286,6 +297,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name-prefix", default="auto")
     parser.add_argument("--scope", default="process", choices=["process", "cgroup"])
     parser.add_argument("--window-seconds", type=int, default=mine.DEFAULT_WINDOW_SECONDS)
+    parser.add_argument(
+        "--min-days",
+        type=float,
+        default=7.0,
+        help="minimum shadow age (days) before a proposal may promote to enforce",
+    )
+    parser.add_argument(
+        "--min-hits",
+        type=int,
+        default=1,
+        help="minimum shadow fires on attack traffic before a proposal may promote",
+    )
     parser.add_argument("--dry-run", action="store_true", help="build and report, never push")
     args = parser.parse_args(argv)
 
@@ -324,6 +347,8 @@ def main(argv: list[str] | None = None) -> int:
             telemetry=telemetry,
             extra_traces=extra_traces,
             name_prefix=args.name_prefix,
+            min_days=args.min_days,
+            min_hits=args.min_hits,
             scope=args.scope,
             window_seconds=args.window_seconds,
         )
