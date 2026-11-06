@@ -68,7 +68,12 @@ def pull_audit(
 def pull_traces(
     console: str, *, since: int = 0, limit: int = 20_000, timeout: float = 30.0, token: str = ""
 ) -> list[trace.Trace]:
-    """Pull honeypot-captured full-syscall traces (attack-labeled) for mining new chains."""
+    """Pull full-syscall traces (honeypot attacks and F11 learn-mode production traffic) for mining.
+
+    Each line keeps its own ``label``: attack traces seed backbones, benign ones (the real production
+    baseline from learn-mode) feed the baseline that gates false positives. The ATTACK default only
+    applies to a bare, label-less line.
+    """
     url = f"{console.rstrip('/')}/api/v1/traces/export?since={int(since)}&limit={int(limit)}"
     req = _request(url, method="GET", token=token)
     with urllib.request.urlopen(req, timeout=timeout) as resp:

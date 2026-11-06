@@ -21,6 +21,7 @@ export interface Rule {
   transitions?: { from: string; event: string; to: string; action: string; syscalls?: string[] }[]
 }
 export interface NodeInfo { node: string; kernel: string; hooks_attached: number; hooks_total: number; status: string; events_per_sec: number }
+export interface TraceStat { kind: string; label: string; count: number }
 export interface Settings { enforce: boolean; metrics_addr: string; bundle: { rules: unknown }; audit_ring_bytes: number; kernel: string }
 export interface Incident { pod: string; namespace: string; node: string; owner?: string; app?: string; rule: string; started_ts_ns: number; ended_ts_ns: number; max_state: string; outcome: string; steps: number; quarantined?: boolean }
 export interface Quarantine { node: string; namespace: string; pod: string; rule: string; mode: string; released?: boolean; ts_ns: number }
@@ -112,6 +113,7 @@ export const store = reactive({
   muted: [] as string[],
   observeNamespaces: [] as string[],
   learnNamespaces: [] as string[],
+  traceStats: [] as TraceStat[],
   mode: { enforce: false, set: false },
   overview: null as Overview | null,
   allWorkloads: [] as Workload[],
@@ -210,7 +212,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl, lrn] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl, lrn, tst] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -233,8 +235,9 @@ export async function refresh() {
       get<{ enforce: boolean; set: boolean }>('/api/mode'),
       get<FleetThreat[]>('/api/fleet'),
       get<string[]>('/api/learn-namespaces'),
+      get<TraceStat[]>('/api/traces/stats'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl, lrn]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl, lrn, tst]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -256,6 +259,7 @@ export async function refresh() {
     if (md.status === 'fulfilled' && md.value) store.mode = md.value
     if (fl.status === 'fulfilled') store.fleet = arr(fl.value)
     if (lrn.status === 'fulfilled') store.learnNamespaces = arr(lrn.value)
+    if (tst.status === 'fulfilled') store.traceStats = arr(tst.value)
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()
