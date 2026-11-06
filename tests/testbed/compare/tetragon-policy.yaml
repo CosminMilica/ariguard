@@ -1,0 +1,39 @@
+# Tetragon TracingPolicies for the T4 comparison. Tetragon ships no detection rules — it is a
+# programmable observer, so these policies are hand-authored to watch the characteristic syscall of
+# each T3 kill-chain. Unlike AriGuard they fire per single event (no multi-stage correlation): each
+# is an isolated IOC, the same shape as a Falco signature but written by the operator.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: t4-fileless-memfd
+spec:
+  tracepoints:
+  - subsystem: syscalls
+    event: sys_enter_memfd_create
+    args:
+    - index: 5
+      type: "uint64"
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: t4-escape-setns
+spec:
+  tracepoints:
+  - subsystem: syscalls
+    event: sys_enter_setns
+    args:
+    - index: 5
+      type: "uint64"
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: t4-revshell-dup3
+spec:
+  tracepoints:
+  - subsystem: syscalls
+    event: sys_enter_dup3
+    args:
+    - index: 5
+      type: "uint64"
