@@ -198,6 +198,36 @@ func TestTraces(t *testing.T) {
 	}
 }
 
+func TestLearnNamespaces(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/learn-namespaces" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`["payments","ns-b"]`))
+	}))
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+	got, err := s.LearnNamespaces(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "payments" || got[1] != "ns-b" {
+		t.Fatalf("learn-namespaces = %v", got)
+	}
+	var nilS *Sink
+	if ns, err := nilS.LearnNamespaces(context.Background()); err != nil || ns != nil {
+		t.Errorf("nil sink LearnNamespaces = %v, %v", ns, err)
+	}
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+	if _, err := New(errSrv.URL, Registration{Node: "n1"}, quiet).LearnNamespaces(context.Background()); err == nil {
+		t.Error("LearnNamespaces should error on a non-2xx status")
+	}
+}
+
 func TestObserveNamespaces(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/observe-namespaces" {

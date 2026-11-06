@@ -162,6 +162,33 @@ func TestObserveNamespaceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLearnNamespaceRoundTrip(t *testing.T) {
+	srv := newServer(t)
+	mustPost(t, srv, "/api/learn-namespaces", `{"namespace":"payments"}`)
+	// the frontend reads /api/learn-namespaces; the agent polls /api/v1/learn-namespaces
+	var ui, agent []string
+	mustGet(t, srv, "/api/learn-namespaces", &ui)
+	mustGet(t, srv, "/api/v1/learn-namespaces", &agent)
+	if len(ui) != 1 || ui[0] != "payments" || len(agent) != 1 || agent[0] != "payments" {
+		t.Fatalf("ui=%+v agent=%+v", ui, agent)
+	}
+	// empty namespace is rejected
+	resp, _ := http.Post(srv.URL+"/api/learn-namespaces", "application/json", strings.NewReader(`{"namespace":""}`))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty learn: status=%d", resp.StatusCode)
+	}
+	// remove it
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/learn-namespaces/payments", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("unlearn: status=%d", resp.StatusCode)
+	}
+	mustGet(t, srv, "/api/v1/learn-namespaces", &agent)
+	if len(agent) != 0 {
+		t.Fatalf("still learning: %+v", agent)
+	}
+}
+
 func TestEnforceModeRoundTrip(t *testing.T) {
 	srv := newServer(t)
 	type mode struct {
