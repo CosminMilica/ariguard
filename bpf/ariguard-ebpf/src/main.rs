@@ -7,8 +7,8 @@
 // no enforcement (that is phase 2, BPF LSM).
 
 use ariguard_common::{
-    ArgvVal, AuditRecord, ConnDst, FsmKey, FsmState, HookBindings, PathVal, Policy, Rule,
-    Transition, ACTION_DENY, ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_LEN,
+    ArgvVal, AuditRecord, ConnDst, FsmKey, FsmState, HookBindings, LearnRecord, PathVal, Policy,
+    Rule, Transition, ACTION_DENY, ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_LEN,
     ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE,
     HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT, HOOK_INIT_MODULE, HOOK_MEMFD_CREATE,
     HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE, HOOK_SETNS, HOOK_UNSHARE, MAX_ARGS,
@@ -137,6 +137,75 @@ static AG_PATH: LruHashMap<u32, PathVal, { MAX_TRACKED_WORKLOADS as usize }> = L
 // reads it to attach the command line to those audit events.
 #[btf_map]
 static AG_ARGV: LruHashMap<u32, ArgvVal, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
+
+// Learn-mode (F11): raw full-syscall events for opt-in cgroups, for novel-chain discovery. AG_LEARN
+// carries one record per hooked syscall; AG_LEARN_PODS is the opt-in cgroup set the agent fills from
+// the console's learn_namespaces. Empty set = no emit = zero overhead when learn-mode is off.
+const LEARN_RING_BYTES: usize = 1024 * 1024;
+#[btf_map]
+static AG_LEARN: RingBuf<LearnRecord, LEARN_RING_BYTES> = RingBuf::new();
+#[btf_map]
+static AG_LEARN_PODS: LruHashMap<u64, u8, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
+
+// learn_emit records one hooked syscall of an opt-in cgroup to AG_LEARN. Runs in a dedicated program
+// (second on the tracepoint), so it never shares the shared handler's verifier budget.
+#[inline(always)]
+fn learn_emit(hook: u32) {
+    let cgroup_id = unsafe { bpf_get_current_cgroup_id() };
+    if AG_LEARN_PODS.get_ptr(&cgroup_id).is_none() {
+        return;
+    }
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    if let Some(mut e) = AG_LEARN.reserve(0) {
+        e.write(LearnRecord {
+            cgroup_id,
+            ts_ns: unsafe { bpf_ktime_get_ns() },
+            pid: tgid,
+            hook,
+        });
+        e.submit(0);
+    }
+}
+
+// One dedicated learn program per hooked tracepoint (a second program alongside sw_<hook>), so the
+// emit has its own verifier budget instead of inflating the at-ceiling handler.
+macro_rules! learn_prog {
+    ($fn:ident, $tp:literal, $hook:expr) => {
+        #[tracepoint(category = "syscalls", name = $tp)]
+        pub fn $fn(_ctx: TracePointContext) -> u32 {
+            learn_emit($hook);
+            0
+        }
+    };
+}
+learn_prog!(sw_openat_learn, "sys_enter_openat", HOOK_OPENAT);
+learn_prog!(sw_setns_learn, "sys_enter_setns", HOOK_SETNS);
+learn_prog!(sw_unshare_learn, "sys_enter_unshare", HOOK_UNSHARE);
+learn_prog!(sw_mount_learn, "sys_enter_mount", HOOK_MOUNT);
+learn_prog!(sw_execve_learn, "sys_enter_execve", HOOK_EXECVE);
+learn_prog!(sw_ptrace_learn, "sys_enter_ptrace", HOOK_PTRACE);
+learn_prog!(sw_connect_learn, "sys_enter_connect", HOOK_CONNECT);
+learn_prog!(sw_dup2_learn, "sys_enter_dup2", HOOK_DUP2);
+learn_prog!(sw_dup3_learn, "sys_enter_dup3", HOOK_DUP3);
+learn_prog!(
+    sw_memfd_create_learn,
+    "sys_enter_memfd_create",
+    HOOK_MEMFD_CREATE
+);
+learn_prog!(sw_execveat_learn, "sys_enter_execveat", HOOK_EXECVEAT);
+learn_prog!(sw_fsmount_learn, "sys_enter_fsmount", HOOK_FSMOUNT);
+learn_prog!(sw_move_mount_learn, "sys_enter_move_mount", HOOK_MOVE_MOUNT);
+learn_prog!(
+    sw_init_module_learn,
+    "sys_enter_init_module",
+    HOOK_INIT_MODULE
+);
+learn_prog!(
+    sw_finit_module_learn,
+    "sys_enter_finit_module",
+    HOOK_FINIT_MODULE
+);
+learn_prog!(sw_bpf_learn, "sys_enter_bpf", HOOK_BPF);
 
 // sched_process_fork format: common(8) + parent_comm[16]@8 + parent_pid@24 + child_comm[16]@28
 // + child_pid@44. Records child -> parent so the agent can resolve ppid for any later event.

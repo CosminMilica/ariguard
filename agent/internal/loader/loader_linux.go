@@ -37,6 +37,8 @@ type Maps struct {
 	ConnDst     *ebpf.Map
 	Path        *ebpf.Map
 	Argv        *ebpf.Map
+	Learn       *ebpf.Map
+	LearnPods   *ebpf.Map
 }
 
 // Object is a loaded ariguard collection and its attached links.
@@ -126,6 +128,8 @@ func Load(path string, deny bool, log *slog.Logger) (*Object, error) {
 		{MapConnDst, &o.Maps.ConnDst},
 		{MapPath, &o.Maps.Path},
 		{MapArgv, &o.Maps.Argv},
+		{MapLearn, &o.Maps.Learn},
+		{MapLearnPods, &o.Maps.LearnPods},
 	}
 	for _, r := range refs {
 		m, ok := coll.Maps[r.name]

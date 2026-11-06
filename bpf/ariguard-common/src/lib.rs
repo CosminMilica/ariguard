@@ -204,3 +204,15 @@ pub struct ArgvVal {
     pub _pad: u32,
     pub args: [[u8; ARG_LEN]; MAX_ARGS],
 }
+
+/// Emitted to AG_LEARN on every hooked syscall of an opt-in learn-mode cgroup (F11): one raw event,
+/// no FSM. The agent assembles these per (cgroup, tgid) into full-syscall traces the rulegen loop
+/// mines for novel chains. Written only by the dedicated `_learn` programs.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LearnRecord {
+    pub cgroup_id: u64,
+    pub ts_ns: u64,
+    pub pid: u32,
+    pub hook: u32,
+}

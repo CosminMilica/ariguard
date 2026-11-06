@@ -23,6 +23,7 @@ func TestStructSizes(t *testing.T) {
 		{"ConnDst", unsafe.Sizeof(ConnDst{}), 8},
 		{"PathVal", unsafe.Sizeof(PathVal{}), 40},
 		{"ArgvVal", unsafe.Sizeof(ArgvVal{}), 168},
+		{"LearnRecord", unsafe.Sizeof(LearnRecord{}), 24},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

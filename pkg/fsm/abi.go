@@ -224,3 +224,12 @@ type ArgvVal struct {
 	Pad  uint32
 	Args [MaxArgs][ArgLen]byte
 }
+
+// LearnRecord mirrors the AG_LEARN ring value: one hooked syscall of an opt-in learn-mode cgroup
+// (F11). The agent assembles these per (cgroup, tgid) into full-syscall traces for the rulegen loop.
+type LearnRecord struct {
+	CgroupID uint64
+	TsNs     uint64
+	Pid      uint32
+	Hook     uint32
+}
