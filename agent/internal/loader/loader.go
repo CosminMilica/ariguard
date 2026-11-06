@@ -14,10 +14,11 @@ const (
 	MapMetrics     = "AG_METRICS"
 	MapPpid        = "AG_PPID"
 	MapConnDst     = "AG_CONNDST"
+	MapPath        = "AG_PATH"
 )
 
 // MapNames lists every contract map.
-var MapNames = []string{MapState, MapTransitions, MapBindings, MapRules, MapPolicy, MapAudit, MapScratch, MapPods, MapMetrics, MapPpid, MapConnDst}
+var MapNames = []string{MapState, MapTransitions, MapBindings, MapRules, MapPolicy, MapAudit, MapScratch, MapPods, MapMetrics, MapPpid, MapConnDst, MapPath}
 
 // ProgramPrefix marks the ariguard tracepoint programs.
 const ProgramPrefix = "sw_"

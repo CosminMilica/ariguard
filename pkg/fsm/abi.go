@@ -201,3 +201,12 @@ type ConnDst struct {
 	Port uint16
 	Pad  uint16
 }
+
+// PathVal mirrors the AG_PATH value: the observed path of the last path-matching event for a tgid
+// (B3). Len is the string length (no NUL), capped at PatternLen-1; Buf is the NUL-terminated prefix.
+// The agent reads it to attach the concrete path IOC to path-bearing audit events.
+type PathVal struct {
+	Len uint32
+	Pad uint32
+	Buf [PatternLen]byte
+}

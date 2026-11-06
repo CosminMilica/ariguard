@@ -28,6 +28,7 @@ var migrations = []string{
 	`ALTER TABLE audit_events ADD COLUMN dst_ns TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE audit_events ADD COLUMN owner TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE audit_events ADD COLUMN app TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE audit_events ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
 }
 
 // Open opens (creating if needed) the SQLite file at path and applies the schema.

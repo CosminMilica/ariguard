@@ -21,6 +21,7 @@ func TestStructSizes(t *testing.T) {
 		{"Policy", unsafe.Sizeof(Policy{}), 8},
 		{"AuditRecord", unsafe.Sizeof(AuditRecord{}), 64},
 		{"ConnDst", unsafe.Sizeof(ConnDst{}), 8},
+		{"PathVal", unsafe.Sizeof(PathVal{}), 40},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
@@ -50,6 +51,7 @@ func TestFieldOffsets(t *testing.T) {
 		{"AuditRecord.Action", unsafe.Offsetof(AuditRecord{}.Action), 40},
 		{"AuditRecord.Comm", unsafe.Offsetof(AuditRecord{}.Comm), 48},
 		{"ConnDst.Port", unsafe.Offsetof(ConnDst{}.Port), 4},
+		{"PathVal.Buf", unsafe.Offsetof(PathVal{}.Buf), 8},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

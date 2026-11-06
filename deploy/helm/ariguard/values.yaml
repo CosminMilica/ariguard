@@ -66,6 +66,13 @@ console:
   # Delete audit events / metric samples / honeypot traces older than this so the SQLite DB stays
   # bounded on a long-running console. Empty keeps everything forever.
   retention: "168h"
+  # Periodic consistent SQLite snapshots (VACUUM INTO) under /data/backups on the console's PVC, so
+  # the operational state (rules, quarantine, config) survives a lost pod/volume. keep = how many to
+  # retain.
+  backup:
+    enabled: false
+    interval: "24h"
+    keep: 7
   storage:
     size: 1Gi
     # Empty uses the cluster default StorageClass.

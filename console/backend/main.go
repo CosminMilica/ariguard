@@ -35,6 +35,11 @@ func main() {
 		"shared bearer token required on the /api/v1 control-plane endpoints (empty = disabled)")
 	retention := flag.Duration("retention", envDuration("ARIGUARD_RETENTION", 168*time.Hour),
 		"delete audit events / metric samples / honeypot traces older than this (0 = keep forever)")
+	backupDir := flag.String("backup-dir", os.Getenv("ARIGUARD_BACKUP_DIR"),
+		"directory for periodic SQLite snapshots (empty = disabled)")
+	backupInterval := flag.Duration("backup-interval", envDuration("ARIGUARD_BACKUP_INTERVAL", 24*time.Hour),
+		"how often to snapshot the database when --backup-dir is set")
+	backupKeep := flag.Int("backup-keep", 7, "number of recent snapshots to keep (0 = keep all)")
 	flag.Parse()
 
 	db, err := store.Open(*dbPath)
@@ -54,6 +59,10 @@ func main() {
 		}
 		log.Printf("retention: pruning history older than %s", *retention)
 		go store.RunRetention(ctx, db, interval, *retention)
+	}
+	if *backupDir != "" {
+		log.Printf("backup: snapshotting to %s every %s (keep %d)", *backupDir, *backupInterval, *backupKeep)
+		go store.RunBackup(ctx, db, *backupDir, *backupInterval, *backupKeep)
 	}
 
 	mux := http.NewServeMux()

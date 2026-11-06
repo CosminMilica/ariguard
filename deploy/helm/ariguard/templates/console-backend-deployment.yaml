@@ -31,6 +31,14 @@ spec:
             - --retention
             - {{ . | quote }}
             {{- end }}
+            {{- if .Values.console.backup.enabled }}
+            - --backup-dir
+            - /data/backups
+            - --backup-interval
+            - {{ .Values.console.backup.interval | quote }}
+            - --backup-keep
+            - {{ .Values.console.backup.keep | quote }}
+            {{- end }}
           {{- if .Values.auth.token }}
           env:
             {{- include "ariguard.authEnvVar" . | nindent 12 }}

@@ -119,6 +119,7 @@ type Event struct {
 	DstPort   uint16 `json:"dst_port,omitempty"` // host byte order
 	DstPod    string `json:"dst_pod,omitempty"`  // target pod of DstIP, when it resolves to a pod (F2)
 	DstNs     string `json:"dst_ns,omitempty"`   // target pod's namespace (F2)
+	Path      string `json:"path,omitempty"`     // observed path of a path-matching event (B3)
 }
 
 func number(v uint32) string { return strconv.FormatUint(uint64(v), 10) }
@@ -173,6 +174,20 @@ func ConnDstFields(c fsm.ConnDst) (string, uint16) {
 	}
 	ip := net.IPv4(byte(c.IP), byte(c.IP>>8), byte(c.IP>>16), byte(c.IP>>24)).String()
 	return ip, c.Port>>8 | c.Port<<8
+}
+
+// PathString decodes an AG_PATH value (B3) into the observed path, bounded by its recorded length
+// and trimmed at the first NUL. Returns "" for a zero (absent) entry.
+func PathString(p fsm.PathVal) string {
+	n := int(p.Len)
+	if n <= 0 || n > len(p.Buf) {
+		n = len(p.Buf)
+	}
+	b := p.Buf[:n]
+	if i := bytes.IndexByte(b, 0); i >= 0 {
+		b = b[:i]
+	}
+	return string(b)
 }
 
 func comm(c [fsm.CommLen]byte) string {

@@ -348,7 +348,7 @@ func run(log *slog.Logger) error {
 	}
 
 	log.Info("streaming audit", "out", *auditOut)
-	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, obj.Maps.ConnDst, out, &names, pods, rsp, log)
+	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, obj.Maps.ConnDst, obj.Maps.Path, out, &names, pods, rsp, log)
 	stop()
 	return err
 }
