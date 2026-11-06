@@ -665,12 +665,13 @@ fn stash_argv(ctx: &TracePointContext, argv_arg: u32) {
         args: [[0u8; ARG_LEN]; MAX_ARGS],
     };
     let mut n: u32 = 0;
+    // The index is load-bearing: each entry must be written at a constant offset (argv + i*8, and
+    // v.args[i]) so the unrolled loop stays within the verifier's reach — iterating would not.
+    #[allow(clippy::needless_range_loop)]
     for i in 0..MAX_ARGS {
         // argv[i] is a char* at argv + i*8; read it, then the string it points to.
-        let p = match unsafe { bpf_probe_read_user::<u64>((argv + (i as u64) * 8) as *const u64) } {
-            Ok(p) => p,
-            Err(_) => 0,
-        };
+        let p = unsafe { bpf_probe_read_user::<u64>((argv + (i as u64) * 8) as *const u64) }
+            .unwrap_or(0);
         if p != 0 {
             let _ = unsafe { bpf_probe_read_user_str_bytes(p as *const u8, &mut v.args[i]) };
             n += 1;
