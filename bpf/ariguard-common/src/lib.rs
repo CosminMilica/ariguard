@@ -187,3 +187,20 @@ pub struct PathVal {
     pub _pad: u32,
     pub buf: [u8; PATTERN_LEN],
 }
+
+/// Number of exec argv entries captured, and the per-entry byte budget. Fixed slots (not a packed
+/// buffer) so each entry is written at a constant offset — the verifier can bound that; a running
+/// offset over variable-length strings it cannot (pre-6.8).
+pub const MAX_ARGS: usize = 5;
+pub const ARG_LEN: usize = 32;
+
+/// Observed exec argv, written to AG_ARGV keyed by tgid (B3) by the execve/execveat wrappers. `args`
+/// holds up to MAX_ARGS NUL-terminated entries, each truncated to ARG_LEN-1 bytes; `argc` is how many
+/// were present. The agent joins them into the command line for the audit event.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ArgvVal {
+    pub argc: u32,
+    pub _pad: u32,
+    pub args: [[u8; ARG_LEN]; MAX_ARGS],
+}

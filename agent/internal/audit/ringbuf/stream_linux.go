@@ -19,7 +19,7 @@ import (
 
 // Stream reads AG_AUDIT and writes one JSON line per record to w until ctx is done.
 // Names are read per record, so a reload takes effect on the next line; pods may be nil.
-func Stream(ctx context.Context, m, ppid, conndst, path *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, reactor audit.Reactor, log *slog.Logger) error {
+func Stream(ctx context.Context, m, ppid, conndst, path, argv *ebpf.Map, w io.Writer, names *audit.Names, pods audit.Pods, reactor audit.Reactor, log *slog.Logger) error {
 	rd, err := cringbuf.NewReader(m)
 	if err != nil {
 		return fmt.Errorf("open audit ring buffer: %w", err)
@@ -67,6 +67,11 @@ func Stream(ctx context.Context, m, ppid, conndst, path *ebpf.Map, w io.Writer, 
 			if p, ok := lookupPath(path, ev.Pid); ok {
 				ev.Path = audit.PathString(p)
 			}
+			if r.Hook == fsm.HookExecve || r.Hook == fsm.HookExecveat { // command line (B3), from AG_ARGV
+				if a, ok := lookupArgv(argv, ev.Pid); ok {
+					ev.Argv = audit.ArgvString(a)
+				}
+			}
 		}
 		names.SetComm(ev.CgroupID, ev.Comm)
 		if err := audit.WriteLine(w, ev); err != nil {
@@ -113,6 +118,19 @@ func lookupPath(m *ebpf.Map, pid uint32) (fsm.PathVal, bool) {
 		return fsm.PathVal{}, false
 	}
 	return p, true
+}
+
+// lookupArgv returns the exec argv recorded for pid in AG_ARGV (written by the argv programs), or
+// ok=false if none. Keyed by tgid, like AG_PATH.
+func lookupArgv(m *ebpf.Map, pid uint32) (fsm.ArgvVal, bool) {
+	if m == nil {
+		return fsm.ArgvVal{}, false
+	}
+	var a fsm.ArgvVal
+	if err := m.Lookup(pid, &a); err != nil {
+		return fsm.ArgvVal{}, false
+	}
+	return a, true
 }
 
 // lookupConnDst returns the connect destination recorded for pid in AG_CONNDST (written by

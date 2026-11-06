@@ -36,7 +36,7 @@ func TestABIMatchesObjectBTF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load BTF: %v", err)
 	}
-	for _, goType := range []any{FsmKey{}, FsmState{}, Transition{}, Binding{}, HookBindings{}, Rule{}, Policy{}, AuditRecord{}, ConnDst{}, PathVal{}} {
+	for _, goType := range []any{FsmKey{}, FsmState{}, Transition{}, Binding{}, HookBindings{}, Rule{}, Policy{}, AuditRecord{}, ConnDst{}, PathVal{}, ArgvVal{}} {
 		rt := reflect.TypeOf(goType)
 		t.Run(rt.Name(), func(t *testing.T) {
 			var st *btf.Struct
@@ -112,6 +112,7 @@ func TestMapCapacitiesMatchObject(t *testing.T) {
 		{"AG_PPID", ebpf.LRUHash, MaxTrackedWorkloads, 4, 4},
 		{"AG_CONNDST", ebpf.LRUHash, MaxTrackedWorkloads, 4, 8},
 		{"AG_PATH", ebpf.LRUHash, MaxTrackedWorkloads, 4, 40},
+		{"AG_ARGV", ebpf.LRUHash, MaxTrackedWorkloads, 4, 168},
 	}
 	for _, c := range cases {
 		m, ok := spec.Maps[c.name]

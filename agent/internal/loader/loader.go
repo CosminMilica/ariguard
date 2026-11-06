@@ -15,16 +15,24 @@ const (
 	MapPpid        = "AG_PPID"
 	MapConnDst     = "AG_CONNDST"
 	MapPath        = "AG_PATH"
+	MapArgv        = "AG_ARGV"
 )
 
 // MapNames lists every contract map.
-var MapNames = []string{MapState, MapTransitions, MapBindings, MapRules, MapPolicy, MapAudit, MapScratch, MapPods, MapMetrics, MapPpid, MapConnDst, MapPath}
+var MapNames = []string{MapState, MapTransitions, MapBindings, MapRules, MapPolicy, MapAudit, MapScratch, MapPods, MapMetrics, MapPpid, MapConnDst, MapPath, MapArgv}
 
 // ProgramPrefix marks the ariguard tracepoint programs.
 const ProgramPrefix = "sw_"
 
 // ForkProgram records parent->child on sched_process_fork to populate AG_PPID (process ancestry).
 const ForkProgram = "trace_fork"
+
+// ArgvPrograms capture exec argv (B3) as a second program on the execve/execveat tracepoints — kept
+// separate from sw_execve/sw_execveat so the bounded read loop has its own verifier budget.
+var ArgvPrograms = map[string]string{
+	"sw_execve_argv":   "sys_enter_execve",
+	"sw_execveat_argv": "sys_enter_execveat",
+}
 
 // LSMProgramPrefix marks the ariguard BPF LSM deny programs.
 const LSMProgramPrefix = "lsm_"

@@ -30,6 +30,7 @@ type auditEvent struct {
 	DstPod    string `json:"dst_pod"`
 	DstNs     string `json:"dst_ns"`
 	Path      string `json:"path"`
+	Argv      string `json:"argv"`
 	Node      string `json:"node"`
 }
 
@@ -60,9 +61,9 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 		if e.Enforced {
 			enforced = 1
 		}
-		if _, err = tx.Exec(`INSERT INTO audit_events(ts_ns,node,pod,namespace,comm,rule,event,from_state,to_state,action,enforced,cgroup_id,pid,ppid,hook,image,image_id,owner,app,dst_ip,dst_port,dst_pod,dst_ns,path)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			e.TsNS, e.Node, e.Pod, e.Namespace, e.Comm, e.Rule, e.Event, e.From, e.To, e.Action, enforced, e.CgroupID, e.PID, e.Ppid, e.Hook, e.Image, e.ImageID, e.Owner, e.App, e.DstIP, e.DstPort, e.DstPod, e.DstNs, e.Path); err != nil {
+		if _, err = tx.Exec(`INSERT INTO audit_events(ts_ns,node,pod,namespace,comm,rule,event,from_state,to_state,action,enforced,cgroup_id,pid,ppid,hook,image,image_id,owner,app,dst_ip,dst_port,dst_pod,dst_ns,path,argv)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			e.TsNS, e.Node, e.Pod, e.Namespace, e.Comm, e.Rule, e.Event, e.From, e.To, e.Action, enforced, e.CgroupID, e.PID, e.Ppid, e.Hook, e.Image, e.ImageID, e.Owner, e.App, e.DstIP, e.DstPort, e.DstPod, e.DstNs, e.Path, e.Argv); err != nil {
 			break
 		}
 		if e.Pod == "" || e.Rule == "" || e.To == "" {

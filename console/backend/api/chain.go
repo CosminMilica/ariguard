@@ -15,12 +15,13 @@ type chainStep struct {
 	Ppid     int    `json:"ppid"`
 	Hook     string `json:"hook"`
 	Path     string `json:"path,omitempty"` // observed exec/memfd path IOC (B3)
+	Argv     string `json:"argv,omitempty"` // observed exec command line (B3)
 }
 
 func (a *API) chain(w http.ResponseWriter, r *http.Request) {
 	pod := r.URL.Query().Get("pod")
 	win := windowOf(r)
-	rows, err := a.DB.Query(`SELECT ts_ns,to_state,event,action,enforced,comm,pid,ppid,hook,path FROM audit_events
+	rows, err := a.DB.Query(`SELECT ts_ns,to_state,event,action,enforced,comm,pid,ppid,hook,path,argv FROM audit_events
 		WHERE pod=? AND ts_ns >= ? AND ts_ns <= ? ORDER BY ts_ns, id`, pod, win.fromNS(), win.toNS())
 	if err != nil {
 		fail(w, err)
@@ -31,7 +32,7 @@ func (a *API) chain(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s chainStep
 		var enforced int
-		if err := rows.Scan(&s.TsNS, &s.State, &s.Event, &s.Action, &enforced, &s.Comm, &s.Pid, &s.Ppid, &s.Hook, &s.Path); err != nil {
+		if err := rows.Scan(&s.TsNS, &s.State, &s.Event, &s.Action, &enforced, &s.Comm, &s.Pid, &s.Ppid, &s.Hook, &s.Path, &s.Argv); err != nil {
 			fail(w, err)
 			return
 		}

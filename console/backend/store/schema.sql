@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS audit_events (
   dst_port INTEGER NOT NULL DEFAULT 0,
   dst_pod TEXT NOT NULL DEFAULT '',
   dst_ns TEXT NOT NULL DEFAULT '',
-  path TEXT NOT NULL DEFAULT ''
+  path TEXT NOT NULL DEFAULT '',
+  argv TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts_ns);
 CREATE INDEX IF NOT EXISTS idx_audit_pod ON audit_events(pod);
