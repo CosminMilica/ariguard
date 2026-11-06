@@ -23,6 +23,9 @@ import (
 
 	"github.com/CosminMilica/ariguard/agent/internal/audit"
 	"github.com/CosminMilica/ariguard/agent/internal/audit/ringbuf"
+	"github.com/CosminMilica/ariguard/agent/internal/hooks"
+	"github.com/CosminMilica/ariguard/agent/internal/learn"
+	"github.com/CosminMilica/ariguard/agent/internal/learn/learnring"
 	"github.com/CosminMilica/ariguard/agent/internal/loader"
 	"github.com/CosminMilica/ariguard/agent/internal/metrics"
 	"github.com/CosminMilica/ariguard/agent/internal/metrics/metricmap"
@@ -70,6 +73,15 @@ func (m mutedCgroups) PodCgroups() []uint64 {
 	return out
 }
 
+// podMeta adapts the pod resolver to learn.Meta: a cgroup -> (namespace, pod) lookup for the source
+// field of a learn-mode trace.
+type podMeta struct{ pods *podmeta.Resolver }
+
+func (m podMeta) Pod(cgroup uint64) (string, string) {
+	info := m.pods.Lookup(context.Background(), cgroup)
+	return info.Namespace, info.Pod
+}
+
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(log); err != nil {
@@ -92,6 +104,8 @@ func run(log *slog.Logger) error {
 	isolate := flag.String("isolate", "off", "autonomous workload isolation on a confirmed terminal mitigation: off|dryrun|on (on applies a deny-all NetworkPolicy; dryrun only labels the pod; needs Kubernetes API access)")
 	isolateFallback := flag.String("isolate-fallback", "off", "extra isolation for CNIs that ignore NetworkPolicy (e.g. kindnet): off|evict (evict deletes the quarantined pod to cut its network now; destructive)")
 	policySync := flag.Bool("policy-sync", true, "poll the console for a newer policy bundle and hot-swap it (control plane, F7; needs --sink-url)")
+	learnMode := flag.Bool("learn", false, "learn-mode: emit full-syscall traces from this node's pods to the console for novel-chain mining (F11; needs --sink-url). Adds a second program per hook and extra load; off by default")
+	learnWindow := flag.Duration("learn-window", 10*time.Second, "learn-mode: idle gap after which a per-process syscall trace is closed and posted")
 	flag.Parse()
 	if *objectPath == "" || *bundlePath == "" {
 		flag.Usage()
@@ -347,8 +361,50 @@ func run(log *slog.Logger) error {
 		}()
 	}
 
+	// Learn-mode (F11): emit full-syscall traces from this node's pods for novel-chain mining. Attach
+	// the dedicated learn programs, mirror pod cgroups into the opt-in gate (AG_LEARN_PODS), drain the
+	// ring into per-process traces and post them. Needs a sink (the console mines the traces).
+	var threat *learn.ThreatSet
+	if *learnMode {
+		if snk == nil {
+			log.Warn("--learn ignored: needs --sink-url to post traces")
+		} else {
+			if err := obj.AttachLearn(); err != nil {
+				return fmt.Errorf("attach learn programs: %w", err)
+			}
+			threat = learn.NewThreatSet(0)
+			asm := learn.NewAssembler(
+				learn.Config{Window: *learnWindow},
+				podMeta{pods: pods}, threat, node, hooks.Name, snk.Traces, log,
+			)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				// Gate: emit only for this node's pods (Phase 3 narrows this to opt-in namespaces).
+				podsync.Run(ctx, podmap.Map{M: obj.Maps.LearnPods}, pods, podSyncInterval, log)
+			}()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				asm.Run(ctx)
+			}()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := learnring.Drain(ctx, obj.Maps.Learn, asm, log); err != nil {
+					log.Error("learn drain", "err", err)
+				}
+			}()
+			log.Info("learn-mode enabled", "window", *learnWindow)
+		}
+	}
+	var markThreat func(uint64)
+	if threat != nil {
+		markThreat = threat.Mark
+	}
+
 	log.Info("streaming audit", "out", *auditOut)
-	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, obj.Maps.ConnDst, obj.Maps.Path, obj.Maps.Argv, out, &names, pods, rsp, log)
+	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, obj.Maps.ConnDst, obj.Maps.Path, obj.Maps.Argv, out, &names, pods, rsp, markThreat, log)
 	stop()
 	return err
 }

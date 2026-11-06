@@ -1,6 +1,7 @@
 package sink
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -142,6 +143,59 @@ func TestSetEnforce(t *testing.T) {
 	}
 	var nilS *Sink
 	nilS.SetEnforce(true) // must not panic
+}
+
+func TestTraces(t *testing.T) {
+	var body []byte
+	var ct, method, path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path, ct = r.Method, r.URL.Path, r.Header.Get("Content-Type")
+		body, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+	traces := []LearnTrace{
+		{Label: "benign", Source: "learn:n1/prod/api-0#7:100", Events: []TraceEvent{{Hook: "execve", TsNs: 1}, {Hook: "connect", TsNs: 2}}},
+		{Label: "attack", Source: "learn:n1#9:5", Events: []TraceEvent{{Hook: "setns"}}},
+	}
+	if err := s.Traces(context.Background(), traces); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || path != "/api/v1/traces" {
+		t.Fatalf("request = %s %s", method, path)
+	}
+	if ct != "application/x-ndjson" {
+		t.Errorf("content-type = %q", ct)
+	}
+	lines := bytes.Split(bytes.TrimSpace(body), []byte{'\n'})
+	if len(lines) != 2 {
+		t.Fatalf("want 2 JSONL lines, got %d: %q", len(lines), body)
+	}
+	var first LearnTrace
+	if err := json.Unmarshal(lines[0], &first); err != nil {
+		t.Fatalf("line 0: %v", err)
+	}
+	if first.Label != "benign" || len(first.Events) != 2 || first.Events[0].Hook != "execve" {
+		t.Errorf("decoded line 0 = %+v", first)
+	}
+
+	// Empty batch and nil sink are no-ops without a request.
+	if err := s.Traces(context.Background(), nil); err != nil {
+		t.Errorf("empty batch: %v", err)
+	}
+	var nilS *Sink
+	if err := nilS.Traces(context.Background(), traces); err != nil {
+		t.Errorf("nil sink: %v", err)
+	}
+
+	errSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errSrv.Close()
+	if err := New(errSrv.URL, Registration{Node: "n1"}, quiet).Traces(context.Background(), traces); err == nil {
+		t.Error("Traces should error on a non-2xx status")
+	}
 }
 
 func TestObserveNamespaces(t *testing.T) {

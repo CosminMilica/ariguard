@@ -12,6 +12,7 @@ GO_NO_TEST_ALLOWLIST = {
     "agent/internal/policy/kmap": "linux-only eBPF map glue; exercised by ci-kernel/ci-e2e",
     "agent/internal/metrics/metricmap": "linux-only eBPF map glue; exercised by ci-kernel/ci-e2e",
     "agent/internal/podsync/podmap": "linux-only eBPF map glue; exercised by ci-kernel/ci-e2e",
+    "agent/internal/learn/learnring": "linux-only eBPF ring buffer glue (F11 learn-mode); exercised by ci-kernel/ci-e2e",
 }
 
 # Module stem under compiler/ariguard_compiler/ -> reason it may have no test.

@@ -207,6 +207,29 @@ func (o *Object) Attach() error {
 	return nil
 }
 
+// AttachLearn attaches the dedicated learn-mode emitters (one extra program per sys_enter_<hook>
+// tracepoint, F11). Called only when learn-mode is on, so the kernel pays nothing for them otherwise.
+// Missing programs or tracepoints are skipped with a warning, like the other optional programs.
+func (o *Object) AttachLearn() error {
+	for name, tp := range LearnPrograms {
+		prog, ok := o.coll.Programs[name]
+		if !ok {
+			continue
+		}
+		l, err := link.Tracepoint("syscalls", tp, prog, nil)
+		if err != nil {
+			o.log.Warn("learn tracepoint not attached", "program", name, "err", err)
+			continue
+		}
+		o.links = append(o.links, l)
+		if err := o.armAllCPUs(tp); err != nil {
+			return fmt.Errorf("arm syscalls/%s on all CPUs: %w", tp, err)
+		}
+		o.log.Info("attached", "program", name, "tracepoint", "syscalls/"+tp)
+	}
+	return nil
+}
+
 // HooksAttached returns the number of attached hook programs.
 func (o *Object) HooksAttached() int { return len(o.links) }
 
