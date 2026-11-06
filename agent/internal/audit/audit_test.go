@@ -132,6 +132,40 @@ func TestConnDstFields(t *testing.T) {
 	}
 }
 
+func TestPathString(t *testing.T) {
+	var pv fsm.PathVal
+	copy(pv.Buf[:], "/etc/shadow\x00junk")
+	pv.Len = uint32(len("/etc/shadow"))
+	if got := PathString(pv); got != "/etc/shadow" {
+		t.Fatalf("PathString = %q, want /etc/shadow", got)
+	}
+	if got := PathString(fsm.PathVal{}); got != "" {
+		t.Fatalf("zero PathVal = %q, want empty", got)
+	}
+}
+
+func TestArgvString(t *testing.T) {
+	var a fsm.ArgvVal
+	a.Argc = 3
+	copy(a.Args[0][:], "/bin/sh")
+	copy(a.Args[1][:], "-c")
+	copy(a.Args[2][:], "id")
+	if got := ArgvString(a); got != "/bin/sh -c id" {
+		t.Fatalf("ArgvString = %q, want '/bin/sh -c id'", got)
+	}
+	// argc caps how many entries are read, even if later slots hold stale bytes
+	var b fsm.ArgvVal
+	b.Argc = 1
+	copy(b.Args[0][:], "/bin/true")
+	copy(b.Args[1][:], "stale")
+	if got := ArgvString(b); got != "/bin/true" {
+		t.Fatalf("ArgvString (argc=1) = %q, want /bin/true", got)
+	}
+	if got := ArgvString(fsm.ArgvVal{}); got != "" {
+		t.Fatalf("zero ArgvVal = %q, want empty", got)
+	}
+}
+
 func TestComm(t *testing.T) {
 	var c [fsm.CommLen]byte
 	copy(c[:], "0123456789abcdef")

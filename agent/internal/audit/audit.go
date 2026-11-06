@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"github.com/CosminMilica/ariguard/agent/internal/hooks"
@@ -120,6 +121,7 @@ type Event struct {
 	DstPod    string `json:"dst_pod,omitempty"`  // target pod of DstIP, when it resolves to a pod (F2)
 	DstNs     string `json:"dst_ns,omitempty"`   // target pod's namespace (F2)
 	Path      string `json:"path,omitempty"`     // observed path of a path-matching event (B3)
+	Argv      string `json:"argv,omitempty"`     // observed exec command line (B3)
 }
 
 func number(v uint32) string { return strconv.FormatUint(uint64(v), 10) }
@@ -188,6 +190,29 @@ func PathString(p fsm.PathVal) string {
 		b = b[:i]
 	}
 	return string(b)
+}
+
+// ArgvString decodes an AG_ARGV value (B3) into the exec command line: the first Argc entries, each
+// trimmed at its first NUL, joined by spaces. Returns "" for a zero (absent) entry.
+func ArgvString(a fsm.ArgvVal) string {
+	n := int(a.Argc)
+	if n <= 0 {
+		return ""
+	}
+	if n > len(a.Args) {
+		n = len(a.Args)
+	}
+	parts := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		b := a.Args[i][:]
+		if j := bytes.IndexByte(b, 0); j >= 0 {
+			b = b[:j]
+		}
+		if len(b) > 0 {
+			parts = append(parts, string(b))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func comm(c [fsm.CommLen]byte) string {

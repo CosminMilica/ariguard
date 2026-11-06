@@ -210,3 +210,17 @@ type PathVal struct {
 	Pad uint32
 	Buf [PatternLen]byte
 }
+
+// MaxArgs / ArgLen mirror the eBPF argv-capture limits (ariguard-common MAX_ARGS / ARG_LEN).
+const (
+	MaxArgs = 5
+	ArgLen  = 32
+)
+
+// ArgvVal mirrors the AG_ARGV value: up to MaxArgs NUL-terminated exec argv entries (B3), each capped
+// at ArgLen-1 bytes, with Argc the number present. The agent joins them into the command line.
+type ArgvVal struct {
+	Argc uint32
+	Pad  uint32
+	Args [MaxArgs][ArgLen]byte
+}

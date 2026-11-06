@@ -23,6 +23,7 @@ const steps = computed(() => (props.chain ?? store.chain).map(s => ({
             <div class="st2">{{ s.state }}</div>
             <div class="sc">{{ s.event }}<template v-if="s.action && s.action !== 'observe'"> · <b>{{ s.action }}{{ s.enforced ? '' : ' (detect)' }}</b></template></div>
             <div v-if="s.path" class="path mono" :title="s.path">{{ s.path }}</div>
+            <div v-if="s.argv" class="path mono" :title="s.argv">$ {{ s.argv }}</div>
           </div>
         </div>
       </div>

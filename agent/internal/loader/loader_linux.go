@@ -36,6 +36,7 @@ type Maps struct {
 	Ppid        *ebpf.Map
 	ConnDst     *ebpf.Map
 	Path        *ebpf.Map
+	Argv        *ebpf.Map
 }
 
 // Object is a loaded ariguard collection and its attached links.
@@ -124,6 +125,7 @@ func Load(path string, deny bool, log *slog.Logger) (*Object, error) {
 		{MapPpid, &o.Maps.Ppid},
 		{MapConnDst, &o.Maps.ConnDst},
 		{MapPath, &o.Maps.Path},
+		{MapArgv, &o.Maps.Argv},
 	}
 	for _, r := range refs {
 		m, ok := coll.Maps[r.name]
@@ -167,6 +169,22 @@ func (o *Object) Attach() error {
 			o.links = append(o.links, l)
 			o.log.Info("attached", "program", ForkProgram, "tracepoint", "sched/sched_process_fork")
 		}
+	}
+	for name, tp := range ArgvPrograms {
+		prog, ok := o.coll.Programs[name]
+		if !ok {
+			continue
+		}
+		l, err := link.Tracepoint("syscalls", tp, prog, nil)
+		if err != nil {
+			o.log.Warn("argv tracepoint not attached, command line disabled", "program", name, "err", err)
+			continue
+		}
+		o.links = append(o.links, l)
+		if err := o.armAllCPUs(tp); err != nil {
+			return fmt.Errorf("arm syscalls/%s on all CPUs: %w", tp, err)
+		}
+		o.log.Info("attached", "program", name, "tracepoint", "syscalls/"+tp)
 	}
 	for _, name := range o.lsmPrograms {
 		prog := o.coll.Programs[name]

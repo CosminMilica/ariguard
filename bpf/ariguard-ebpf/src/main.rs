@@ -7,13 +7,13 @@
 // no enforcement (that is phase 2, BPF LSM).
 
 use ariguard_common::{
-    AuditRecord, ConnDst, FsmKey, FsmState, HookBindings, PathVal, Policy, Rule, Transition,
-    ACTION_DENY, ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_MASK_ANY, ARG_MASK_NONE,
-    HOOK_BPF, HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE, HOOK_EXECVEAT, HOOK_FINIT_MODULE,
-    HOOK_FSMOUNT, HOOK_INIT_MODULE, HOOK_MEMFD_CREATE, HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT,
-    HOOK_PTRACE, HOOK_SETNS, HOOK_UNSHARE, MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRACKED_WORKLOADS,
-    MAX_TRANSITIONS, PATH_ANY, PATH_INET, PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS,
-    STATE_INITIAL,
+    ArgvVal, AuditRecord, ConnDst, FsmKey, FsmState, HookBindings, PathVal, Policy, Rule,
+    Transition, ACTION_DENY, ACTION_KILL, ACTION_OBSERVE, ARG_ANY, ARG_EQ, ARG_LE, ARG_LEN,
+    ARG_MASK_ANY, ARG_MASK_NONE, HOOK_BPF, HOOK_CONNECT, HOOK_DUP2, HOOK_DUP3, HOOK_EXECVE,
+    HOOK_EXECVEAT, HOOK_FINIT_MODULE, HOOK_FSMOUNT, HOOK_INIT_MODULE, HOOK_MEMFD_CREATE,
+    HOOK_MOUNT, HOOK_MOVE_MOUNT, HOOK_OPENAT, HOOK_PTRACE, HOOK_SETNS, HOOK_UNSHARE, MAX_ARGS,
+    MAX_BINDINGS_PER_HOOK, MAX_RULES, MAX_TRACKED_WORKLOADS, MAX_TRANSITIONS, PATH_ANY, PATH_INET,
+    PATH_PREFIX, PATH_SUN_PREFIX, PATTERN_LEN, SCOPE_PROCESS, STATE_INITIAL,
 };
 use aya_ebpf::{
     btf_maps::{Array, LruHashMap, PerCpuArray, RingBuf},
@@ -133,6 +133,11 @@ static AG_CONNDST: LruHashMap<u32, ConnDst, { MAX_TRACKED_WORKLOADS as usize }> 
 #[btf_map]
 static AG_PATH: LruHashMap<u32, PathVal, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
 
+// tgid -> observed exec argv (B3). Written by the execve/execveat wrappers via stash_argv. The agent
+// reads it to attach the command line to those audit events.
+#[btf_map]
+static AG_ARGV: LruHashMap<u32, ArgvVal, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
+
 // sched_process_fork format: common(8) + parent_comm[16]@8 + parent_pid@24 + child_comm[16]@28
 // + child_pid@44. Records child -> parent so the agent can resolve ppid for any later event.
 #[tracepoint(category = "sched", name = "sched_process_fork")]
@@ -169,6 +174,14 @@ pub fn sw_mount(ctx: TracePointContext) -> u32 {
 pub fn sw_execve(ctx: TracePointContext) -> u32 {
     stash_path(&ctx, 0); // execve(filename, argv, envp): filename is arg0
     handle(&ctx, HOOK_EXECVE)
+}
+
+// argv capture runs as a SECOND program on the same tracepoint, separate from sw_execve, so its
+// bounded read loop does not share the shared handler's verifier budget (which is at the 5.15 limit).
+#[tracepoint(category = "syscalls", name = "sys_enter_execve")]
+pub fn sw_execve_argv(ctx: TracePointContext) -> u32 {
+    stash_argv(&ctx, 1); // execve argv is arg1
+    0
 }
 
 #[tracepoint(category = "syscalls", name = "sys_enter_ptrace")]
@@ -208,6 +221,12 @@ pub fn sw_memfd_create(ctx: TracePointContext) -> u32 {
 pub fn sw_execveat(ctx: TracePointContext) -> u32 {
     stash_path(&ctx, 1); // execveat(dirfd, pathname, argv, envp, flags): pathname is arg1
     handle(&ctx, HOOK_EXECVEAT)
+}
+
+#[tracepoint(category = "syscalls", name = "sys_enter_execveat")]
+pub fn sw_execveat_argv(ctx: TracePointContext) -> u32 {
+    stash_argv(&ctx, 2); // execveat argv is arg2
+    0
 }
 
 #[tracepoint(category = "syscalls", name = "sys_enter_fsmount")]
@@ -627,6 +646,43 @@ fn stash_path(ctx: &TracePointContext, path_arg: u32) {
     pv.len = len as u32;
     let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
     let _ = AG_PATH.insert(&tgid, &pv, 0);
+}
+
+// B3: capture up to MAX_ARGS exec argv entries into AG_ARGV keyed by tgid. argv_arg is the syscall's
+// argv index (execve: 1, execveat: 2). Each entry goes into its own fixed slot (constant offset), so
+// the bounded unrolled loop stays within the verifier's reach even on older kernels.
+#[inline(always)]
+fn stash_argv(ctx: &TracePointContext, argv_arg: u32) {
+    let Some(argv) = read_arg(ctx, argv_arg) else {
+        return;
+    };
+    if argv == 0 {
+        return;
+    }
+    let mut v = ArgvVal {
+        argc: 0,
+        _pad: 0,
+        args: [[0u8; ARG_LEN]; MAX_ARGS],
+    };
+    let mut n: u32 = 0;
+    // The index is load-bearing: each entry must be written at a constant offset (argv + i*8, and
+    // v.args[i]) so the unrolled loop stays within the verifier's reach — iterating would not.
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..MAX_ARGS {
+        // argv[i] is a char* at argv + i*8; read it, then the string it points to.
+        let p = unsafe { bpf_probe_read_user::<u64>((argv + (i as u64) * 8) as *const u64) }
+            .unwrap_or(0);
+        if p != 0 {
+            let _ = unsafe { bpf_probe_read_user_str_bytes(p as *const u8, &mut v.args[i]) };
+            n += 1;
+        }
+    }
+    if n == 0 {
+        return;
+    }
+    v.argc = n;
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    let _ = AG_ARGV.insert(&tgid, &v, 0);
 }
 
 #[cfg(not(test))]
