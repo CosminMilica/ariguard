@@ -95,6 +95,24 @@ type QuarantineEvent struct {
 	TsNs      uint64 `json:"ts_ns"`
 }
 
+// TraceEvent is one hook invocation in a learn-mode trace; it mirrors the mining fixture event in
+// compiler/ariguard_compiler/trace.py (hook required, the rest optional).
+type TraceEvent struct {
+	Hook string `json:"hook"`
+	TsNs uint64 `json:"ts_ns,omitempty"`
+	Path string `json:"path,omitempty"`
+	Inet bool   `json:"inet,omitempty"`
+}
+
+// LearnTrace is one assembled per-(cgroup,tgid) syscall sequence (F11). It is posted as a JSONL line
+// to /api/v1/traces with source="learn:..." so the rule-generation loop mines it alongside honeypot
+// traces, against a real production baseline.
+type LearnTrace struct {
+	Label  string       `json:"label"`
+	Source string       `json:"source"`
+	Events []TraceEvent `json:"events"`
+}
+
 // Sink buffers audit events and posts them, with registrations, to a base URL.
 // A nil *Sink is a no-op.
 type Sink struct {
@@ -294,6 +312,38 @@ func (s *Sink) Mode(ctx context.Context) (enforce, set bool, err error) {
 		return false, false, fmt.Errorf("decode mode: %w", err)
 	}
 	return m.Enforce, m.Set, nil
+}
+
+// Traces posts assembled learn-mode traces to the console as JSONL (F11), one object per line to
+// match the honeypot format. Best-effort: the endpoint dedups by content hash, so a retry is
+// harmless. Safe on a nil *Sink (no-op) or an empty batch.
+func (s *Sink) Traces(ctx context.Context, traces []LearnTrace) error {
+	if s == nil || len(traces) == 0 {
+		return nil
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf) // NewEncoder writes one JSON object per line
+	for i := range traces {
+		if err := enc.Encode(&traces[i]); err != nil {
+			return err
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.base+"/api/v1/traces", &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-ndjson")
+	s.auth(req)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("POST /api/v1/traces: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // Policy fetches the control plane's current bundle (F7). “have“ is the version the agent
