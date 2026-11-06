@@ -36,6 +36,10 @@ const learnNs = computed(() => {
   return [...set].sort()
 })
 const isLearning = (ns: string) => store.learnNamespaces.includes(ns)
+// Mining-corpus composition, so an operator sees the production benign baseline growing next to the
+// attack traces that seed discovery (F11).
+const traceCount = (kind: string, label: string) =>
+  store.traceStats.filter(s => s.kind === kind && s.label === label).reduce((a, s) => a + s.count, 0)
 const newLearnNs = ref('')
 function addLearnNs() {
   const ns = newLearnNs.value.trim()
@@ -90,6 +94,7 @@ function addLearnNs() {
     <div class="hd"><h2>Learn-mode namespaces</h2><span class="c">{{ store.learnNamespaces.length }} learning</span></div>
     <div class="bd">
       <div class="note">On, the agent emits full-syscall traces from pods in a namespace to the console, so the rule-generation loop mines novel attack chains from real production traffic and gates them against a real benign baseline. Opt-in per namespace; detection is unchanged, this only adds the raw trace stream (small per-syscall overhead on the opted-in pods). Agents must run with <span class="mono">--learn</span>.</div>
+      <div class="corpus">Mining corpus · learn baseline <b>{{ traceCount('learn', 'benign') }}</b> benign · <b>{{ traceCount('learn', 'attack') }}</b> attack · honeypot <b>{{ traceCount('honeypot', 'attack') }}</b> attack</div>
       <div v-if="!learnNs.length" class="empty">No namespaces yet.</div>
       <div v-for="ns in learnNs" :key="ns" class="setrow">
         <div><div class="t mono">{{ ns }}</div></div>
@@ -113,6 +118,8 @@ function addLearnNs() {
 
 <style scoped>
 .note { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }
+.corpus { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.corpus b { color: inherit; font-weight: 600; }
 .applying { color: var(--teal); }
 .ctl.add { display: flex; gap: 6px; }
 .ctl.add input { background: var(--surface); border: 1px solid var(--border); color: inherit; border-radius: 6px; padding: 4px 8px; font-size: 12px; }

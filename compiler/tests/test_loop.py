@@ -142,9 +142,14 @@ class _StubConsole(BaseHTTPRequestHandler):
             body = b'{"id":1,"cgroup_id":42,"pid":7,"ts_ns":100,"hook":"execve","dst_ip":""}\n'
             self._send(200, "application/x-ndjson", body)
         elif self.path.startswith("/api/v1/traces/export"):
+            # A honeypot attack line and a learn-mode benign line (F11): pull_traces must preserve
+            # each line's explicit label, so the benign one flows into the baseline, not the attack
+            # corpus (the ATTACK default is only for bare, label-less lines).
             body = (
                 b'{"label":"attack","source":"honeypot","events":'
                 b'[{"hook":"ptrace"},{"hook":"ptrace"},{"hook":"bpf"}]}\n'
+                b'{"label":"benign","source":"learn:node-a/prod/api-0#7:100","events":'
+                b'[{"hook":"openat"},{"hook":"execve"}]}\n'
             )
             self._send(200, "application/x-ndjson", body)
         elif self.path == "/api/v1/rules/telemetry":
@@ -187,9 +192,13 @@ def stub_console():
 
 def test_pull_traces(stub_console):
     traces = loop.pull_traces(stub_console)
-    assert len(traces) == 1
+    assert len(traces) == 2
     assert traces[0].label == "attack"
     assert traces[0].hooks == ("ptrace", "ptrace", "bpf")
+    # the learn-mode line keeps its explicit benign label and source (F11), so it feeds the baseline
+    assert traces[1].label == "benign"
+    assert traces[1].source.startswith("learn:")
+    assert traces[1].hooks == ("openat", "execve")
 
 
 def test_console_roundtrip(stub_console):
@@ -262,6 +271,45 @@ def test_benign_honeypot_baseline_suppresses_a_backbone():
     autos = [r.name for r in result.rules if r.name.startswith("auto-")]
     assert not any("unshare" in n and "setns" in n for n in autos), (
         f"backbone should be suppressed by the benign baseline: {autos}"
+    )
+
+
+def _unshare_setns_src(label, source):
+    import ariguard_compiler.trace as T
+
+    return T.Trace(
+        label=label,
+        source=source,
+        events=(
+            T.Event("execve", path="/usr/bin/unshare"),
+            T.Event("unshare"),
+            T.Event("execve", path="/usr/bin/setns"),
+            T.Event("setns"),
+        ),
+    )
+
+
+def test_learn_attack_trace_discovers_a_novel_chain():
+    # F11: an attack-labeled learn trace (a production pod that tripped a threat state) seeds a
+    # backbone just like a honeypot attack — discovery is source-agnostic.
+    attack = _unshare_setns_src("attack", "learn:node-a/prod/api-0#7:100")
+    result = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET), extra_traces=[attack])
+    autos = [r.name for r in result.rules if r.name.startswith("auto-")]
+    assert any("unshare" in n and "setns" in n for n in autos), f"backbone rule missing: {autos}"
+
+
+def test_learn_benign_baseline_suppresses_a_chain():
+    # F11: the real benign baseline from production — a benign-labeled learn trace exhibiting the same
+    # chain — flows into the baseline and gates the backbone out (fewer false positives, the point of
+    # learn-mode). This closes the discovery loop against real traffic.
+    attack = _unshare_setns_src("attack", "learn:node-a/prod/api-0#7:100")
+    benign = _unshare_setns_src("benign", "learn:node-a/prod/worker-3#9:200")
+    result = loop.build_bundle(
+        rules_dir=str(RULES), corpus=str(FLEET), extra_traces=[attack, benign]
+    )
+    autos = [r.name for r in result.rules if r.name.startswith("auto-")]
+    assert not any("unshare" in n and "setns" in n for n in autos), (
+        f"backbone should be suppressed by the production benign baseline: {autos}"
     )
 
 

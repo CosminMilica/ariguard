@@ -189,6 +189,24 @@ func TestLearnNamespaceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTraceStats(t *testing.T) {
+	srv := newServer(t)
+	mustPost(t, srv, "/api/v1/traces", `{"label":"benign","source":"learn:n/prod/api#1:1","events":[{"hook":"openat"}]}`)
+	mustPost(t, srv, "/api/v1/traces", `{"label":"benign","source":"learn:n/prod/api#2:2","events":[{"hook":"execve"}]}`)
+	mustPost(t, srv, "/api/v1/traces", `{"label":"attack","source":"learn:n/prod/api#3:3","events":[{"hook":"setns"}]}`)
+	mustPost(t, srv, "/api/v1/traces", `{"label":"attack","source":"honeypot","events":[{"hook":"ptrace"}]}`)
+
+	var stats []map[string]any
+	mustGet(t, srv, "/api/traces/stats", &stats)
+	got := map[string]int{}
+	for _, s := range stats {
+		got[s["kind"].(string)+"/"+s["label"].(string)] = int(s["count"].(float64))
+	}
+	if got["learn/benign"] != 2 || got["learn/attack"] != 1 || got["honeypot/attack"] != 1 {
+		t.Fatalf("trace stats = %+v", got)
+	}
+}
+
 func TestEnforceModeRoundTrip(t *testing.T) {
 	srv := newServer(t)
 	type mode struct {
