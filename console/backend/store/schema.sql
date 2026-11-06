@@ -94,6 +94,14 @@ CREATE TABLE IF NOT EXISTS observe_namespaces (
   namespace TEXT PRIMARY KEY
 );
 
+-- Learn-mode namespaces (F11): the agent emits full-syscall traces from pods here to the console, so
+-- the rule-generation loop mines novel chains from real production traffic and gates them against a
+-- real benign baseline. Opt-in per namespace (empty = no emit, zero overhead); detection is
+-- unaffected, this only adds the raw trace stream.
+CREATE TABLE IF NOT EXISTS learn_namespaces (
+  namespace TEXT PRIMARY KEY
+);
+
 -- Operator key/value settings. Holds the desired fleet enforcement mode ("enforce_mode" = enforce |
 -- detect): agents poll it and hot-swap the current bundle under the new mode, no restart. Absent =
 -- agents keep their launch-flag mode.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { store, fmtBytes, observeNamespace, unobserveNamespace, setMode } from '../api'
+import { store, fmtBytes, observeNamespace, unobserveNamespace, learnNamespace, unlearnNamespace, setMode } from '../api'
 
 const s = computed(() => store.settings)
 const ruleCount = computed(() => {
@@ -26,6 +26,21 @@ function addNs() {
   const ns = newNs.value.trim()
   if (ns && !isObserved(ns)) observeNamespace(ns)
   newNs.value = ''
+}
+
+// Learn-mode: namespaces whose pods emit full-syscall traces for novel-chain mining. Opt-in per
+// namespace; the same namespace universe as enforcement (workloads plus any already opted in).
+const learnNs = computed(() => {
+  const set = new Set<string>(store.learnNamespaces)
+  for (const w of store.allWorkloads) if (w.namespace) set.add(w.namespace)
+  return [...set].sort()
+})
+const isLearning = (ns: string) => store.learnNamespaces.includes(ns)
+const newLearnNs = ref('')
+function addLearnNs() {
+  const ns = newLearnNs.value.trim()
+  if (ns && !isLearning(ns)) learnNamespace(ns)
+  newLearnNs.value = ''
 }
 </script>
 
@@ -66,6 +81,30 @@ function addNs() {
         <div class="ctl add">
           <input v-model="newNs" placeholder="namespace" @keyup.enter="addNs" />
           <button class="btn" @click="addNs">Add as Detect</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hd"><h2>Learn-mode namespaces</h2><span class="c">{{ store.learnNamespaces.length }} learning</span></div>
+    <div class="bd">
+      <div class="note">On, the agent emits full-syscall traces from pods in a namespace to the console, so the rule-generation loop mines novel attack chains from real production traffic and gates them against a real benign baseline. Opt-in per namespace; detection is unchanged, this only adds the raw trace stream (small per-syscall overhead on the opted-in pods). Agents must run with <span class="mono">--learn</span>.</div>
+      <div v-if="!learnNs.length" class="empty">No namespaces yet.</div>
+      <div v-for="ns in learnNs" :key="ns" class="setrow">
+        <div><div class="t mono">{{ ns }}</div></div>
+        <div class="ctl">
+          <div class="seg">
+            <button :class="{ on: isLearning(ns) }" @click="learnNamespace(ns)">Learn</button>
+            <button :class="{ on: !isLearning(ns) }" @click="unlearnNamespace(ns)">Off</button>
+          </div>
+        </div>
+      </div>
+      <div class="setrow">
+        <div><div class="d">Add a namespace that has no workloads yet.</div></div>
+        <div class="ctl add">
+          <input v-model="newLearnNs" placeholder="namespace" @keyup.enter="addLearnNs" />
+          <button class="btn" @click="addLearnNs">Add as Learn</button>
         </div>
       </div>
     </div>

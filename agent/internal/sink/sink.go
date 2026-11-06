@@ -284,6 +284,33 @@ func (s *Sink) ObserveNamespaces(ctx context.Context) ([]string, error) {
 	return namespaces, nil
 }
 
+// LearnNamespaces fetches the learn-mode namespace list from the console (F11). Learn emit is gated
+// to pods in these namespaces (opt-in; empty = no emit). Safe on a nil *Sink (returns an empty list).
+func (s *Sink) LearnNamespaces(ctx context.Context) ([]string, error) {
+	if s == nil {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/api/v1/learn-namespaces", nil)
+	if err != nil {
+		return nil, err
+	}
+	s.auth(req)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		return nil, fmt.Errorf("GET /api/v1/learn-namespaces: status %d", resp.StatusCode)
+	}
+	var namespaces []string
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&namespaces); err != nil {
+		return nil, fmt.Errorf("decode learn-namespaces: %w", err)
+	}
+	return namespaces, nil
+}
+
 // Mode fetches the operator's desired fleet enforcement mode from the console. "set" is false when
 // no mode is configured, in which case the agent keeps its launch-flag default. Safe on a nil *Sink.
 func (s *Sink) Mode(ctx context.Context) (enforce, set bool, err error) {

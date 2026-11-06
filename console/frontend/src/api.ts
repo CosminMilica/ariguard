@@ -111,6 +111,7 @@ export const store = reactive({
   edges: [] as Edge[],
   muted: [] as string[],
   observeNamespaces: [] as string[],
+  learnNamespaces: [] as string[],
   mode: { enforce: false, set: false },
   overview: null as Overview | null,
   allWorkloads: [] as Workload[],
@@ -209,7 +210,7 @@ export async function refresh() {
   const wlFiltered = !!(wlParams.filter || wlParams.q)
   const evFiltered = !!(evParams.severity || evParams.q || store.evAll)
   try {
-    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl] = await Promise.allSettled([
+    const [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl, lrn] = await Promise.allSettled([
       get<Overview>('/api/overview'),
       get<Workload[]>('/api/workloads'),
       wlFiltered ? get<Workload[]>('/api/workloads', wlParams) : Promise.resolve(null),
@@ -231,8 +232,9 @@ export async function refresh() {
       get<string[]>('/api/observe-namespaces'),
       get<{ enforce: boolean; set: boolean }>('/api/mode'),
       get<FleetThreat[]>('/api/fleet'),
+      get<string[]>('/api/learn-namespaces'),
     ])
-    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl]
+    const all = [ov, wl, wlf, ev, evf, ru, nd, se, inc, pf, tr, cmp, cnt, cov, act, lat, edg, aut, obs, md, fl, lrn]
     store.offline = all.some(r => r.status === 'rejected')
     if (ov.status === 'fulfilled') store.overview = ov.value
     if (wl.status === 'fulfilled') store.allWorkloads = arr(wl.value)
@@ -253,6 +255,7 @@ export async function refresh() {
     if (obs.status === 'fulfilled') store.observeNamespaces = arr(obs.value)
     if (md.status === 'fulfilled' && md.value) store.mode = md.value
     if (fl.status === 'fulfilled') store.fleet = arr(fl.value)
+    if (lrn.status === 'fulfilled') store.learnNamespaces = arr(lrn.value)
     store.workloads = clientWorkloads(wlf.status === 'fulfilled' && wlf.value ? arr(wlf.value) : store.allWorkloads)
     store.events = clientEvents(evf.status === 'fulfilled' && evf.value ? arr(evf.value) : store.allEvents)
     const pod = pickChainPod()
@@ -295,6 +298,18 @@ export async function observeNamespace(ns: string) {
 export async function unobserveNamespace(ns: string) {
   await req('DELETE', `/api/observe-namespaces/${encodeURIComponent(ns)}`)
   store.observeNamespaces = store.observeNamespaces.filter(n => n !== ns)
+  await refresh()
+}
+
+export async function learnNamespace(ns: string) {
+  await req('POST', '/api/learn-namespaces', {}, { namespace: ns })
+  if (!store.learnNamespaces.includes(ns)) store.learnNamespaces.push(ns)
+  await refresh()
+}
+
+export async function unlearnNamespace(ns: string) {
+  await req('DELETE', `/api/learn-namespaces/${encodeURIComponent(ns)}`)
+  store.learnNamespaces = store.learnNamespaces.filter(n => n !== ns)
   await refresh()
 }
 

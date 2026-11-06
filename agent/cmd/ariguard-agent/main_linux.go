@@ -73,6 +73,26 @@ func (m mutedCgroups) PodCgroups() []uint64 {
 	return out
 }
 
+// learnCgroups is a podsync.Source that keeps only the cgroups of pods in an opt-in namespace set,
+// so AG_LEARN_PODS (the learn-mode emit gate) holds just those (F11). src lists the node's pod
+// cgroups; pods resolves cgroup id -> pod metadata. An empty set yields no cgroups (no emit).
+type learnCgroups struct {
+	src   podsync.Source
+	pods  *podmeta.Resolver
+	learn *mutes.Set
+}
+
+func (l learnCgroups) PodCgroups() []uint64 {
+	all := l.src.PodCgroups()
+	out := make([]uint64, 0, len(all))
+	for _, c := range all {
+		if l.learn.Has(l.pods.Lookup(context.Background(), c).Namespace) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // podMeta adapts the pod resolver to learn.Meta: a cgroup -> (namespace, pod) lookup for the source
 // field of a learn-mode trace.
 type podMeta struct{ pods *podmeta.Resolver }
@@ -377,11 +397,15 @@ func run(log *slog.Logger) error {
 				learn.Config{Window: *learnWindow},
 				podMeta{pods: pods}, threat, node, hooks.Name, snk.Traces, log,
 			)
+			// Gate: mirror only pods in the opt-in learn namespaces (polled from the console) into
+			// AG_LEARN_PODS, so emit is scoped and off by default (empty set = no emit).
+			learnSet := mutes.New()
+			go mutes.Poll(ctx, learnSet, muteInterval, snk.LearnNamespaces, log)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				// Gate: emit only for this node's pods (Phase 3 narrows this to opt-in namespaces).
-				podsync.Run(ctx, podmap.Map{M: obj.Maps.LearnPods}, pods, podSyncInterval, log)
+				src := learnCgroups{src: pods, pods: pods, learn: learnSet}
+				podsync.Run(ctx, podmap.Map{M: obj.Maps.LearnPods}, src, podSyncInterval, log)
 			}()
 			wg.Add(1)
 			go func() {

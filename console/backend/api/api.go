@@ -42,6 +42,9 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/observe-namespaces", a.observeNamespaces)
 	mux.HandleFunc("POST /api/observe-namespaces", a.observeNamespace)
 	mux.HandleFunc("DELETE /api/observe-namespaces/{ns}", a.unobserveNamespace)
+	mux.HandleFunc("GET /api/learn-namespaces", a.learnNamespaces)
+	mux.HandleFunc("POST /api/learn-namespaces", a.learnNamespace)
+	mux.HandleFunc("DELETE /api/learn-namespaces/{ns}", a.unlearnNamespace)
 	mux.HandleFunc("GET /api/mode", a.mode)
 	mux.HandleFunc("POST /api/mode", a.setMode)
 }
