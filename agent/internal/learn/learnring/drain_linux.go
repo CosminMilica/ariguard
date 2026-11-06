@@ -1,6 +1,6 @@
 //go:build linux
 
-package learn
+package learnring
 
 import (
 	"bytes"
@@ -13,12 +13,13 @@ import (
 	"github.com/cilium/ebpf"
 	cringbuf "github.com/cilium/ebpf/ringbuf"
 
+	"github.com/CosminMilica/ariguard/agent/internal/learn"
 	"github.com/CosminMilica/ariguard/pkg/fsm"
 )
 
 // Drain reads AG_LEARN and feeds each record to the assembler until ctx is done. It mirrors
 // audit/ringbuf.Stream: a reader closed on ctx cancellation, malformed samples dropped.
-func Drain(ctx context.Context, m *ebpf.Map, a *Assembler, log *slog.Logger) error {
+func Drain(ctx context.Context, m *ebpf.Map, a *learn.Assembler, log *slog.Logger) error {
 	rd, err := cringbuf.NewReader(m)
 	if err != nil {
 		return fmt.Errorf("open learn ring buffer: %w", err)
@@ -44,14 +45,15 @@ func Drain(ctx context.Context, m *ebpf.Map, a *Assembler, log *slog.Logger) err
 	}
 }
 
-// decode reads a fsm.LearnRecord off the wire (native endianness, like the audit decoder).
-func decode(raw []byte) (Record, error) {
+// decode reads a fsm.LearnRecord off the wire (little-endian, like the audit decoder) into a
+// learn.Record.
+func decode(raw []byte) (learn.Record, error) {
 	var lr fsm.LearnRecord
 	if len(raw) < int(binary.Size(&lr)) {
-		return Record{}, fmt.Errorf("short learn sample: %d bytes", len(raw))
+		return learn.Record{}, fmt.Errorf("short learn sample: %d bytes", len(raw))
 	}
 	if err := binary.Read(bytes.NewReader(raw), binary.LittleEndian, &lr); err != nil {
-		return Record{}, err
+		return learn.Record{}, err
 	}
-	return Record{CgroupID: lr.CgroupID, TsNs: lr.TsNs, Pid: lr.Pid, Hook: lr.Hook}, nil
+	return learn.Record{CgroupID: lr.CgroupID, TsNs: lr.TsNs, Pid: lr.Pid, Hook: lr.Hook}, nil
 }

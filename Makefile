@@ -129,7 +129,8 @@ COVER_MIN := 80.0
 # Linux-only kernel glue, covered by ci-kernel; "[no statements]" packages are skipped too.
 COVER_EXCLUDE := agent/cmd/ariguard-agent agent/cmd/ariguard-bench agent/internal/loader \
 	agent/internal/audit/ringbuf agent/internal/policy/kmap \
-	agent/internal/metrics/metricmap agent/internal/podsync/podmap
+	agent/internal/metrics/metricmap agent/internal/podsync/podmap \
+	agent/internal/learn/learnring
 COVER_DIR := bin/cover
 
 cover: ## Per-package coverage gate: Go + Python >= $(COVER_MIN)%

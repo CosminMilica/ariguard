@@ -25,6 +25,7 @@ import (
 	"github.com/CosminMilica/ariguard/agent/internal/audit/ringbuf"
 	"github.com/CosminMilica/ariguard/agent/internal/hooks"
 	"github.com/CosminMilica/ariguard/agent/internal/learn"
+	"github.com/CosminMilica/ariguard/agent/internal/learn/learnring"
 	"github.com/CosminMilica/ariguard/agent/internal/loader"
 	"github.com/CosminMilica/ariguard/agent/internal/metrics"
 	"github.com/CosminMilica/ariguard/agent/internal/metrics/metricmap"
@@ -390,7 +391,7 @@ func run(log *slog.Logger) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if err := learn.Drain(ctx, obj.Maps.Learn, asm, log); err != nil {
+				if err := learnring.Drain(ctx, obj.Maps.Learn, asm, log); err != nil {
 					log.Error("learn drain", "err", err)
 				}
 			}()
