@@ -130,7 +130,7 @@ COVER_MIN := 80.0
 COVER_EXCLUDE := agent/cmd/ariguard-agent agent/cmd/ariguard-bench agent/internal/loader \
 	agent/internal/audit/ringbuf agent/internal/policy/kmap \
 	agent/internal/metrics/metricmap agent/internal/podsync/podmap \
-	agent/internal/learn/learnring
+	agent/internal/learn/learnring control-plane/cmd/ariguard-ctl
 COVER_DIR := bin/cover
 
 cover: ## Per-package coverage gate: Go + Python >= $(COVER_MIN)%

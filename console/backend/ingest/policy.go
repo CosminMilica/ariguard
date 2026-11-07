@@ -28,9 +28,13 @@ func (h *Handler) SetPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	sum := sha256.Sum256(body)
 	version := hex.EncodeToString(sum[:])[:16]
-	_, err = h.DB.Exec(`INSERT INTO policy(id,version,bundle,ts_ns) VALUES(1,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET version=excluded.version, bundle=excluded.bundle, ts_ns=excluded.ts_ns`,
-		version, body, time.Now().UnixNano())
+	// Detached bundle signature (C2), stored verbatim and served back on GET so agents can verify
+	// authenticity. The console does not (and need not) verify it — it holds no key; the signing
+	// pusher sets it and the agent with the public key checks it.
+	signature := r.Header.Get("X-Policy-Signature")
+	_, err = h.DB.Exec(`INSERT INTO policy(id,version,bundle,ts_ns,signature) VALUES(1,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET version=excluded.version, bundle=excluded.bundle, ts_ns=excluded.ts_ns, signature=excluded.signature`,
+		version, body, time.Now().UnixNano(), signature)
 	if err != nil {
 		serverError(w, err)
 		return
@@ -43,9 +47,9 @@ func (h *Handler) SetPolicy(w http.ResponseWriter, r *http.Request) {
 // answers 304 (nothing to do); with no policy stored it answers 204 (the agent keeps its baked-in
 // bundle). Otherwise it returns the raw bytes and the version header.
 func (h *Handler) GetPolicy(w http.ResponseWriter, r *http.Request) {
-	var version string
+	var version, signature string
 	var bundle []byte
-	err := h.DB.QueryRow(`SELECT version, bundle FROM policy WHERE id=1`).Scan(&version, &bundle)
+	err := h.DB.QueryRow(`SELECT version, bundle, signature FROM policy WHERE id=1`).Scan(&version, &bundle, &signature)
 	if errors.Is(err, sql.ErrNoRows) { // no policy stored: the agent keeps its baked-in bundle
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -55,6 +59,9 @@ func (h *Handler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("X-Policy-Version", version)
+	if signature != "" { // detached bundle signature (C2); agents with the public key verify before loading
+		w.Header().Set("X-Policy-Signature", signature)
+	}
 	if r.URL.Query().Get("have") == version {
 		w.WriteHeader(http.StatusNotModified)
 		return

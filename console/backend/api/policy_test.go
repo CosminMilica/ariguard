@@ -67,3 +67,37 @@ func TestPolicyDistribution(t *testing.T) {
 		t.Fatal("a different bundle must get a new version")
 	}
 }
+
+func TestPolicySignatureRoundTrip(t *testing.T) {
+	srv := newServer(t)
+	bundle := []byte("STBT-signed-bundle")
+	const sig = "c2lnbmF0dXJlLWJhc2U2NA==" // opaque base64; the console stores/serves it verbatim
+
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/policy", bytes.NewReader(bundle))
+	req.Header.Set("X-Policy-Signature", sig)
+	put, err := http.DefaultClient.Do(req)
+	if err != nil || put.StatusCode != http.StatusNoContent {
+		t.Fatalf("PUT signed policy: %v %v", err, put)
+	}
+
+	resp, _ := http.Get(srv.URL + "/api/v1/policy")
+	got, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !bytes.Equal(got, bundle) {
+		t.Fatalf("GET signed policy: status %d, %d bytes", resp.StatusCode, len(got))
+	}
+	if h := resp.Header.Get("X-Policy-Signature"); h != sig {
+		t.Fatalf("X-Policy-Signature = %q, want %q", h, sig)
+	}
+
+	// an unsigned push clears the signature (no header served)
+	req2, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/policy", bytes.NewReader([]byte("STBT-unsigned")))
+	if _, err := http.DefaultClient.Do(req2); err != nil {
+		t.Fatal(err)
+	}
+	resp2, _ := http.Get(srv.URL + "/api/v1/policy")
+	resp2.Body.Close()
+	if h := resp2.Header.Get("X-Policy-Signature"); h != "" {
+		t.Fatalf("unsigned push should serve no signature, got %q", h)
+	}
+}
