@@ -7,7 +7,7 @@ toolchain go1.27.3
 require github.com/cilium/ebpf v0.22.0
 
 require (
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 	k8s.io/api v0.37.2
 	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.2
