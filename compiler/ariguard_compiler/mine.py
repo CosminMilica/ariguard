@@ -251,9 +251,11 @@ def candidate_to_rule(
 # --- behavioral replay (the data-driven half of the gate) -------------------------------------
 
 
-def _event_indices(rule, ev: trace.Event) -> set[int]:
-    """Rule-event indices raised by a trace event: hook matches and the predicate (if any) holds."""
-    raised: set[int] = set()
+def _first_event(rule, ev: trace.Event) -> int | None:
+    """The event raised by a trace event, or None. The kernel applies at most one event per rule per
+    syscall: the FIRST binding (in binding order) whose hook matches and whose predicate holds wins
+    (main.rs: "first matching binding wins", the per-rule `done` bitmask). We mirror that — iterating
+    in binding order and returning the first match, not every matching binding."""
     for b in rule.bindings:
         if b.hook != HOOK_VALUES[ev.hook]:
             continue
@@ -264,31 +266,33 @@ def _event_indices(rule, ev: trace.Event) -> set[int]:
         elif b.path_kind == PATH_INET:
             if not ev.inet:
                 continue
-        raised.add(b.event)
-    return raised
+        return b.event
+    return None
 
 
 def simulate(rule, events: tuple[trace.Event, ...]) -> bool:
     """Replay a trace through ``rule``'s FSM; True when it reaches a terminal state.
 
-    Mirrors the kernel engine's ordered semantics: a transition fires only from the current
-    state on a raised event, and the whole chain must land within ``window_ns`` of its first
-    non-``normal`` step (0 = no limit).
+    Mirrors the kernel engine's ordered semantics: at most ONE transition per rule per syscall (the
+    first matching binding's event), fired only from the current state, and the whole chain must land
+    within ``window_ns`` of its first non-``normal`` step (0 = no limit).
     """
     state = 0
     started_ns: int | None = None
     for ev in events:
         if rule.window_ns and started_ns is not None and ev.ts_ns - started_ns > rule.window_ns:
             state, started_ns = 0, None  # window elapsed: the partial chain resets
-        for idx in sorted(_event_indices(rule, ev)):
-            nxt = rule.transitions.get((state, idx))
-            if nxt is None:
-                continue
-            state = nxt[0]
-            if started_ns is None and state != 0:
-                started_ns = ev.ts_ns
-            if state >= rule.terminal_from:
-                return True
+        idx = _first_event(rule, ev)
+        if idx is None:
+            continue
+        nxt = rule.transitions.get((state, idx))
+        if nxt is None:
+            continue
+        state = nxt[0]
+        if started_ns is None and state != 0:
+            started_ns = ev.ts_ns
+        if state >= rule.terminal_from:
+            return True
     return False
 
 
