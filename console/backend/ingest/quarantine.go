@@ -41,7 +41,7 @@ func (h *Handler) Quarantine(w http.ResponseWriter, r *http.Request) {
 			e.Node, e.Namespace, e.Pod, e.Rule, e.Mode, e.TsNS)
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -35,7 +35,7 @@ func (a *API) lateral(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.Query(`SELECT image_id, image, namespace, pod, rule, killed, blocked, first_ns
 		FROM (`+incidentGroupsSQL+`)
 		WHERE image_id != '' AND namespace != ''
-		ORDER BY image_id, first_ns`, win.fromNS(), win.toNS())
+		ORDER BY image_id, first_ns LIMIT 50000`, win.fromNS(), win.toNS())
 	if err != nil {
 		fail(w, err)
 		return

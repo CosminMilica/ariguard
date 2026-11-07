@@ -65,7 +65,7 @@ pub const COMM_LEN: usize = 16;
 
 /// Fixed map capacities (zero-allocation budget, set at load time).
 /// The per-hook binding budget is bundle-wide: all rules' bindings on one hook share it. Raised
-/// 8->16 so the library can grow persistence/indicator-removal chains (openat + execve are the
+/// 8->14 so the library can grow persistence/indicator-removal chains (openat + execve are the
 /// busiest hooks). The hot-path match loop (main.rs) reads the path once and is bounded by this
 /// constant; the 5.15..7.0 verifier matrix gates the change.
 pub const MAX_BINDINGS_PER_HOOK: usize = 14;

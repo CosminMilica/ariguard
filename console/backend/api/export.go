@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -83,7 +84,7 @@ func (a *API) export(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chain, err := a.DB.Query(`SELECT ts_ns, comm, pid, ppid, hook, event, from_state, to_state, action, enforced, image, image_id
-		FROM audit_events WHERE pod = ? ORDER BY ts_ns, id`, pod)
+		FROM audit_events WHERE pod = ? ORDER BY ts_ns, id LIMIT 50000`, pod)
 	if err != nil {
 		fail(w, err)
 		return
@@ -136,6 +137,24 @@ func (a *API) export(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Node.Enforce = enforce != 0
 
-	w.Header().Set("Content-Disposition", `attachment; filename="ariguard-incident-`+pod+`.json"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="ariguard-incident-`+safeFilenamePart(pod)+`.json"`)
 	writeJSON(w, out)
+}
+
+// safeFilenamePart reduces s to characters safe inside a quoted Content-Disposition filename, so an
+// embedded quote, newline or other control character in the raw pod param cannot break out of the
+// quoting or inject a response header. (Tier 4)
+func safeFilenamePart(s string) string {
+	r := strings.Map(func(c rune) rune {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '-', c == '_':
+			return c
+		default:
+			return '_'
+		}
+	}, s)
+	if r == "" {
+		return "pod"
+	}
+	return r
 }

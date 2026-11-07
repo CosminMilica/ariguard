@@ -173,7 +173,7 @@ def autogenerate(
     for cand in mine_novel(traces, baseline, **novel_kwargs):
         if cand.hooks in known_chains:
             continue
-        name = f"{name_prefix}-{'-'.join(cand.hooks)}"[:60].rstrip("-")
+        name = mine.chain_name(name_prefix, cand.hooks)
         # Shadow by default: a freshly minted rule only audits (observe terminal), never kills,
         # until measured hits with no false positives promote it (see loop.decide_mode).
         rule = mine.candidate_to_rule(
@@ -255,7 +255,7 @@ def backbone_rules(
         seen.add(hooks)
         preds = tuple({"inet": True} if (e.hook == "connect" and e.inet) else None for e in bb)
         cand = mine.Candidate(hooks, attack_support=1.0, benign_support=0.0, predicates=preds)
-        name = f"{name_prefix}-{'-'.join(hooks)}"[:60].rstrip("-")
+        name = mine.chain_name(name_prefix, hooks)
         rule = mine.candidate_to_rule(
             cand, name, scope=scope, window_seconds=window_seconds, enforce=False
         )

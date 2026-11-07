@@ -32,6 +32,13 @@ const (
 	// ObserveInterval is the minimum spacing between forwarded repeats of an observe event.
 	ObserveInterval = 10 * time.Second
 
+	// CoalesceInterval is the minimum spacing between forwarded repeats of an identical non-observe
+	// event (same cgroup/rule/to/action). A process stuck in a kill/deny retry loop re-fires the same
+	// terminal event thousands of times a second; without this it overflows the buffer and the
+	// drop-oldest policy throws away genuinely distinct events. Kept short so a repeat that is truly
+	// new (after the window) still reports, and distinct events never share a key.
+	CoalesceInterval = time.Second
+
 	maxBuffered = 4096
 	maxThrottle = 4096
 	postTimeout = 5 * time.Second
@@ -136,6 +143,7 @@ type throttleKey struct {
 	cgroup uint64
 	rule   string
 	to     string
+	action string
 }
 
 // New returns a sink posting to baseURL; info carries the static registration fields.
@@ -405,16 +413,15 @@ func (s *Sink) Policy(ctx context.Context, have string) (data []byte, version st
 	}
 }
 
-// allowLocked reports whether e should be forwarded: non-observe events and new
-// (cgroup, rule, to) combinations always pass; repeated observe events pass at most
-// once per ObserveInterval. Callers hold s.mu.
+// allowLocked reports whether e should be forwarded: a new (cgroup, rule, to, action) combination
+// always passes; a repeat passes at most once per its coalescing window — ObserveInterval for
+// observe events, the shorter CoalesceInterval for non-observe (terminal) events. Keying on the
+// action means distinct events (a different rule, target, or action) never coalesce. Callers hold
+// s.mu.
 func (s *Sink) allowLocked(e audit.Event) bool {
-	if e.Action != "observe" {
-		return true
-	}
 	now := s.now()
-	k := throttleKey{e.CgroupID, e.Rule, e.To}
-	if last, ok := s.seen[k]; ok && now.Sub(last) < ObserveInterval {
+	k := throttleKey{e.CgroupID, e.Rule, e.To, e.Action}
+	if last, ok := s.seen[k]; ok && now.Sub(last) < coalesceWindow(e.Action) {
 		return false
 	}
 	if _, ok := s.seen[k]; !ok && len(s.seen) >= maxThrottle {
@@ -424,12 +431,20 @@ func (s *Sink) allowLocked(e audit.Event) bool {
 	return true
 }
 
+// coalesceWindow is the minimum spacing between forwarded repeats of an event with this action.
+func coalesceWindow(action string) time.Duration {
+	if action == "observe" {
+		return ObserveInterval
+	}
+	return CoalesceInterval
+}
+
 func (s *Sink) pruneLocked(now time.Time) {
 	var oldest throttleKey
 	var oldestAt time.Time
 	first := true
 	for k, t := range s.seen {
-		if now.Sub(t) >= ObserveInterval {
+		if now.Sub(t) >= coalesceWindow(k.action) {
 			delete(s.seen, k)
 			continue
 		}
@@ -443,7 +458,7 @@ func (s *Sink) pruneLocked(now time.Time) {
 }
 
 // Emit queues an event; it never blocks and drops the oldest event when the buffer is full.
-// Repeated observe events are throttled, see allowLocked.
+// Repeated identical events (observe and terminal) are coalesced, see allowLocked.
 func (s *Sink) Emit(e audit.Event) {
 	if s == nil {
 		return

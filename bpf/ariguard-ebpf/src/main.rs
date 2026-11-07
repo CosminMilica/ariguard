@@ -89,7 +89,7 @@ static AG_SCRATCH: PerCpuArray<[u8; PATTERN_LEN], 1> = PerCpuArray::new();
 // Pod cgroup ids that are mitigation candidates (F2); the agent populates it from
 // podmeta. A KILL fires only for a cgroup present here.
 #[btf_map]
-static AG_PODS: LruHashMap<u64, u8, 16384> = LruHashMap::new();
+static AG_PODS: LruHashMap<u64, u8, { MAX_TRACKED_WORKLOADS as usize }> = LruHashMap::new();
 
 // Per-CPU counters read by the agent (F7). Indices: events, kills, audit_dropped, denies.
 #[btf_map]
@@ -140,7 +140,8 @@ static AG_ARGV: LruHashMap<u32, ArgvVal, { MAX_TRACKED_WORKLOADS as usize }> = L
 
 // Learn-mode (F11): raw full-syscall events for opt-in cgroups, for novel-chain discovery. AG_LEARN
 // carries one record per hooked syscall; AG_LEARN_PODS is the opt-in cgroup set the agent fills from
-// the console's learn_namespaces. Empty set = no emit = zero overhead when learn-mode is off.
+// the console's learn_namespaces. Empty set = no emit, but each learn program still does a
+// cgroup-id lookup per syscall, so "off" is near-zero overhead, not zero.
 const LEARN_RING_BYTES: usize = 1024 * 1024;
 #[btf_map]
 static AG_LEARN: RingBuf<LearnRecord, LEARN_RING_BYTES> = RingBuf::new();

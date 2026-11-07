@@ -31,7 +31,7 @@ const incidentGroupsSQL = `SELECT pod, namespace, node, rule,
 		MIN(ts_ns) AS first_ns, MAX(ts_ns) AS last_ns,
 		MAX(image_id) AS image_id, MAX(image) AS image, MAX(comm) AS comm,
 		MAX(owner) AS owner, MAX(app) AS app,
-		GROUP_CONCAT(DISTINCT CASE WHEN dst_ip != '' THEN dst_ip END) AS dst_ips
+		GROUP_CONCAT(CASE WHEN dst_ip != '' THEN dst_ip END, char(31)) AS dst_ips
 	FROM audit_events
 	WHERE ts_ns >= ? AND ts_ns <= ? AND pod != ''
 	GROUP BY pod, namespace, node, rule

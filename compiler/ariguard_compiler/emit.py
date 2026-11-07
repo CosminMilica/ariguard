@@ -6,7 +6,7 @@ Policy bundle format v3 (little-endian), identical to the Go pkg/fsm reader
                  meta_len (u32 each), reserved u64 = 0
   Rules: num_rules x 32 B; Transitions: num_transitions x 8 B, rule r owns
   [trans_base, trans_base + num_states * num_events), row-major;
-  Bindings: num_bindings x 104 B; Metadata: meta_len bytes of compact sorted JSON.
+  Bindings: num_bindings x 72 B; Metadata: meta_len bytes of compact sorted JSON.
 Unspecified (state, event) cells default to (same state, observe).
 """
 

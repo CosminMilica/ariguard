@@ -22,7 +22,7 @@ func (a *API) chain(w http.ResponseWriter, r *http.Request) {
 	pod := r.URL.Query().Get("pod")
 	win := windowOf(r)
 	rows, err := a.DB.Query(`SELECT ts_ns,to_state,event,action,enforced,comm,pid,ppid,hook,path,argv FROM audit_events
-		WHERE pod=? AND ts_ns >= ? AND ts_ns <= ? ORDER BY ts_ns, id`, pod, win.fromNS(), win.toNS())
+		WHERE pod=? AND ts_ns >= ? AND ts_ns <= ? ORDER BY ts_ns, id LIMIT 50000`, pod, win.fromNS(), win.toNS())
 	if err != nil {
 		fail(w, err)
 		return

@@ -3,6 +3,7 @@ package ingest
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -39,6 +40,34 @@ func TestTracesStoreDedupAndExport(t *testing.T) {
 	}
 	if !strings.Contains(lines[0], `"hook":"execve"`) {
 		t.Fatalf("export line not the stored trace: %q", lines[0])
+	}
+}
+
+// TestTracesAcceptedCountsNewRowsOnly verifies X-Traces-Accepted reports actually-inserted rows,
+// not every submitted line (INSERT OR IGNORE dedups duplicates by content hash). (Tier 4)
+func TestTracesAcceptedCountsNewRowsOnly(t *testing.T) {
+	h := testDB(t)
+	line1 := `{"label":"attack","source":"honeypot","events":[{"hook":"execve"}]}`
+	line2 := `{"label":"attack","source":"honeypot","events":[{"hook":"connect"}]}`
+	line3 := `{"label":"attack","source":"honeypot","events":[{"hook":"dup2"}]}`
+
+	accepted := func(body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/traces", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		h.Traces(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status=%d", rec.Code)
+		}
+		n, _ := strconv.Atoi(rec.Header().Get("X-Traces-Accepted"))
+		return n
+	}
+
+	if n := accepted(line1 + "\n" + line2 + "\n"); n != 2 {
+		t.Fatalf("first post X-Traces-Accepted=%d, want 2", n)
+	}
+	// line1 is a duplicate (ignored); line3 is new → only 1 newly inserted
+	if n := accepted(line1 + "\n" + line3 + "\n"); n != 1 {
+		t.Fatalf("second post X-Traces-Accepted=%d, want 1 (one duplicate ignored)", n)
 	}
 }
 

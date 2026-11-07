@@ -4,11 +4,20 @@ package ingest
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 )
 
 type Handler struct{ DB *sql.DB }
+
+// serverError logs the real error server-side and returns a generic 500 body to the client, so
+// internal detail (SQL text, schema, file paths) is not leaked. 4xx validation responses keep their
+// specific messages. (Tier 4)
+func serverError(w http.ResponseWriter, err error) {
+	log.Printf("ingest: %v", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+}
 
 // Routes registers the ingest endpoints on mux.
 func (h *Handler) Routes(mux *http.ServeMux) {
@@ -89,7 +98,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.DB.Begin()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	defer tx.Rollback()
@@ -130,7 +139,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		err = tx.Commit()
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
