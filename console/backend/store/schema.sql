@@ -139,5 +139,8 @@ CREATE TABLE IF NOT EXISTS policy (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   version TEXT NOT NULL,
   bundle BLOB NOT NULL,
-  ts_ns INTEGER NOT NULL DEFAULT 0
+  ts_ns INTEGER NOT NULL DEFAULT 0,
+  -- Detached ed25519 signature of the bundle (base64), set by the signing pusher (C2). Served back in
+  -- the X-Policy-Signature header so agents can verify authenticity before loading it into the kernel.
+  signature TEXT NOT NULL DEFAULT ''
 );
