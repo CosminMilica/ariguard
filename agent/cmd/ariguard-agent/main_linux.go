@@ -230,8 +230,9 @@ func run(log *slog.Logger) error {
 					continue
 				}
 				policyMu.Lock()
-				b, err := applyBundleData(maps, &names, data, enforceMode.Load())
-				if err == nil {
+				enf := enforceMode.Load()
+				b, applied, err := applySwap(maps, &names, data, enf, lastBundle, enf, log)
+				if applied {
 					lastBundle = data
 				}
 				policyMu.Unlock()
@@ -252,8 +253,9 @@ func run(log *slog.Logger) error {
 			snk.Policy,
 			func(data []byte) error {
 				policyMu.Lock()
-				b, err := applyBundleData(maps, &names, data, enforceMode.Load())
-				if err == nil {
+				enf := enforceMode.Load()
+				b, applied, err := applySwap(maps, &names, data, enf, lastBundle, enf, log)
+				if applied {
 					lastBundle = data
 				}
 				policyMu.Unlock()
@@ -279,8 +281,9 @@ func run(log *slog.Logger) error {
 					return
 				}
 				policyMu.Lock()
-				b, aerr := applyBundleData(maps, &names, lastBundle, enf)
-				if aerr == nil {
+				old := enforceMode.Load()
+				b, applied, aerr := applySwap(maps, &names, lastBundle, enf, lastBundle, old, log)
+				if applied {
 					enforceMode.Store(enf)
 				}
 				policyMu.Unlock()
@@ -445,6 +448,26 @@ func applyBundleData(m policy.Maps, names *audit.Names, data []byte, enforce boo
 	}
 	names.Store(b.Meta)
 	return *b, nil
+}
+
+// applySwap applies data under enforce and, on failure, rolls the kernel back to lastGood under
+// rollbackEnforce — so a failed hot-swap never leaves AG_POLICY zeroed and detection/enforcement
+// disabled (fail-open). It returns the applied bundle, whether the new data took effect, and the
+// apply error. If the rollback itself fails the policy may be degraded, which is logged loudly.
+func applySwap(m policy.Maps, names *audit.Names, data []byte, enforce bool, lastGood []byte, rollbackEnforce bool, log *slog.Logger) (fsm.Bundle, bool, error) {
+	b, err := applyBundleData(m, names, data, enforce)
+	if err == nil {
+		return b, true, nil
+	}
+	if lastGood != nil {
+		if rb, rerr := applyBundleData(m, names, lastGood, rollbackEnforce); rerr != nil {
+			log.Error("policy swap failed AND rollback failed; policy may be degraded", "err", err, "rollback_err", rerr)
+		} else {
+			log.Error("policy swap failed; rolled back to last-good policy", "err", err)
+			return rb, false, err
+		}
+	}
+	return fsm.Bundle{}, false, err
 }
 
 func kernelRelease() string {

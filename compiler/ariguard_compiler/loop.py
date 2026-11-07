@@ -26,7 +26,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import autogen, feeds, mine, trace
@@ -70,16 +70,18 @@ def pull_traces(
 ) -> list[trace.Trace]:
     """Pull full-syscall traces (honeypot attacks and F11 learn-mode production traffic) for mining.
 
-    Each line keeps its own ``label``: attack traces seed backbones, benign ones (the real production
-    baseline from learn-mode) feed the baseline that gates false positives. The ATTACK default only
-    applies to a bare, label-less line.
+    Each stored trace carries its own explicit ``label`` (the console defaults a missing one to attack
+    at ingest, and learn-mode always sends one). We therefore require an explicit valid label here and
+    SKIP any record without one — never defaulting production traffic to ATTACK, which would poison the
+    benign baseline and turn normal behaviour into kill rules.
     """
     url = f"{console.rstrip('/')}/api/v1/traces/export?since={int(since)}&limit={int(limit)}"
     req = _request(url, method="GET", token=token)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
     objs = [json.loads(line) for line in body.splitlines() if line.strip()]
-    return trace.from_records(objs, default_label=trace.ATTACK)
+    labeled = [o for o in objs if isinstance(o, dict) and o.get("label") in (trace.ATTACK, trace.BENIGN)]
+    return trace.from_records(labeled)
 
 
 def fetch_telemetry(
@@ -220,7 +222,12 @@ def build_bundle(
             decisions[fr.name] = RETIRE
             continue
         decisions[fr.name] = mode
-        proposals.append((fr, fr.name, mode))  # feed rules keep their authored actions
+        # Feed rules carry authored actions (Sigma defaults terminal action to kill). A rule that
+        # telemetry has not promoted must enter in shadow, exactly like a mined rule — so downgrade
+        # its actions to observe unless it is ENFORCE. Otherwise a brand-new, unproven feed rule would
+        # SIGKILL on first match while the console reports it as "shadow".
+        rule = fr if mode == ENFORCE else _to_shadow(fr)
+        proposals.append((rule, fr.name, mode))
     for ar in sorted(auto, key=lambda r: -r.candidate.score):
         mode = _decide(ar.name, telemetry, min_days=min_days, min_hits=min_hits)
         decisions[ar.name] = mode
@@ -266,6 +273,14 @@ def build_bundle(
     kept = {r.name for r in chosen}
     decisions = {n: m for n, m in decisions.items() if m == RETIRE or n in kept}
     return BuildResult(rules, bundle, auto, decisions, feed_result.skipped, skipped_budget)
+
+
+def _to_shadow(rule: Rule) -> Rule:
+    """A copy of ``rule`` with every transition action downgraded to observe (0): shadow mode never
+    kills or denies. Used for not-yet-promoted feed rules, which otherwise keep their authored (often
+    kill) actions."""
+    observed = {k: (to, 0) for k, (to, _action) in rule.transitions.items()}
+    return replace(rule, transitions=observed)
 
 
 def _decide(

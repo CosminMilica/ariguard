@@ -35,6 +35,39 @@ def _auto_name(result) -> str:
 # --- build ------------------------------------------------------------------------------------
 
 
+def test_feed_rules_enter_shadow_not_enforcing():
+    # Unproven feed rules (no telemetry) must enter in shadow with no kill/deny action — even though
+    # Sigma authors a kill terminal. The C6 fix. We feed the committed sigma rules as a feed source.
+    from ariguard_compiler import feeds
+
+    raw = feeds.ingest_dir(SIGMA_GEN)
+    assert any(a != 0 for r in raw.rules for (_t, a) in r.transitions.values()), (
+        "feed fixture has no enforcing action to downgrade"
+    )
+    result = loop.build_bundle(rules_dir=str(RULES), feeds_dir=str(SIGMA_GEN))
+    shadow_feeds = {n for n, m in result.decisions.items() if m == SHADOW}
+    assert shadow_feeds, "expected at least one shadow feed rule"
+    for r in result.rules:
+        if r.name in shadow_feeds:
+            assert all(a == 0 for (_t, a) in r.transitions.values()), f"{r.name} enforces in shadow"
+
+
+def test_to_shadow_strips_actions_keeps_states():
+    from ariguard_compiler import feeds
+    from ariguard_compiler.loop import _to_shadow
+
+    fr = next(
+        r
+        for r in feeds.ingest_dir(SIGMA_GEN).rules
+        if any(a != 0 for (_t, a) in r.transitions.values())
+    )
+    sh = _to_shadow(fr)
+    assert sh.transitions.keys() == fr.transitions.keys()
+    assert all(sh.transitions[k][0] == fr.transitions[k][0] for k in fr.transitions)  # next_state kept
+    assert all(a == 0 for (_t, a) in sh.transitions.values())
+    assert any(a != 0 for (_t, a) in fr.transitions.values())  # original untouched
+
+
 def test_build_proposes_mined_rules_in_shadow():
     result = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET))
     assert len(result.bundle) > 0
@@ -150,6 +183,8 @@ class _StubConsole(BaseHTTPRequestHandler):
                 b'[{"hook":"ptrace"},{"hook":"ptrace"},{"hook":"bpf"}]}\n'
                 b'{"label":"benign","source":"learn:node-a/prod/api-0#7:100","events":'
                 b'[{"hook":"openat"},{"hook":"execve"}]}\n'
+                # a label-less record (C7): must be SKIPPED, never defaulted to attack
+                b'{"source":"learn:node-a/prod/worker-9#3:9","events":[{"hook":"connect"}]}\n'
             )
             self._send(200, "application/x-ndjson", body)
         elif self.path == "/api/v1/rules/telemetry":
@@ -192,6 +227,7 @@ def stub_console():
 
 def test_pull_traces(stub_console):
     traces = loop.pull_traces(stub_console)
+    # the label-less third record is skipped (C7), not defaulted to attack
     assert len(traces) == 2
     assert traces[0].label == "attack"
     assert traces[0].hooks == ("ptrace", "ptrace", "bpf")
@@ -199,6 +235,8 @@ def test_pull_traces(stub_console):
     assert traces[1].label == "benign"
     assert traces[1].source.startswith("learn:")
     assert traces[1].hooks == ("openat", "execve")
+    # nothing labeled from the unlabeled 'connect' record (would poison the baseline as attack)
+    assert all("worker-9" not in t.source for t in traces)
 
 
 def test_console_roundtrip(stub_console):
