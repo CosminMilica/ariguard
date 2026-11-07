@@ -46,6 +46,17 @@ func (s *Set) Has(pod string) bool {
 	return s.pod[pod]
 }
 
+// Empty reports whether the set has no entries. A nil Set is empty. Used to decide whether the
+// operator's mute/observe lever is in use at all (H7).
+func (s *Set) Empty() bool {
+	if s == nil {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.pod) == 0
+}
+
 // Poll refreshes the set from fetch every interval until ctx is done. A failed fetch keeps the
 // last known set (fail-open on transient console errors; the operator's intent is not lost).
 func Poll(ctx context.Context, s *Set, interval time.Duration, fetch func(context.Context) ([]string, error), log *slog.Logger) {

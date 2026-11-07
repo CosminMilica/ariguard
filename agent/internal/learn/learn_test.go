@@ -96,11 +96,18 @@ func TestAssemblerThreatLabel(t *testing.T) {
 
 func TestAssemblerMaxEventsFlush(t *testing.T) {
 	c := &collector{}
-	a := NewAssembler(Config{Window: time.Hour, MaxEvents: 3, MinEvents: 1},
+	a := NewAssembler(Config{Window: time.Hour, Sweep: time.Hour, MaxEvents: 3, MinEvents: 1},
 		nil, nil, "n", hooks.Name, c.emit, quietLog())
+	// Shipping is async (H6): the full-group trace is handed to the shipper, which Run drains. Drive
+	// Run and cancel to flush, then inspect.
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { a.Run(ctx); close(done) }()
 	for i := 0; i < 3; i++ {
-		a.Add(context.Background(), Record{CgroupID: 1, Pid: 1, Hook: fsm.HookOpenat})
+		a.Add(ctx, Record{CgroupID: 1, Pid: 1, Hook: fsm.HookOpenat})
 	}
+	cancel()
+	<-done
 	got := c.traces()
 	if len(got) != 1 || len(got[0].Events) != 3 {
 		t.Fatalf("want one 3-event trace on cap, got %+v", got)
@@ -165,6 +172,38 @@ func TestRunFlushesOnCancel(t *testing.T) {
 	if got := c.traces(); len(got) != 1 {
 		t.Fatalf("Run should flush open groups on cancel, got %d", len(got))
 	}
+}
+
+func TestAddNeverBlocksOnSlowEmit(t *testing.T) {
+	// H6: the ring drainer (Add) must never block on a slow/hung console. With a blocking emit, the
+	// shipper stalls on one batch and the buffer fills, but every Add must still return promptly
+	// (enqueue drops when full instead of blocking).
+	release := make(chan struct{})
+	emit := func(_ context.Context, _ []sink.LearnTrace) error {
+		<-release
+		return nil
+	}
+	a := NewAssembler(Config{Window: time.Hour, Sweep: time.Hour, MaxEvents: 1, MinEvents: 1},
+		nil, nil, "n", hooks.Name, emit, quietLog())
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { a.Run(ctx); close(done) }()
+
+	addDone := make(chan struct{})
+	go func() {
+		for i := 0; i < shipBuffer+200; i++ { // more than the buffer: enqueue must drop, not block
+			a.Add(ctx, Record{CgroupID: uint64(i), Pid: uint32(i), Hook: fsm.HookOpenat})
+		}
+		close(addDone)
+	}()
+	select {
+	case <-addDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Add blocked on a slow emit (H6 regression)")
+	}
+	close(release)
+	cancel()
+	<-done
 }
 
 func TestThreatSetEviction(t *testing.T) {

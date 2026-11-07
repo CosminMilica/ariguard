@@ -80,6 +80,9 @@ def mine_novel(
     attack = [t for t in traces if t.label == trace.ATTACK]
     if not attack:
         return []
+    if baseline.runs == 0:
+        mine.warn_no_baseline("mine_novel")
+        return []
     attack_hooks = [list(t.hooks) for t in attack]
     min_count = max(1, math.ceil(min_support * len(attack)))
     frequent = _prefixspan(attack_hooks, min_count, max_len)
@@ -239,6 +242,9 @@ def backbone_rules(
     attack's rare-hook backbone into a candidate directly, then gates it the same way (fires on the
     attack, silent on the benign baseline). Right for sparse, diverse honeypot traffic.
     """
+    if attack_traces and not any(t.label == trace.BENIGN for t in baseline):
+        mine.warn_no_baseline("backbone_rules")
+        return []
     out: list[AutoRule] = []
     seen: set[tuple[str, ...]] = set()
     for t in attack_traces:

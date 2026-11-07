@@ -37,6 +37,11 @@ from .schema import (
 _VALID_HOOK_IDS = set(HOOK_VALUES.values())
 _VALID_ACTIONS = set(ACTION_VALUES.values())
 
+# Hooks with a BPF LSM deny program in the dataplane (bpf: lsm_sb_mount / lsm_move_mount). A DENY
+# action reachable from any other hook is a silent no-op: the kernel arms a deny token that no LSM
+# hook reads, so the syscall proceeds and the audit says enforced=0. Flag it at validation (H2).
+_LSM_DENY_HOOKS = {HOOK_VALUES["mount"], HOOK_VALUES["move_mount"]}
+
 
 def validate_rule(rule: Rule) -> list[str]:
     """Return a list of problems with ``rule`` (empty = valid)."""
@@ -72,6 +77,21 @@ def validate_rule(rule: Rule) -> list[str]:
         if count > MAX_BINDINGS_PER_HOOK:
             problems.append(
                 f"hook {hook_name!r} has {count} bindings, max is {MAX_BINDINGS_PER_HOOK}"
+            )
+
+    # A deny action only enforces on an LSM-backed hook. If a deny event is raised ONLY by hooks with
+    # no LSM deny, the action is a complete no-op in the kernel (token armed, nothing reads it) — flag
+    # it so the author uses kill or observe (H2). A deny event that also fires on mount/move_mount is
+    # fine (it enforces there); only the fully-dead case is rejected.
+    deny_events = {e for (_f, e), (_t, a) in rule.transitions.items() if a == ACTION_VALUES["deny"]}
+    hook_name = {i: n for n, i in HOOK_VALUES.items()}
+    for e in sorted(deny_events):
+        hooks = {b.hook for b in rule.bindings if b.event == e}
+        if hooks and not (hooks & _LSM_DENY_HOOKS):
+            names = sorted(hook_name.get(h, str(h)) for h in hooks)
+            problems.append(
+                f"deny action on event {e} is raised only by hooks {names} with no LSM enforcement "
+                "(deny blocks only on mount/move_mount); use kill or observe"
             )
 
     for b in rule.bindings:

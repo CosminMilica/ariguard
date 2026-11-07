@@ -120,6 +120,17 @@ def test_simulate_fires_on_attack_silent_on_benign():
     assert mine.simulate(rule, benign) is False
 
 
+def test_mine_candidates_refuses_without_benign_baseline(capsys):
+    # attack-only corpus (no benign): mining must refuse, not emit rules for ubiquitous chains (H3)
+    attack_only = [
+        trace.Trace(
+            label=trace.ATTACK, source="a", events=(trace.Event("openat"), trace.Event("execve"))
+        )
+    ]
+    assert mine.mine_candidates(attack_only) == []
+    assert "benign baseline is EMPTY" in capsys.readouterr().err
+
+
 def test_simulate_one_event_per_syscall_matches_kernel():
     # A chain with a repeated hook (two events bound to openat) is NOT detectable by the kernel: its
     # "first matching binding wins" rule always raises the first openat event, so the second openat
