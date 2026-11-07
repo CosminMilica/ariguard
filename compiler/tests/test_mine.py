@@ -120,6 +120,24 @@ def test_simulate_fires_on_attack_silent_on_benign():
     assert mine.simulate(rule, benign) is False
 
 
+def test_simulate_one_event_per_syscall_matches_kernel():
+    # A chain with a repeated hook (two events bound to openat) is NOT detectable by the kernel: its
+    # "first matching binding wins" rule always raises the first openat event, so the second openat
+    # step can never advance. simulate must mirror that and return False, so the gate does not certify
+    # a rule the kernel cannot actually fire (the C5 fix; the old per-event loop wrongly returned True).
+    cand = mine.Candidate(("openat", "setns", "openat"), 1.0, 0.0)
+    rule = parse_rule(mine.candidate_to_rule(cand, "mined-repeat"))
+    attack = (trace.Event("openat"), trace.Event("setns"), trace.Event("openat"))
+    assert mine.simulate(rule, attack) is False
+    # a distinct-hook chain still fires (no regression)
+    cand2 = mine.Candidate(("openat", "setns", "execve"), 1.0, 0.0)
+    rule2 = parse_rule(mine.candidate_to_rule(cand2, "mined-ok"))
+    assert (
+        mine.simulate(rule2, (trace.Event("openat"), trace.Event("setns"), trace.Event("execve")))
+        is True
+    )
+
+
 def test_simulate_respects_the_window():
     cand = mine.Candidate(("setns", "execve"), 1.0, 0.0)
     rule = parse_rule(mine.candidate_to_rule(cand, "mined-x", window_seconds=1))

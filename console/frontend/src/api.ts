@@ -128,12 +128,29 @@ export const store = reactive({
   selectedRule: null as Rule | null,
 })
 
+// The console's control actions (mode / mutes / observe- & learn-namespaces writes) require the
+// operator bearer token; the operator sets it once in Settings and it is kept per-browser. Reads stay
+// open, so it is attached when present and simply ignored by the open read endpoints.
+export function opToken(): string {
+  try { return localStorage.getItem('ariguard_token') || '' } catch { return '' }
+}
+export function setOpToken(t: string) {
+  try {
+    if (t) localStorage.setItem('ariguard_token', t)
+    else localStorage.removeItem('ariguard_token')
+  } catch { /* storage unavailable (private window): token simply not persisted */ }
+}
+
 async function req<T>(method: string, path: string, params: Record<string, string> = {}, body?: unknown): Promise<T> {
   const u = new URL(BASE + path)
   for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v)
+  const headers: Record<string, string> = {}
+  if (body) headers['Content-Type'] = 'application/json'
+  const tok = opToken()
+  if (tok) headers['Authorization'] = `Bearer ${tok}`
   const r = await fetch(u.toString(), {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!r.ok) throw new Error(`${method} ${path}: ${r.status}`)

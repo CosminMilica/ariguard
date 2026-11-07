@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { store, fmtBytes, observeNamespace, unobserveNamespace, learnNamespace, unlearnNamespace, setMode } from '../api'
+import { store, fmtBytes, observeNamespace, unobserveNamespace, learnNamespace, unlearnNamespace, setMode, opToken, setOpToken } from '../api'
 
 const s = computed(() => store.settings)
 const ruleCount = computed(() => {
@@ -13,6 +13,10 @@ const hooks = computed(() => store.nodes.reduce((a, n) => Math.max(a, n.hooks_to
 // interval. desiredEnforce falls back to the reported agent mode until a mode has been set.
 const desiredEnforce = computed(() => (store.mode.set ? store.mode.enforce : !!s.value?.enforce))
 const applying = computed(() => store.mode.set && !!s.value && store.mode.enforce !== s.value.enforce)
+
+// Operator token: required for the control actions (mode / mutes / namespace writes), kept per-browser.
+const token = ref(opToken())
+function saveToken() { setOpToken(token.value.trim()) }
 
 // Per-namespace enforcement: namespaces seen on workloads plus any already observe-only, sorted.
 const namespaces = computed(() => {
@@ -62,6 +66,10 @@ function addLearnNs() {
         <div class="setrow"><div><div class="t">Policy bundle</div><div class="d">Active compiled ruleset.</div></div><div class="ctl kv">{{ ruleCount }} rules<template v-if="hooks"> · {{ hooks }} hooks</template></div></div>
         <div class="setrow"><div><div class="t">Audit ring buffer</div><div class="d">Kernel → user-space event channel.</div></div><div class="ctl kv">{{ fmtBytes(s.audit_ring_bytes) }}<template v-if="store.overview"> · {{ store.overview.kpis.audit_dropped }} dropped</template></div></div>
         <div class="setrow"><div><div class="t">Kernel</div><div class="d">BTF + BPF LSM required.</div></div><div class="ctl kv">{{ s.kernel || '—' }}</div></div>
+        <div class="setrow">
+          <div><div class="t">Operator token</div><div class="d">Required for control actions (enforcement mode, mutes, observe/learn namespaces). Stored in this browser only; must match the console's <span class="mono">--auth-token</span>.</div></div>
+          <div class="ctl add"><input type="password" v-model="token" placeholder="bearer token" @keyup.enter="saveToken" /><button class="btn" @click="saveToken">Save</button></div>
+        </div>
       </template>
     </div>
   </section>
