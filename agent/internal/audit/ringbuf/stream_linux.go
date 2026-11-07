@@ -80,7 +80,11 @@ func Stream(ctx context.Context, m, ppid, conndst, path, argv *ebpf.Map, w io.Wr
 			markThreat(ev.CgroupID)
 		}
 		if err := audit.WriteLine(w, ev); err != nil {
-			return fmt.Errorf("write audit event: %w", err)
+			// A single output/sink write error must not tear down the whole agent (M7): that
+			// would stop podsync, mute refresh, quarantine release and policy sync while the
+			// kernel keeps enforcing on a frozen pod set. Log this event and keep streaming.
+			log.Warn("drop audit event: write error", "err", err)
+			continue
 		}
 		if reactor != nil {
 			reactor.React(ctx, ev) // autonomous isolation on a confirmed terminal; non-blocking

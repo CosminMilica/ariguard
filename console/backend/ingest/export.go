@@ -54,7 +54,7 @@ func (h *Handler) AuditExport(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.Query(`SELECT id,ts_ns,node,pod,namespace,comm,rule,event,from_state,to_state,action,cgroup_id,pid,ppid,hook,dst_ip,dst_port
 		FROM audit_events WHERE id > ? ORDER BY id ASC LIMIT ?`, since, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	defer rows.Close()
@@ -96,7 +96,7 @@ func (h *Handler) RuleTelemetry(w http.ResponseWriter, r *http.Request) {
 		WHERE a.rule != '' AND a.to_state IN ` + threatStatesSQL + `
 		GROUP BY a.rule ORDER BY a.rule`)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	defer rows.Close()
@@ -105,7 +105,7 @@ func (h *Handler) RuleTelemetry(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t telemetryRow
 		if err := rows.Scan(&t.Rule, &t.Hits, &t.DistinctPod, &t.BenignFires, &t.FirstSeenNS, &t.LastSeenNS); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, err)
 			return
 		}
 		out = append(out, t)

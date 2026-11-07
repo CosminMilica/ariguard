@@ -29,7 +29,7 @@ func (a *API) edges(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.Query(`SELECT namespace, pod, owner, dst_ns, dst_pod, dst_port, rule, ts_ns
 		FROM audit_events
 		WHERE dst_pod != '' AND pod != '' AND ts_ns >= ? AND ts_ns <= ?
-		ORDER BY ts_ns`, win.fromNS(), win.toNS())
+		ORDER BY ts_ns LIMIT 50000`, win.fromNS(), win.toNS())
 	if err != nil {
 		fail(w, err)
 		return

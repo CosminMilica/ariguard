@@ -67,7 +67,7 @@ const (
 )
 
 const (
-	PatternLen         = 32 // buffer size; patterns are at most PatternLen-1 bytes. 32 (not 64) keeps the per-hook match loop within the verifier budget at MaxBindingsPerHook=16 (16*32 == the known-good 8*64).
+	PatternLen         = 32 // buffer size; patterns are at most PatternLen-1 bytes. 32 (not 64) keeps the per-hook match loop within the verifier budget at MaxBindingsPerHook=14 (14*32 stays within the known-good 8*64).
 	CommLen            = 16
 	MaxBindingsPerHook = 14 // ABI mirror of bpf/ariguard-common (bundle-wide per-hook budget)
 )
@@ -139,7 +139,7 @@ type Transition struct {
 }
 
 // Binding raises Event in Rule when its hook fires and both predicates hold.
-// Same layout on the wire and in the kernel map. 104 bytes.
+// Same layout on the wire and in the kernel map. 72 bytes.
 type Binding struct {
 	Hook     uint32
 	Rule     uint32

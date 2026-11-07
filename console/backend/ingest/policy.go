@@ -2,7 +2,9 @@ package ingest
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -30,7 +32,7 @@ func (h *Handler) SetPolicy(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT(id) DO UPDATE SET version=excluded.version, bundle=excluded.bundle, ts_ns=excluded.ts_ns`,
 		version, body, time.Now().UnixNano())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	w.Header().Set("X-Policy-Version", version)
@@ -44,8 +46,12 @@ func (h *Handler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 	var version string
 	var bundle []byte
 	err := h.DB.QueryRow(`SELECT version, bundle FROM policy WHERE id=1`).Scan(&version, &bundle)
-	if err != nil { // no row (sql.ErrNoRows) or a real error: either way there is nothing to serve
+	if errors.Is(err, sql.ErrNoRows) { // no policy stored: the agent keeps its baked-in bundle
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err != nil { // a real DB error must not masquerade as "no policy"; surface it as a 500 (Tier 3)
+		serverError(w, err)
 		return
 	}
 	w.Header().Set("X-Policy-Version", version)

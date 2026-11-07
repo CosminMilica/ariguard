@@ -39,9 +39,9 @@ func (a *API) actors(w http.ResponseWriter, r *http.Request) {
 			COUNT(DISTINCT namespace), COUNT(DISTINCT node),
 			SUM(killed), SUM(killed = 0 AND blocked = 1), SUM(killed = 0 AND blocked = 0),
 			MIN(first_ns), MAX(last_ns),
-			GROUP_CONCAT(DISTINCT rule), GROUP_CONCAT(DISTINCT comm), GROUP_CONCAT(DISTINCT namespace),
-			GROUP_CONCAT(dst_ips),
-			GROUP_CONCAT(DISTINCT owner), GROUP_CONCAT(DISTINCT app), GROUP_CONCAT(DISTINCT pod)
+			GROUP_CONCAT(rule, char(31)), GROUP_CONCAT(comm, char(31)), GROUP_CONCAT(namespace, char(31)),
+			GROUP_CONCAT(dst_ips, char(31)),
+			GROUP_CONCAT(owner, char(31)), GROUP_CONCAT(app, char(31)), GROUP_CONCAT(pod, char(31))
 		FROM (`+incidentGroupsSQL+`)
 		WHERE image_id != ''
 		GROUP BY image_id

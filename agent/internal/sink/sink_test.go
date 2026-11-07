@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -296,7 +297,9 @@ func TestAuditBatching(t *testing.T) {
 	defer srv.Close()
 	s := New(srv.URL, Registration{Node: "n1"}, quiet)
 	for i := 0; i < 70; i++ {
-		_, _ = s.Write([]byte(`{"ts_ns":1,"pod":"p","comm":"sh"}` + "\n"))
+		// Distinct cgroup_id per event so coalescing never merges them: this test exercises
+		// batch splitting (64 + 6 => 2 posts), not throttling.
+		_, _ = fmt.Fprintf(s, `{"ts_ns":1,"cgroup_id":%d,"pod":"p","comm":"sh"}`+"\n", i)
 	}
 	_, _ = s.Write([]byte("garbage\n"))
 	s.Flush(context.Background())
@@ -475,9 +478,9 @@ func TestObserveThrottle(t *testing.T) {
 	kill := obs
 	kill.Action = "kill"
 	s.Emit(kill)
-	s.Emit(kill)
-	if len(s.buf) != 3 {
-		t.Fatalf("non-observe must always pass: buffered %d, want 3", len(s.buf))
+	s.Emit(kill) // identical repeat within CoalesceInterval: coalesced
+	if len(s.buf) != 2 {
+		t.Fatalf("repeated terminal must coalesce: buffered %d, want 2", len(s.buf))
 	}
 
 	other := obs
@@ -485,14 +488,50 @@ func TestObserveThrottle(t *testing.T) {
 	s.Emit(other)
 	other.CgroupID = 9
 	s.Emit(other)
-	if len(s.buf) != 5 {
-		t.Fatalf("new state must pass: buffered %d, want 5", len(s.buf))
+	if len(s.buf) != 4 {
+		t.Fatalf("new state must pass: buffered %d, want 4", len(s.buf))
 	}
 
 	cur = cur.Add(2 * time.Second)
 	s.Emit(obs)
-	if len(s.buf) != 6 {
-		t.Fatalf("after interval: buffered %d, want 6", len(s.buf))
+	if len(s.buf) != 5 {
+		t.Fatalf("after interval: buffered %d, want 5", len(s.buf))
+	}
+}
+
+// TestCoalesceNonObserve checks the terminal-event coalescing (M10): a kill/deny retry loop firing
+// the same event is throttled to once per CoalesceInterval, while genuinely distinct terminal events
+// (different action, target, rule, or cgroup) always pass.
+func TestCoalesceNonObserve(t *testing.T) {
+	cur := time.Unix(2000, 0)
+	s := New("http://unused", Registration{Node: "n"}, quiet)
+	s.now = func() time.Time { return cur }
+	kill := audit.Event{CgroupID: 1, Rule: "r", To: "2", Action: "kill"}
+
+	for i := 0; i < 1000; i++ { // a tight retry loop of the same terminal event
+		s.Emit(kill)
+	}
+	if len(s.buf) != 1 {
+		t.Fatalf("retry-loop repeats within interval: buffered %d, want 1", len(s.buf))
+	}
+
+	// A different action on the same (cgroup, rule, to) is a distinct event and must pass.
+	deny := kill
+	deny.Action = "deny"
+	s.Emit(deny)
+	// A different target is distinct too.
+	other := kill
+	other.To = "3"
+	s.Emit(other)
+	if len(s.buf) != 3 {
+		t.Fatalf("distinct terminal events must pass: buffered %d, want 3", len(s.buf))
+	}
+
+	// After the coalescing window the same event reports again.
+	cur = cur.Add(CoalesceInterval + time.Millisecond)
+	s.Emit(kill)
+	if len(s.buf) != 4 {
+		t.Fatalf("after CoalesceInterval: buffered %d, want 4", len(s.buf))
 	}
 }
 

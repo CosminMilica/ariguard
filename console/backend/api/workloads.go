@@ -30,7 +30,7 @@ func (a *API) workloads(w http.ResponseWriter, r *http.Request) {
 		args = append(args, filter)
 	}
 	if q != "" {
-		query += ` AND (pod LIKE ? OR namespace LIKE ? OR node LIKE ? OR comm LIKE ? OR rule LIKE ?)`
+		query += ` AND (pod LIKE ? ESCAPE '\' OR namespace LIKE ? ESCAPE '\' OR node LIKE ? ESCAPE '\' OR comm LIKE ? ESCAPE '\' OR rule LIKE ? ESCAPE '\')`
 		l := like(q)
 		args = append(args, l, l, l, l, l)
 	}

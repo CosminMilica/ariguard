@@ -44,35 +44,40 @@ Three structural issues explain most of the findings:
 
 | # | Finding | Where | Status |
 |---|---------|-------|--------|
-| M1 | Console DoS: single SQLite connection + queries with no `LIMIT`/span cap (`/api/actors?from=0&to=…`, `/api/export`); no HTTP server timeouts (Slowloris); unbounded result sets → OOM. | `console/backend/store/sqlite.go:43`, `api/api.go:88`, `api/export.go:85`, `main.go:81` | deferred |
-| M2 | `advance` is `#[inline(always)]` inside the 14× binding loop, inlined into all 16 programs → real 5.15 verifier-ceiling risk. Make it a bpf-to-bpf subprogram. | `bpf/ariguard-ebpf/src/main.rs:436` | deferred |
-| M3 | `simulate` window = total chain duration; kernel = inter-step gap. Plus honeypot/strace traces carry `ts_ns=0`, so the window is never validated by the gate. | `compiler/ariguard_compiler/mine.py:281`, `strace.py:69` | deferred |
-| M4 | Promotion unsatisfiable at default `min_hits=1` (`days_observed` derived from the hit span → 0 on one hit); `min_days`/`min_hits` silently coupled. | `compiler/ariguard_compiler/loop.py:96-103` | deferred |
-| M5 | Unauthenticated read API leaks the rules, coverage and per-pod attack chains → an attacker maps detection coverage and crafts a bypass. | `console/backend/api/api.go:19-39` | deferred |
+| M1 | Console DoS: single SQLite connection + queries with no `LIMIT`/span cap (`/api/actors?from=0&to=…`, `/api/export`); no HTTP server timeouts (Slowloris); unbounded result sets → OOM. | `console/backend/store/sqlite.go:43`, `api/api.go:88`, `api/export.go:85`, `main.go:81` | **fixed** (31-day span cap, `LIMIT 50000` on per-event queries, HTTP read/write/idle timeouts; single-conn kept) |
+| M2 | `advance` is `#[inline(always)]` inside the 14× binding loop, inlined into all 16 programs → real 5.15 verifier-ceiling risk. Make it a bpf-to-bpf subprogram. | `bpf/ariguard-ebpf/src/main.rs:436` | deferred (verifier-matrix) |
+| M3 | `simulate` window = total chain duration; kernel = inter-step gap. Plus honeypot/strace traces carry `ts_ns=0`, so the window is never validated by the gate. | `compiler/ariguard_compiler/mine.py:281`, `strace.py:69` | **fixed** (per-step sliding window matching the kernel) |
+| M4 | Promotion unsatisfiable at default `min_hits=1` (`days_observed` derived from the hit span → 0 on one hit); `min_days`/`min_hits` silently coupled. | `compiler/ariguard_compiler/loop.py:96-103` | **fixed** (shadow age = `first_seen → now`) |
+| M5 | Unauthenticated read API leaks the rules, coverage and per-pod attack chains → an attacker maps detection coverage and crafts a bypass. | `console/backend/api/api.go:19-39` | deferred (read-API auth = UX change) |
 | M6 | Privileged agent + cluster-wide `pods: delete/patch` RBAC → large blast radius on agent compromise. | `deploy/helm/ariguard/templates/agent-rbac.yaml:16`, `agent-daemonset.yaml:81` | doc / deferred |
-| M7 | An audit-file write error tears down the whole agent; a metrics-endpoint error calls `stop()`. | `agent/cmd/ariguard-agent/main_linux.go:210,378`, `audit/ringbuf/stream_linux.go:82` | deferred |
-| M8 | Learn-trace mislabel under churn: `markThreat` runs host-wide into a FIFO `ThreatSet(8192)`; non-learn marks evict learn-cgroup marks → trace mislabeled benign. | `agent/internal/audit/ringbuf/stream_linux.go:79`, `learn/threat.go` | deferred |
-| M9 | `_drop_subsumed` keeps the longer superset chain and drops the shorter, more-general discriminator → attacker doing just the prefix evades. | `compiler/ariguard_compiler/mine.py:188-198` | deferred |
-| M10 | Non-observe audit events are never coalesced; a kill/deny retry loop floods and drop-oldest loses distinct events. | `agent/internal/sink/sink.go:411` | deferred |
+| M7 | An audit-file write error tears down the whole agent; a metrics-endpoint error calls `stop()`. | `agent/cmd/ariguard-agent/main_linux.go:210,378`, `audit/ringbuf/stream_linux.go:82` | **fixed** (both non-fatal: log + continue) |
+| M8 | Learn-trace mislabel under churn: `markThreat` runs host-wide into a FIFO `ThreatSet(8192)`; non-learn marks evict learn-cgroup marks → trace mislabeled benign. | `agent/internal/audit/ringbuf/stream_linux.go:79`, `learn/threat.go` | **fixed** (refresh-on-mark LRU) |
+| M9 | `_drop_subsumed` keeps the longer superset chain and drops the shorter, more-general discriminator → attacker doing just the prefix evades. | `compiler/ariguard_compiler/mine.py:188-198` | deferred (precision/recall trade-off: the shorter discriminator raises false-positive risk, regressing the "no-FP under load" property; keeping the specific longer chain is the safer default) |
+| M10 | Non-observe audit events are never coalesced; a kill/deny retry loop floods and drop-oldest loses distinct events. | `agent/internal/sink/sink.go:411` | **fixed** (coalesce repeated identical non-observe events; distinct events keyed by action never merge) |
 
 ## Tier 4 — Low / informational / doc drift
-- Stale comments: `Binding` "104 bytes" (really 72), `MaxBindingsPerHook` comment "8->16" but value 14. `abi.go:70,142`, `emit.py:9`, `lib.rs:71`.
-- `GROUP_CONCAT` split naive on `,` for attacker-influenced labels. `api/campaigns.go:44`.
-- LIKE metacharacters (`%`/`_`) not escaped in search. `api/api.go:110`.
-- `Content-Disposition` filename from raw pod param (embedded `"`). `api/export.go:139`.
-- `toNS` int64 overflow on huge `?to=`. `api/api.go:86`.
-- `X-Traces-Accepted` counts deduped lines. `ingest/traces.go:56`.
-- Scraper has a second hardcoded 26h prune that ignores `--retention` and swallows errors. `scrape/scraper.go:64`.
-- Retention prunes the learn-mode benign baseline with everything else. `store/retention.go:23`.
-- `stash_argv` argc counts non-null but stores at original index → holes mis-assemble argv. `main.rs:740`.
+Fixed in this branch:
+- Stale comments: `Binding` "104 bytes" → 72, `MaxBindingsPerHook` "8->16" → 14. `abi.go`, `emit.py`, `lib.rs`.
+- `AG_PODS` bare literal `16384` → `MAX_TRACKED_WORKLOADS`. `main.rs`.
+- `GROUP_CONCAT` split naive on `,` → `char(31)` separator + Go-side dedupe. `api/campaigns.go`, `actors.go`.
+- LIKE metacharacters escaped (`ESCAPE '\'`). `api/api.go` `like()`, `events.go`, `workloads.go`.
+- `Content-Disposition` filename sanitized. `api/export.go`.
+- `toNS` int64 overflow — resolved by the M1 span cap. `api/api.go`.
+- `X-Traces-Accepted` counts actual newly-inserted rows. `ingest/traces.go`.
+- Scraper prune honors `--retention` (26h floor) and logs its error. `scrape/scraper.go`, `main.go`.
+- `GetPolicy` distinguishes `sql.ErrNoRows` (204) from a real DB error (500). `ingest/policy.go`.
+- Internal error text no longer leaked; `fail()`/ingest `serverError` log the detail, return a generic 500. `api/api.go`, `ingest/*`.
+- `commcache` O(n) eviction → O(1) ring index. `agent/internal/audit/commcache.go`.
+- Rule-name truncation collisions → hash suffix (`chain_name`). `mine.py`, `autogen.py`.
+- `--dry-run` no longer performs the honeypot network pull. `loop.py`.
+
+Deferred (eBPF behavior/ABI — each needs verifier-matrix validation):
+- `stash_argv` argc holes mis-assemble argv. `main.rs:740`.
 - tgid-reuse stale FSM state (no clear on `sched_process_exit`). `main.rs:463`.
 - Root-cgroup skip assumes cgroup v2 id == 1 (silent-fail on v1/hybrid). `main.rs:34`.
 - `ACTION_THROTTLE` has no in-kernel effect. `main.rs:531`.
-- `AG_LEARN` ring drops are silent (no metric, unlike audit). `main.rs:159`.
-- Rule-name truncation to 60 chars can collide → duplicate names abort the whole build. `mine.py:345`.
-- `--dry-run` still performs the honeypot network pull. `loop.py:333`.
-- `GetPolicy` masks real DB errors as 204 "no policy". `ingest/policy.go:46`.
-- Internal error text leaked to clients via `fail()`/`http.Error`. `api/api.go:74`.
+- `AG_LEARN` ring drops are silent (no metric). `main.rs:159`.
+- Retention prunes the learn-mode benign baseline with everything else (needs a separate/longer learn retention). `store/retention.go:23`.
 
 ## Confirmed OK
 ABI is consistent (no drift; `abi_test.go`/`btf_test.go` would catch a size change). No string-concatenated

@@ -158,6 +158,43 @@ def test_simulate_respects_the_window():
     assert mine.simulate(rule, elapsed) is False  # chain reset: second step outside the window
 
 
+def test_simulate_window_is_inter_step_gap():
+    # M3: the kernel bounds the GAP between consecutive steps (updated_ns is rewritten each
+    # transition), not the total chain duration. A chain whose total span exceeds the window still
+    # fires as long as no single inter-step gap does; one oversized gap resets the partial chain.
+    cand = mine.Candidate(("setns", "mount", "execve"), 1.0, 0.0)
+    rule = parse_rule(mine.candidate_to_rule(cand, "mined-gap", window_seconds=1))
+    # total span 1.5s > 1s window, but each gap (0.8s, 0.7s) is within -> fires
+    spread = (
+        trace.Event("setns", ts_ns=0),
+        trace.Event("mount", ts_ns=800_000_000),
+        trace.Event("execve", ts_ns=1_500_000_000),
+    )
+    assert mine.simulate(rule, spread) is True
+    # a single inter-step gap over the window (mount -> execve = 1.1s) resets the partial chain
+    gap = (
+        trace.Event("setns", ts_ns=0),
+        trace.Event("mount", ts_ns=100_000_000),
+        trace.Event("execve", ts_ns=1_200_000_000),
+    )
+    assert mine.simulate(rule, gap) is False
+
+
+def test_chain_name_decollides_long_chains():
+    # Two distinct chains sharing a 60-char prefix must still get distinct names within the cap, or
+    # emit_bundle aborts the whole build on "duplicate rule names" (Tier 4).
+    from ariguard_compiler.schema import NAME_RE
+
+    long_a = ("openat",) * 10 + ("setns",)
+    long_b = ("openat",) * 10 + ("mount",)
+    na, nb = mine.chain_name("auto", long_a), mine.chain_name("auto", long_b)
+    assert na != nb
+    assert len(na) <= mine.NAME_MAX and len(nb) <= mine.NAME_MAX
+    assert NAME_RE.fullmatch(na) and NAME_RE.fullmatch(nb)
+    # a short chain is left verbatim (no hash suffix)
+    assert mine.chain_name("auto", ("setns", "mount")) == "auto-setns-mount"
+
+
 # --- the gate ---------------------------------------------------------------------------------
 
 

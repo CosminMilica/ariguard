@@ -137,6 +137,19 @@ func TestPolicyRoundTrip(t *testing.T) {
 	}
 }
 
+// TestGetPolicyDBErrorIs500 verifies a real DB error no longer masquerades as 204 "no policy";
+// only sql.ErrNoRows gives 204. (Tier 3)
+func TestGetPolicyDBErrorIs500(t *testing.T) {
+	h := testDB(t)
+	if _, err := h.DB.Exec(`DROP TABLE policy`); err != nil {
+		t.Fatalf("drop policy: %v", err)
+	}
+	rec := do(t, h, h.GetPolicy, http.MethodGet, "/api/v1/policy", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("GetPolicy with a broken table: status=%d, want 500", rec.Code)
+	}
+}
+
 // --- Mutes + Quarantine ---------------------------------------------------------------------
 
 func TestMutesListsMutedPods(t *testing.T) {

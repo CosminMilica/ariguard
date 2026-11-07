@@ -12,7 +12,7 @@ import (
 func (h *Handler) ObserveNamespaces(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.Query(`SELECT namespace FROM observe_namespaces ORDER BY namespace`)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	defer rows.Close()
@@ -20,13 +20,13 @@ func (h *Handler) ObserveNamespaces(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ns string
 		if err := rows.Scan(&ns); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, err)
 			return
 		}
 		namespaces = append(namespaces, ns)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

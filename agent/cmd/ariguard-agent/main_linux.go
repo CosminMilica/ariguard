@@ -390,8 +390,10 @@ func run(log *slog.Logger) error {
 				M: obj.Maps.Metrics, Pods: obj.Maps.Pods, State: obj.Maps.State,
 				Names: &names, Resolver: pods, Node: node, Progs: progs,
 			}); err != nil {
+				// A metrics-endpoint failure must not shut down the whole agent (M7): losing
+				// observability is not a reason to stop detection/enforcement. Log and carry on;
+				// the other workers (and the kernel dataplane) keep running.
 				log.Error("metrics server", "err", err)
-				stop()
 			}
 		}()
 	}

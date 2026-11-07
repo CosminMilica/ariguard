@@ -50,7 +50,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go scrape.New(db).Run(ctx)
+	scraper := scrape.New(db)
+	scraper.Retention = *retention
+	go scraper.Run(ctx)
 	if *retention > 0 {
 		// prune hourly, or more often than the window if it is very short
 		interval := time.Hour
@@ -78,7 +80,17 @@ func main() {
 	} else {
 		log.Printf("control-plane auth enabled on %s*", ingest.AuthPrefix)
 	}
-	srv := &http.Server{Addr: *addr, Handler: api.CORS(ingest.Auth(*authToken, mux))}
+	// Timeouts bound how long a slow client can hold a handler (and, with the single DB connection,
+	// the whole server) — Slowloris / slow-body protection. The audit/trace POSTs are small and quick,
+	// so a generous but finite read/write budget is safe. (M1)
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           api.CORS(ingest.Auth(*authToken, mux)),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
 		srv.Shutdown(context.Background())

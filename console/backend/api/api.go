@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -71,9 +72,12 @@ func writeJSON(w http.ResponseWriter, v any) {
 	}
 }
 
+// fail logs the real error server-side and returns a generic message to the client so internal
+// detail (SQL text, schema, paths) is not leaked. 4xx validation errors are written directly by
+// handlers and keep their specific messages. (Tier 4)
 func fail(w http.ResponseWriter, err error) {
 	log.Printf("api: %v", err)
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
 // window is a resolved [From, To] time window in unix milliseconds.
@@ -85,14 +89,23 @@ func (w window) fromNS() int64 { return w.From * 1_000_000 }
 // within the same millisecond as `to` (e.g. just-ingested events at ~now) are included.
 func (w window) toNS() int64 { return w.To*1_000_000 + 999_999 }
 
+// maxWindowMs caps the explicit query span so an unauthenticated caller cannot force a full-table
+// aggregation (e.g. ?from=0&to=now) that holds the single DB connection for seconds and stalls
+// ingest. It also keeps toNS() well clear of int64 overflow. (M1)
+const maxWindowMs int64 = 31 * 24 * 60 * 60 * 1000 // 31 days
+
 // windowOf resolves the query window: an explicit ?from=&to= (unix millis, from < to)
-// wins; otherwise ?range=15m|1h|24h (default 15m) ending now.
+// wins; otherwise ?range=15m|1h|24h (default 15m) ending now. An over-long explicit span is clamped
+// to the most recent maxWindowMs.
 func windowOf(r *http.Request) window {
 	q := r.URL.Query()
 	if f, t := q.Get("from"), q.Get("to"); f != "" && t != "" {
 		from, e1 := strconv.ParseInt(f, 10, 64)
 		to, e2 := strconv.ParseInt(t, 10, 64)
 		if e1 == nil && e2 == nil && from >= 0 && to > from {
+			if to-from > maxWindowMs {
+				from = to - maxWindowMs
+			}
 			return window{from, to}
 		}
 	}
@@ -107,7 +120,13 @@ func windowOf(r *http.Request) window {
 	return window{now - d.Milliseconds(), now}
 }
 
-func like(q string) string { return "%" + q + "%" }
+// likeEscaper escapes the LIKE metacharacters %, _ and the escape character itself so that
+// caller-supplied search text matches literally rather than as wildcards.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// like wraps q as a case-insensitive substring LIKE pattern with its metacharacters escaped. Every
+// LIKE clause fed by like() must append ESCAPE '\' so the escapes are honored. (Tier 4)
+func like(q string) string { return "%" + likeEscaper.Replace(q) + "%" }
 
 var stateSeverity = map[string]string{
 	"compromised":       "crit",

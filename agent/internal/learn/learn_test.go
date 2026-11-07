@@ -217,8 +217,45 @@ func TestThreatSetEviction(t *testing.T) {
 	if !ts.Has(2) || !ts.Has(3) {
 		t.Error("cgroups 2 and 3 should be present")
 	}
-	ts.Mark(2) // re-mark is a no-op, must not grow/evict
+	ts.Mark(2) // re-mark refreshes recency, must not grow/evict
 	if !ts.Has(3) {
 		t.Error("re-marking 2 should not evict 3")
+	}
+}
+
+// TestThreatSetLRURefresh verifies refresh-on-mark: re-marking an active cgroup moves it to
+// most-recent, so a flood of marks for other cgroups evicts the least-recently-marked, not the
+// still-active one (M8).
+func TestThreatSetLRURefresh(t *testing.T) {
+	ts := NewThreatSet(2)
+	ts.Mark(1)
+	ts.Mark(2)
+	// 1 is the least-recently-marked; re-marking it makes 2 the eviction target instead.
+	ts.Mark(1)
+	ts.Mark(3) // over cap: evicts the LRU, which is now 2 (not 1)
+	if !ts.Has(1) {
+		t.Error("re-marked cgroup 1 must survive eviction")
+	}
+	if ts.Has(2) {
+		t.Error("cgroup 2 should have been evicted as least-recently-marked")
+	}
+	if !ts.Has(3) {
+		t.Error("cgroup 3 should be present")
+	}
+}
+
+// TestThreatSetChurnKeepsActive models host-wide churn: a learn cgroup keeps tripping while many
+// one-shot marks for other cgroups arrive. Under FIFO the learn cgroup would be evicted; under LRU
+// its repeated marks keep it alive.
+func TestThreatSetChurnKeepsActive(t *testing.T) {
+	const cap = 8
+	ts := NewThreatSet(cap)
+	const learnCg = 999
+	for i := 0; i < 100; i++ {
+		ts.Mark(learnCg)   // the active learn cgroup keeps tripping
+		ts.Mark(uint64(i)) // churn: a distinct non-learn cgroup each iteration
+	}
+	if !ts.Has(learnCg) {
+		t.Error("active learn cgroup must not be evicted under churn")
 	}
 }

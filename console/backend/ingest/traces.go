@@ -28,7 +28,7 @@ func (h *Handler) Traces(w http.ResponseWriter, r *http.Request) {
 	sc.Buffer(make([]byte, 0, 1<<20), 1<<20)
 	tx, err := h.DB.Begin()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	defer tx.Rollback()
@@ -53,19 +53,24 @@ func (h *Handler) Traces(w http.ResponseWriter, r *http.Request) {
 		}
 		sum := sha256.Sum256([]byte(line))
 		hash := hex.EncodeToString(sum[:])
-		if _, err = tx.Exec(`INSERT OR IGNORE INTO honeypot_traces(ts_ns,label,source,hash,events) VALUES(?,?,?,?,?)`,
-			now, label, probe.Source, hash, line); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		res, err := tx.Exec(`INSERT OR IGNORE INTO honeypot_traces(ts_ns,label,source,hash,events) VALUES(?,?,?,?,?)`,
+			now, label, probe.Source, hash, line)
+		if err != nil {
+			serverError(w, err)
 			return
 		}
-		n++
+		// INSERT OR IGNORE silently skips a duplicate (same content hash); count only rows that were
+		// actually inserted so the header reports new traces, not re-posted ones. (Tier 4)
+		if ra, err := res.RowsAffected(); err == nil {
+			n += int(ra)
+		}
 	}
 	if err = sc.Err(); err != nil {
 		http.Error(w, "read: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err = tx.Commit(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	w.Header().Set("X-Traces-Accepted", strconv.Itoa(n))
@@ -85,7 +90,7 @@ func (h *Handler) TracesExport(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.DB.Query(`SELECT events FROM honeypot_traces WHERE id > ? ORDER BY id ASC LIMIT ?`, since, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	defer rows.Close()

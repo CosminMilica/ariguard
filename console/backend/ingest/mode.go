@@ -23,7 +23,7 @@ func (h *Handler) Mode(w http.ResponseWriter, r *http.Request) {
 	case err == sql.ErrNoRows:
 		// unset: agents keep their own mode
 	case err != nil:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	default:
 		resp = modeResp{Enforce: v == "enforce", Set: true}

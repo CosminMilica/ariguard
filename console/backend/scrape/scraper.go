@@ -14,14 +14,19 @@ import (
 var StateNames = []string{"normal", "suspicious", "escalating", "breakout_imminent", "compromised"}
 
 type Scraper struct {
-	DB       *sql.DB
-	Interval time.Duration
-	Client   *http.Client
+	DB        *sql.DB
+	Interval  time.Duration
+	Retention time.Duration // mirrors --retention; history older than this is pruned (0 = default floor)
+	Client    *http.Client
 }
 
 func New(db *sql.DB) *Scraper {
 	return &Scraper{DB: db, Interval: 3 * time.Second, Client: &http.Client{Timeout: 2500 * time.Millisecond}}
 }
+
+// minScrapeRetention floors the scraper's prune so the longest UI query range (24h) always has
+// data, even if --retention is set shorter or left at the keep-forever default.
+const minScrapeRetention = 26 * time.Hour
 
 // Run scrapes every node each interval until ctx is cancelled.
 func (s *Scraper) Run(ctx context.Context) {
@@ -59,11 +64,20 @@ func (s *Scraper) scrapeAll(ctx context.Context) {
 			log.Printf("scraper: %s (%s): %v", t.node, t.addr, err)
 		}
 	}
-	// Keep history bounded (the longest query range is 24h); this also reaps
-	// terminal workloads we deliberately kept after their pod was killed.
-	cutoff := time.Now().Add(-26 * time.Hour).UnixMilli()
-	s.DB.Exec(`DELETE FROM metric_samples WHERE ts < ?`, cutoff)
-	s.DB.Exec(`DELETE FROM workloads WHERE updated < ?`, cutoff)
+	// Keep history bounded and reap terminal workloads we deliberately kept after their pod was
+	// killed. Honor the configured --retention instead of a hardcoded span, but never prune below the
+	// 24h UI query range (minScrapeRetention floor). Errors were previously swallowed; log them.
+	retain := s.Retention
+	if retain < minScrapeRetention {
+		retain = minScrapeRetention
+	}
+	cutoff := time.Now().Add(-retain).UnixMilli()
+	if _, err := s.DB.Exec(`DELETE FROM metric_samples WHERE ts < ?`, cutoff); err != nil {
+		log.Printf("scraper: prune metric_samples: %v", err)
+	}
+	if _, err := s.DB.Exec(`DELETE FROM workloads WHERE updated < ?`, cutoff); err != nil {
+		log.Printf("scraper: prune workloads: %v", err)
+	}
 }
 
 func (s *Scraper) scrapeNode(ctx context.Context, t target) error {

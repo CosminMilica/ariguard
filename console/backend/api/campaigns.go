@@ -40,12 +40,30 @@ type campaignsOut struct {
 	ByNS   []nsCampaign   `json:"by_namespace"`
 }
 
-// splitConcat turns a GROUP_CONCAT(DISTINCT ...) result into a non-nil slice.
+// concatSep is the GROUP_CONCAT separator used by every aggregate feeding splitConcat. It is the
+// ASCII Unit Separator (0x1f), which cannot appear in attacker-influenced labels (owner/app/image/
+// namespace/node/pod), unlike a comma that would split one label into several list entries. SQLite
+// cannot combine DISTINCT with a custom separator, so the SQL uses GROUP_CONCAT(x, char(31)) without
+// DISTINCT and splitConcat de-duplicates. (Tier 4)
+const concatSep = "\x1f"
+
+// splitConcat turns a GROUP_CONCAT(x, char(31)) result into a non-nil, de-duplicated slice,
+// preserving first-seen order.
 func splitConcat(s sql.NullString) []string {
 	if !s.Valid || s.String == "" {
 		return []string{}
 	}
-	return strings.Split(s.String, ",")
+	parts := strings.Split(s.String, concatSep)
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 // campaigns aggregates incident groups into blast-radius rollups by rule and namespace.
@@ -56,7 +74,7 @@ func (a *API) campaigns(w http.ResponseWriter, r *http.Request) {
 	byRule, err := a.DB.Query(`SELECT rule, COUNT(*), COUNT(DISTINCT pod), COUNT(DISTINCT namespace), COUNT(DISTINCT node),
 			SUM(killed), SUM(killed = 0 AND blocked = 1), SUM(killed = 0 AND blocked = 0),
 			MIN(first_ns), MAX(last_ns),
-			GROUP_CONCAT(DISTINCT namespace), GROUP_CONCAT(DISTINCT node)
+			GROUP_CONCAT(namespace, char(31)), GROUP_CONCAT(node, char(31))
 		FROM (`+incidentGroupsSQL+`) GROUP BY rule ORDER BY COUNT(*) DESC, rule`, win.fromNS(), win.toNS())
 	if err != nil {
 		fail(w, err)
@@ -83,7 +101,7 @@ func (a *API) campaigns(w http.ResponseWriter, r *http.Request) {
 
 	byNS, err := a.DB.Query(`SELECT namespace, COUNT(*), COUNT(DISTINCT pod), COUNT(DISTINCT rule), COUNT(DISTINCT node),
 			SUM(killed), SUM(killed = 0 AND blocked = 1), SUM(killed = 0 AND blocked = 0),
-			MIN(first_ns), MAX(last_ns), GROUP_CONCAT(DISTINCT rule)
+			MIN(first_ns), MAX(last_ns), GROUP_CONCAT(rule, char(31))
 		FROM (`+incidentGroupsSQL+`) GROUP BY namespace ORDER BY COUNT(*) DESC, namespace`, win.fromNS(), win.toNS())
 	if err != nil {
 		fail(w, err)

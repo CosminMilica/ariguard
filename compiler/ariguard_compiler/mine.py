@@ -23,6 +23,7 @@ subsequence it was learned from and its contrast score.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
 import os
 import sys
@@ -42,6 +43,27 @@ MAX_BENIGN_SUPPORT = 0.0
 MIN_LEN = 2
 MAX_LEN = 6
 DEFAULT_WINDOW_SECONDS = 10
+
+# Rule names are capped so they fit the console UI and metadata; a bare truncation of the joined hook
+# list collides when two distinct chains share a NAME_MAX-char prefix (emit_bundle then aborts the
+# whole build on "duplicate rule names"). chain_name() appends a short hash of the full chain so
+# distinct chains stay distinct within the cap.
+NAME_MAX = 60
+_NAME_HASH_LEN = 8
+
+
+def chain_name(name_prefix: str, hooks: tuple[str, ...]) -> str:
+    """A rule name <= ``NAME_MAX`` chars, collision-free across distinct chains.
+
+    When the ``prefix-hook-hook-...`` form fits, it is used verbatim. Otherwise it is truncated and a
+    short hash of the full chain is appended, so two chains sharing a 60-char prefix get distinct names
+    instead of colliding and aborting ``emit_bundle`` (Tier 4)."""
+    full = f"{name_prefix}-{'-'.join(hooks)}"
+    if len(full) <= NAME_MAX:
+        return full
+    digest = hashlib.sha256("\x00".join(hooks).encode("utf-8")).hexdigest()[:_NAME_HASH_LEN]
+    keep = NAME_MAX - _NAME_HASH_LEN - 1  # leave room for "-<digest>"
+    return f"{full[:keep].rstrip('-')}-{digest}"
 
 
 @dataclass(frozen=True)
@@ -288,24 +310,38 @@ def _first_event(rule, ev: trace.Event) -> int | None:
 def simulate(rule, events: tuple[trace.Event, ...]) -> bool:
     """Replay a trace through ``rule``'s FSM; True when it reaches a terminal state.
 
-    Mirrors the kernel engine's ordered semantics: at most ONE transition per rule per syscall (the
-    first matching binding's event), fired only from the current state, and the whole chain must land
-    within ``window_ns`` of its first non-``normal`` step (0 = no limit).
+    Mirrors the kernel engine's ordered semantics (bpf/ariguard-ebpf/src/main.rs ``advance``): at most
+    ONE transition per rule per syscall (the first matching binding's event), fired only from the
+    current state, and a per-step SLIDING window. The kernel rewrites ``updated_ns`` on every
+    transition and, on the next event it raises, resets a partial (non-terminal) chain when
+    ``now - updated_ns > window_ns`` — i.e. the window bounds the GAP between consecutive steps, not
+    the total chain duration (M3). Terminal states never expire; ``window_ns == 0`` disables the
+    window. Honeypot/strace traces carry ``ts_ns == 0``, so the gap is always 0 and the window is a
+    no-op there — the model only bites when real timestamps are present.
     """
     state = 0
-    started_ns: int | None = None
+    # ts of the last transition that changed state (the kernel's FsmState.updated_ns).
+    updated_ns = 0
     for ev in events:
-        if rule.window_ns and started_ns is not None and ev.ts_ns - started_ns > rule.window_ns:
-            state, started_ns = 0, None  # window elapsed: the partial chain resets
         idx = _first_event(rule, ev)
         if idx is None:
-            continue
+            continue  # no binding matches: the kernel never calls advance, so no window check here
+        # advance(): re-check the inter-step gap and reset a partial chain whose previous step is older
+        # than the window (terminal states are exempt, but we return on reaching one, so state is
+        # always non-terminal at this point).
+        if (
+            rule.window_ns
+            and 0 < state < rule.terminal_from
+            and ev.ts_ns - updated_ns > rule.window_ns
+        ):
+            state = 0
         nxt = rule.transitions.get((state, idx))
         if nxt is None:
             continue
-        state = nxt[0]
-        if started_ns is None and state != 0:
-            started_ns = ev.ts_ns
+        new_state = nxt[0]
+        if new_state != state:
+            state = new_state
+            updated_ns = ev.ts_ns  # updated_ns is rewritten on every real transition
         if state >= rule.terminal_from:
             return True
     return False
@@ -361,7 +397,7 @@ def mine_rules(
         if cand.hooks in known_chains:
             continue
         n += 1
-        name = f"{name_prefix}-{'-'.join(cand.hooks)}"[:60].rstrip("-")
+        name = chain_name(name_prefix, cand.hooks)
         rule = candidate_to_rule(cand, name, scope=scope, window_seconds=window_seconds)
         out.append(Mined(name=name, candidate=cand, rule=rule, problems=gate(rule, traces)))
     return out

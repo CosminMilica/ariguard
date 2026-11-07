@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import ClassVar
@@ -152,6 +153,29 @@ def test_retires_on_a_single_benign_fire():
     assert auto not in {r.name for r in result.rules}, "a retired rule must leave the bundle"
 
 
+def test_metrics_measures_shadow_age_from_first_seen_not_hit_span():
+    # M4: shadow age is the wall-clock time from the first hit to now, NOT the span between first and
+    # last hit. A single hit (first == last) previously gave days_observed == 0, so a rule could never
+    # satisfy min_days at the default min_hits=1 — min_days and min_hits were silently coupled.
+    from ariguard_compiler.autogen import ENFORCE, decide_mode
+
+    now = 1_000 * NS_PER_DAY
+    one_hit = {
+        "rule": "auto-x",
+        "hits": 1,
+        "benign_fires": 0,
+        "first_seen_ns": now - 8 * NS_PER_DAY,
+        "last_seen_ns": now - 8 * NS_PER_DAY,  # a single hit: first == last, zero span
+    }
+    m = loop._metrics(one_hit, now_ns=now)
+    assert m.attack_hits == 1
+    assert m.days_observed == pytest.approx(8.0)
+    # the whole point: it now promotes at the defaults (min_days=7, min_hits=1)
+    assert decide_mode(m) == ENFORCE
+    # a missing/zero first_seen (no recorded hits) yields 0 days, not a huge epoch-based age
+    assert loop._metrics({"rule": "r", "first_seen_ns": 0}, now_ns=now).days_observed == 0.0
+
+
 def test_held_in_shadow_when_window_too_short():
     base = loop.build_bundle(rules_dir=str(RULES), corpus=str(FLEET))
     auto = _auto_name(base)
@@ -190,13 +214,17 @@ class _StubConsole(BaseHTTPRequestHandler):
             )
             self._send(200, "application/x-ndjson", body)
         elif self.path == "/api/v1/rules/telemetry":
+            # The console normalises audit ts_ns to server wall-clock, so first_seen_ns is a real
+            # wall-clock time. Shadow age is measured first_seen -> now (M4): a rule first seen 10 days
+            # ago reads as ~10 days observed regardless of how many hits it has.
+            now = time.time_ns()
             rows = [
                 {
                     "rule": "auto-x",
                     "hits": 5,
                     "benign_fires": 0,
-                    "first_seen_ns": 0,
-                    "last_seen_ns": 10 * NS_PER_DAY,
+                    "first_seen_ns": now - 10 * NS_PER_DAY,
+                    "last_seen_ns": now,
                 }
             ]
             self._send(200, "application/json", json.dumps(rows).encode())
@@ -249,7 +277,7 @@ def test_console_roundtrip(stub_console):
 
     telem = loop.fetch_telemetry(stub_console)
     assert telem["auto-x"].attack_hits == 5
-    assert telem["auto-x"].days_observed == pytest.approx(10.0)
+    assert telem["auto-x"].days_observed == pytest.approx(10.0, abs=0.01)
 
     version = loop.push_bundle(stub_console, b"BUNDLE-BYTES")
     assert version == "deadbeefcafe0001"

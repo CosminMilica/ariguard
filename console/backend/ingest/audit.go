@@ -46,7 +46,7 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.DB.Begin()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	defer tx.Rollback()
@@ -81,7 +81,7 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 		err = tx.Commit()
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		serverError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

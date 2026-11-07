@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field, replace
@@ -94,16 +95,28 @@ def fetch_telemetry(
     req = _request(url, method="GET", token=token)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         rows = json.loads(resp.read().decode("utf-8") or "[]")
-    return {r["rule"]: _metrics(r) for r in rows}
+    now_ns = time.time_ns()
+    return {r["rule"]: _metrics(r, now_ns=now_ns) for r in rows}
 
 
-def _metrics(row: dict) -> ShadowMetrics:
-    first, last = int(row.get("first_seen_ns", 0)), int(row.get("last_seen_ns", 0))
-    days = (last - first) / NS_PER_DAY if last > first else 0.0
+def _metrics(row: dict, *, now_ns: int | None = None) -> ShadowMetrics:
+    """Map a console telemetry row to :class:`ShadowMetrics`.
+
+    ``days_observed`` is the rule's shadow AGE — the wall-clock time from its first recorded hit
+    (``first_seen_ns``) to now — not the span between its first and last hit. The console normalises
+    audit ``ts_ns`` to server wall-clock at ingest (console/backend/ingest/audit.go), so
+    ``first_seen_ns`` is comparable to the local clock. Measuring from the hit span instead made
+    promotion unsatisfiable at the default ``min_hits=1``: a single hit has ``first == last`` → 0 days
+    → never old enough, which silently coupled ``min_days`` and ``min_hits`` (M4). A missing/zero
+    ``first_seen_ns`` (no hits recorded) yields 0 days.
+    """
+    now = time.time_ns() if now_ns is None else now_ns
+    first = int(row.get("first_seen_ns", 0))
+    days = (now - first) / NS_PER_DAY if first > 0 else 0.0
     return ShadowMetrics(
         attack_hits=int(row.get("hits", 0)),
         benign_fires=int(row.get("benign_fires", 0)),
-        days_observed=days,
+        days_observed=max(0.0, days),
     )
 
 
@@ -349,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
 
     honeypot_url = args.honeypot or args.console
     extra_traces: list[trace.Trace] = []
-    if honeypot_url:
+    if honeypot_url and not args.dry_run:
         try:
             extra_traces = pull_traces(honeypot_url, token=args.token)
             if extra_traces:

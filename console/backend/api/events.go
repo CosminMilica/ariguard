@@ -40,7 +40,7 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 		query += ` AND (to_state IN ('compromised','breakout_imminent','escalating','suspicious') OR action != 'observe')`
 	}
 	if q := r.URL.Query().Get("q"); q != "" {
-		query += ` AND (pod LIKE ? OR namespace LIKE ? OR rule LIKE ? OR event LIKE ? OR node LIKE ?)`
+		query += ` AND (pod LIKE ? ESCAPE '\' OR namespace LIKE ? ESCAPE '\' OR rule LIKE ? ESCAPE '\' OR event LIKE ? ESCAPE '\' OR node LIKE ? ESCAPE '\')`
 		l := like(q)
 		args = append(args, l, l, l, l, l)
 	}
