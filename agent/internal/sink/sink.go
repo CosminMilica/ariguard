@@ -4,6 +4,7 @@ package sink
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,12 +124,13 @@ type LearnTrace struct {
 // Sink buffers audit events and posts them, with registrations, to a base URL.
 // A nil *Sink is a no-op.
 type Sink struct {
-	base   string
-	token  string
-	info   Registration
-	client *http.Client
-	log    *slog.Logger
-	now    func() time.Time
+	base      string
+	token     string
+	info      Registration
+	client    *http.Client
+	log       *slog.Logger
+	now       func() time.Time
+	policyPub ed25519.PublicKey // C2: when set, control-plane bundles must verify against it
 
 	mu     sync.Mutex
 	buf    []Event
@@ -149,6 +151,15 @@ type throttleKey struct {
 // New returns a sink posting to baseURL; info carries the static registration fields.
 // SetToken sets the shared bearer token sent on every control-plane request (empty = none).
 func (s *Sink) SetToken(t string) { s.token = t }
+
+// SetPolicyPubkey configures the ed25519 public key that control-plane policy bundles must verify
+// against before they are applied (C2). nil disables verification (backward-compatible). Safe on nil.
+func (s *Sink) SetPolicyPubkey(pub ed25519.PublicKey) {
+	if s == nil {
+		return
+	}
+	s.policyPub = pub
+}
 
 // auth adds the bearer token to a control-plane request, if one is configured.
 func (s *Sink) auth(req *http.Request) {
@@ -405,6 +416,16 @@ func (s *Sink) Policy(ctx context.Context, have string) (data []byte, version st
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		if err != nil {
 			return nil, "", false, err
+		}
+		// C2: when a policy public key is configured, the control-plane bundle must carry a valid
+		// detached signature before it is ever handed to the apply path. A bad/missing signature is an
+		// error, so the poller keeps the running policy (fail-closed) — a compromised console or a
+		// stolen push token cannot swap in an unsigned bundle.
+		if s.policyPub != nil {
+			sig, derr := fsm.DecodeSignature(resp.Header.Get("X-Policy-Signature"))
+			if derr != nil || !fsm.VerifyBundle(s.policyPub, body, sig) {
+				return nil, "", false, fmt.Errorf("GET /api/v1/policy: bundle signature verification failed")
+			}
 		}
 		return body, resp.Header.Get("X-Policy-Version"), true, nil
 	default:

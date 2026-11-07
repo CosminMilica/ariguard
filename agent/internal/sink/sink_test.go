@@ -291,6 +291,56 @@ func TestPolicy(t *testing.T) {
 	}
 }
 
+func TestPolicySignatureVerification(t *testing.T) {
+	bundle := []byte("signed-bundle-bytes")
+	pub, priv, _ := fsm.GenerateSigningKey()
+	sigHeader := fsm.EncodeSignature(fsm.SignBundle(priv, bundle))
+
+	newSrv := func(sig string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Policy-Version", "v9")
+			if sig != "" {
+				w.Header().Set("X-Policy-Signature", sig)
+			}
+			_, _ = w.Write(bundle)
+		}))
+	}
+
+	// pubkey set + valid signature → accepted
+	srv := newSrv(sigHeader)
+	defer srv.Close()
+	s := New(srv.URL, Registration{Node: "n1"}, quiet)
+	s.SetPolicyPubkey(pub)
+	if data, _, changed, err := s.Policy(context.Background(), ""); err != nil || !changed || string(data) != string(bundle) {
+		t.Fatalf("valid signature should be accepted: %q changed=%v err=%v", data, changed, err)
+	}
+
+	// pubkey set + wrong signature → rejected (fail-closed)
+	_, otherPriv, _ := fsm.GenerateSigningKey()
+	badSrv := newSrv(fsm.EncodeSignature(fsm.SignBundle(otherPriv, bundle)))
+	defer badSrv.Close()
+	sb := New(badSrv.URL, Registration{Node: "n1"}, quiet)
+	sb.SetPolicyPubkey(pub)
+	if _, _, _, err := sb.Policy(context.Background(), ""); err == nil {
+		t.Fatal("a bundle with a wrong signature must be rejected")
+	}
+
+	// pubkey set + missing signature header → rejected
+	noSigSrv := newSrv("")
+	defer noSigSrv.Close()
+	sn := New(noSigSrv.URL, Registration{Node: "n1"}, quiet)
+	sn.SetPolicyPubkey(pub)
+	if _, _, _, err := sn.Policy(context.Background(), ""); err == nil {
+		t.Fatal("a bundle with no signature must be rejected when a pubkey is set")
+	}
+
+	// no pubkey → verification skipped (backward-compatible)
+	plain := New(noSigSrv.URL, Registration{Node: "n1"}, quiet)
+	if _, _, changed, err := plain.Policy(context.Background(), ""); err != nil || !changed {
+		t.Fatalf("no pubkey should skip verification: changed=%v err=%v", changed, err)
+	}
+}
+
 func TestAuditBatching(t *testing.T) {
 	rec := &recorder{}
 	srv := httptest.NewServer(rec)
