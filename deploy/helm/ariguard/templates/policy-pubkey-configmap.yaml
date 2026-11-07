@@ -1,0 +1,14 @@
+{{- if .Values.agent.policySigning.publicKey }}
+# Policy-signing public key (C2). Mounted into the agent, which verifies every control-plane policy
+# bundle against it before loading it into the kernel. The key is public, so a ConfigMap is fine; the
+# matching private key stays with the signing pusher (ariguard-ctl policy push), never in the cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ariguard-policy-pubkey
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ariguard.labels" . | nindent 4 }}
+data:
+  policy.pub: {{ .Values.agent.policySigning.publicKey | quote }}
+{{- end }}
