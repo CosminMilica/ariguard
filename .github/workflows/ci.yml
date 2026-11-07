@@ -41,7 +41,7 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-only: true
-      - uses: bufbuild/buf-action@v1.6.0
+      - uses: bufbuild/buf-action@v1.7.0
         with:
           version: ${{ env.BUF_VERSION }}
           setup_only: true
@@ -71,7 +71,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           python: "true"
-      - uses: bufbuild/buf-action@v1.6.0
+      - uses: bufbuild/buf-action@v1.7.0
         with:
           version: ${{ env.BUF_VERSION }}
           setup_only: true
@@ -216,7 +216,7 @@ jobs:
             || sudo apt-get install -y -q --no-install-recommends \
                  linux-tools-common "linux-tools-$(uname -r)"
           bpftool version
-      - uses: helm/kind-action@v1.15.1
+      - uses: helm/kind-action@v1.15.2
         with:
           cluster_name: ariguard-dev
           config: deploy/kind/cluster.yaml
