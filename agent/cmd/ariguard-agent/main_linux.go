@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"flag"
 	"fmt"
@@ -136,6 +137,7 @@ func run(log *slog.Logger) error {
 	isolate := flag.String("isolate", "off", "autonomous workload isolation on a confirmed terminal mitigation: off|dryrun|on (on applies a deny-all NetworkPolicy; dryrun only labels the pod; needs Kubernetes API access)")
 	isolateFallback := flag.String("isolate-fallback", "off", "extra isolation for CNIs that ignore NetworkPolicy (e.g. kindnet): off|evict (evict deletes the quarantined pod to cut its network now; destructive)")
 	policySync := flag.Bool("policy-sync", true, "poll the console for a newer policy bundle and hot-swap it (control plane, F7; needs --sink-url)")
+	policyPubkey := flag.String("policy-pubkey", "", "path to an ed25519 public key file; when set, every policy bundle (the --bundle file and control-plane pushes) must carry a valid signature before it is applied (C2). Empty: no verification")
 	learnMode := flag.Bool("learn", false, "learn-mode: emit full-syscall traces from this node's pods to the console for novel-chain mining (F11; needs --sink-url). Adds a second program per hook and extra load; off by default")
 	learnWindow := flag.Duration("learn-window", 10*time.Second, "learn-mode: idle gap after which a per-process syscall trace is closed and posted")
 	flag.Parse()
@@ -176,8 +178,25 @@ func run(log *slog.Logger) error {
 	enforceMode := &atomic.Bool{}
 	enforceMode.Store(*enforce)
 
+	// C2: load the policy public key, if configured. When set, every bundle (the local --bundle file
+	// and control-plane pushes) must carry a valid ed25519 signature before it is applied.
+	var policyPub ed25519.PublicKey
+	if *policyPubkey != "" {
+		keyBytes, rerr := os.ReadFile(*policyPubkey)
+		if rerr != nil {
+			return fmt.Errorf("read policy pubkey: %w", rerr)
+		}
+		policyPub, err = fsm.ParsePublicKey(string(keyBytes))
+		if err != nil {
+			return fmt.Errorf("parse policy pubkey: %w", err)
+		}
+		log.Info("policy signature verification enabled", "pubkey", *policyPubkey)
+	}
+
 	var names audit.Names
-	lastBundle, err := os.ReadFile(*bundlePath)
+	// The local bundle must verify too (an attacker who swaps the file pre-start would otherwise
+	// bypass control-plane verification); a missing/invalid signature here is fatal (fail-closed).
+	lastBundle, err := readSignedBundle(*bundlePath, policyPub)
 	if err != nil {
 		return fmt.Errorf("read bundle: %w", err)
 	}
@@ -217,6 +236,7 @@ func run(log *slog.Logger) error {
 			MetricsAddr:    sink.AdvertiseAddr(*metricsAddr, os.Getenv),
 		}, log)
 		snk.SetToken(*authToken)
+		snk.SetPolicyPubkey(policyPub) // C2: control-plane bundles verified against this key (if set)
 		snk.SetBundle(sink.RulesFromBundle(bundle))
 		snk.Register(ctx)
 		out = io.MultiWriter(out, snk)
@@ -236,7 +256,7 @@ func run(log *slog.Logger) error {
 			case <-ctx.Done():
 				return
 			case <-hup:
-				data, rerr := os.ReadFile(*bundlePath)
+				data, rerr := readSignedBundle(*bundlePath, policyPub) // C2: verify the reloaded file too
 				if rerr != nil {
 					log.Error("policy reload failed", "bundle", *bundlePath, "err", rerr)
 					continue
@@ -448,6 +468,31 @@ func run(log *slog.Logger) error {
 	err = ringbuf.Stream(ctx, obj.Maps.Audit, obj.Maps.Ppid, obj.Maps.ConnDst, obj.Maps.Path, obj.Maps.Argv, out, &names, pods, rsp, markThreat, log)
 	stop()
 	return err
+}
+
+// readSignedBundle reads a policy bundle file and, when pub is set (C2), verifies a detached ed25519
+// signature from the sidecar "<path>.sig" (base64) against it. A missing or invalid signature is an
+// error, so a bundle that cannot be authenticated is never applied (fail-closed).
+func readSignedBundle(path string, pub ed25519.PublicKey) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if pub == nil {
+		return data, nil
+	}
+	sigText, err := os.ReadFile(path + ".sig")
+	if err != nil {
+		return nil, fmt.Errorf("read signature %s.sig: %w", path, err)
+	}
+	sig, err := fsm.DecodeSignature(string(sigText))
+	if err != nil {
+		return nil, fmt.Errorf("decode signature: %w", err)
+	}
+	if !fsm.VerifyBundle(pub, data, sig) {
+		return nil, fmt.Errorf("bundle signature verification failed for %s", path)
+	}
+	return data, nil
 }
 
 // applyBundleData hot-swaps a bundle given as bytes (from a file or the control plane) into the
