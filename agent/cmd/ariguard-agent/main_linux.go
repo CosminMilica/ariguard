@@ -62,9 +62,21 @@ type mutedCgroups struct {
 
 func (m mutedCgroups) PodCgroups() []uint64 {
 	all := m.src.PodCgroups()
+	// When the operator is using the mute/observe lever, a pod cgroup whose identity cannot be
+	// resolved (k8s API down, metadata not yet populated) must fail CLOSED: exclude it from the
+	// kill-gate rather than risk SIGKILLing the very pod the operator muted (H7). With no mute/observe
+	// configured there is nothing to protect, so an unidentifiable cgroup stays enforceable as before.
+	gated := !m.muted.Empty() || !m.observe.Empty()
 	out := make([]uint64, 0, len(all))
 	for _, c := range all {
 		info := m.pods.Lookup(context.Background(), c)
+		if info.Pod == "" {
+			if gated {
+				continue
+			}
+			out = append(out, c)
+			continue
+		}
 		if m.muted.Has(info.Pod) || m.observe.Has(info.Namespace) {
 			continue
 		}

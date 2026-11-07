@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ariguard_compiler.schema import (
+    ACTION_VALUES,
     HOOK_VALUES,
     Binding,
     Rule,
@@ -90,6 +91,33 @@ def test_oversized_pattern():
     big = b"/" + b"a" * 32  # 33 bytes > PATTERN_LEN - 1 (31)
     rule = _rule(bindings=[Binding(HOOK_VALUES["openat"], 0, pattern=big)])
     assert any("33 bytes" in p and "max is 31" in p for p in validate_rule(rule))
+
+
+def test_deny_on_non_lsm_hook_flagged():
+    # deny reachable only from execve is a silent no-op (no LSM deny for execve) — H2
+    rule = _rule(
+        bindings=[Binding(HOOK_VALUES["execve"], 0)],
+        transitions={(0, 0): (1, ACTION_VALUES["deny"])},
+    )
+    assert any("deny action" in p and "no LSM" in p for p in validate_rule(rule))
+
+
+def test_deny_on_mount_is_allowed():
+    # mount is LSM-backed, so deny enforces there
+    rule = _rule(
+        bindings=[Binding(HOOK_VALUES["mount"], 0)],
+        transitions={(0, 0): (1, ACTION_VALUES["deny"])},
+    )
+    assert validate_rule(rule) == []
+
+
+def test_deny_event_with_one_lsm_hook_is_allowed():
+    # the deny event also fires on mount (LSM-backed), so it enforces there despite fsmount
+    rule = _rule(
+        bindings=[Binding(HOOK_VALUES["fsmount"], 0), Binding(HOOK_VALUES["mount"], 0)],
+        transitions={(0, 0): (1, ACTION_VALUES["deny"])},
+    )
+    assert not any("no LSM" in p for p in validate_rule(rule))
 
 
 def test_nul_in_pattern():

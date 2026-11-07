@@ -86,9 +86,16 @@ type Assembler struct {
 	log    *slog.Logger
 	now    func() time.Time
 
+	shipCh chan []sink.LearnTrace
+
 	mu     sync.Mutex
 	groups map[key]*group
 }
+
+// shipBuffer bounds how many closed-trace batches wait to be posted. Posting runs in a dedicated
+// shipper goroutine (see Run) so a slow or hung console never stalls the ring drain (H6); a full
+// buffer drops the batch (logged) rather than blocking the drainer.
+const shipBuffer = 64
 
 // NewAssembler builds an assembler. meta resolves pod identity (may be nil), threat marks cgroups
 // that tripped a mitigation (may be nil = everything benign), hook names a hook index, and emit
@@ -104,6 +111,7 @@ func NewAssembler(cfg Config, meta Meta, threat *ThreatSet, node string, hook fu
 		log:    log,
 		now:    time.Now,
 		groups: map[key]*group{},
+		shipCh: make(chan []sink.LearnTrace, shipBuffer),
 	}
 }
 
@@ -132,23 +140,70 @@ func (a *Assembler) Add(ctx context.Context, r Record) {
 	}
 	a.mu.Unlock()
 
-	if len(full) > 0 {
-		a.ship(ctx, full)
-	}
+	a.enqueue(full) // non-blocking: a full group is handed to the shipper, never posted on this path
 }
 
-// Run sweeps idle groups into traces every cfg.Sweep until ctx is done, then flushes all open groups.
+// Run sweeps idle groups into traces every cfg.Sweep, posting them via a dedicated shipper goroutine
+// so the ring drain (which calls Add) never blocks on HTTP (H6). On ctx cancellation it flushes all
+// open groups and waits for the shipper to drain the buffer.
 func (a *Assembler) Run(ctx context.Context) {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case ts := <-a.shipCh:
+				a.emitNow(ts)
+			case <-stop:
+				for { // drain whatever is still buffered, then exit
+					select {
+					case ts := <-a.shipCh:
+						a.emitNow(ts)
+					default:
+						return
+					}
+				}
+			}
+		}
+	}()
+
 	tick := time.NewTicker(a.cfg.Sweep)
 	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			a.ship(context.Background(), a.drain(true))
+			a.enqueue(a.drain(true)) // final flush, before telling the shipper to drain + exit
+			close(stop)
+			<-done
 			return
 		case <-tick.C:
-			a.ship(ctx, a.drain(false))
+			a.enqueue(a.drain(false))
 		}
+	}
+}
+
+// enqueue hands a batch of closed traces to the shipper without blocking; a full buffer drops the
+// batch (logged) rather than stalling the caller (the ring drainer or the sweep).
+func (a *Assembler) enqueue(traces []sink.LearnTrace) {
+	if len(traces) == 0 {
+		return
+	}
+	select {
+	case a.shipCh <- traces:
+	default:
+		a.log.Warn("learn: ship buffer full, dropping traces", "traces", len(traces))
+	}
+}
+
+// emitNow posts a batch synchronously (runs only in the shipper goroutine). Uses a background context
+// so a final flush on shutdown still completes within the sink's own timeout.
+func (a *Assembler) emitNow(traces []sink.LearnTrace) {
+	if len(traces) == 0 || a.emit == nil {
+		return
+	}
+	if err := a.emit(context.Background(), traces); err != nil {
+		a.log.Warn("learn: post traces", "traces", len(traces), "err", err)
 	}
 }
 
@@ -212,13 +267,4 @@ func (a *Assembler) source(k key) string {
 		return fmt.Sprintf("learn:%s#%d:%d", a.node, k.cgroup, k.tgid)
 	}
 	return fmt.Sprintf("learn:%s/%s/%s#%d:%d", a.node, ns, pod, k.cgroup, k.tgid)
-}
-
-func (a *Assembler) ship(ctx context.Context, traces []sink.LearnTrace) {
-	if len(traces) == 0 || a.emit == nil {
-		return
-	}
-	if err := a.emit(ctx, traces); err != nil {
-		a.log.Warn("learn: post traces", "traces", len(traces), "err", err)
-	}
 }

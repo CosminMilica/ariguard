@@ -151,6 +151,18 @@ def _occurrences(
 # --- mining -----------------------------------------------------------------------------------
 
 
+def warn_no_baseline(where: str) -> None:
+    """Loudly refuse to mine when there is attack traffic but no benign baseline. Without a baseline
+    the contrast filter is vacuous (every chain looks novel), so ubiquitous normal sequences would be
+    mined and could be promoted to kill rules. The caller returns no candidates (H3)."""
+    print(
+        f"ariguard: WARNING: {where}: attack traces present but the benign baseline is EMPTY; "
+        "refusing to mine (every chain would look novel and could become a kill rule). "
+        "Provide benign traces.",
+        file=sys.stderr,
+    )
+
+
 def mine_candidates(
     traces: list[trace.Trace],
     *,
@@ -164,6 +176,9 @@ def mine_candidates(
     attack = [t for t in traces if t.label == trace.ATTACK]
     benign = [t for t in traces if t.label == trace.BENIGN]
     if not attack:
+        return []
+    if not benign:
+        warn_no_baseline("mine_candidates")
         return []
     attack_hooks = [list(t.hooks) for t in attack]
     benign_hooks = [list(t.hooks) for t in benign]

@@ -30,7 +30,25 @@ func TestNilSafe(t *testing.T) {
 	if s.Has("a") {
 		t.Fatal("nil set must report false")
 	}
+	if !s.Empty() {
+		t.Fatal("nil set must report empty")
+	}
 	s.Replace([]string{"a"}) // must not panic
+}
+
+func TestEmpty(t *testing.T) {
+	s := New()
+	if !s.Empty() {
+		t.Fatal("new set should be empty")
+	}
+	s.Replace([]string{"p1"})
+	if s.Empty() {
+		t.Fatal("set with an entry is not empty")
+	}
+	s.Replace(nil)
+	if !s.Empty() {
+		t.Fatal("cleared set should be empty")
+	}
 }
 
 func TestPollRefreshesAndKeepsOnError(t *testing.T) {
