@@ -80,7 +80,9 @@ def pull_traces(
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
     objs = [json.loads(line) for line in body.splitlines() if line.strip()]
-    labeled = [o for o in objs if isinstance(o, dict) and o.get("label") in (trace.ATTACK, trace.BENIGN)]
+    labeled = [
+        o for o in objs if isinstance(o, dict) and o.get("label") in (trace.ATTACK, trace.BENIGN)
+    ]
     return trace.from_records(labeled)
 
 

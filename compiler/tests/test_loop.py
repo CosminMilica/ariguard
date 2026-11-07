@@ -63,7 +63,9 @@ def test_to_shadow_strips_actions_keeps_states():
     )
     sh = _to_shadow(fr)
     assert sh.transitions.keys() == fr.transitions.keys()
-    assert all(sh.transitions[k][0] == fr.transitions[k][0] for k in fr.transitions)  # next_state kept
+    assert all(
+        sh.transitions[k][0] == fr.transitions[k][0] for k in fr.transitions
+    )  # next_state kept
     assert all(a == 0 for (_t, a) in sh.transitions.values())
     assert any(a != 0 for (_t, a) in fr.transitions.values())  # original untouched
 

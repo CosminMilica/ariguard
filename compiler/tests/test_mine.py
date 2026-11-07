@@ -132,7 +132,10 @@ def test_simulate_one_event_per_syscall_matches_kernel():
     # a distinct-hook chain still fires (no regression)
     cand2 = mine.Candidate(("openat", "setns", "execve"), 1.0, 0.0)
     rule2 = parse_rule(mine.candidate_to_rule(cand2, "mined-ok"))
-    assert mine.simulate(rule2, (trace.Event("openat"), trace.Event("setns"), trace.Event("execve"))) is True
+    assert (
+        mine.simulate(rule2, (trace.Event("openat"), trace.Event("setns"), trace.Event("execve")))
+        is True
+    )
 
 
 def test_simulate_respects_the_window():
