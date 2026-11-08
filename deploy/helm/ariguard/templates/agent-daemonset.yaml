@@ -52,6 +52,9 @@ spec:
             {{- if not .Values.agent.policySync }}
             - --policy-sync=false
             {{- end }}
+            {{- if .Values.agent.policySigning.publicKey }}
+            - --policy-pubkey=/etc/ariguard/policy.pub
+            {{- end }}
           env:
             - name: NODE_NAME
               valueFrom:
@@ -94,6 +97,11 @@ spec:
             - name: debugfs
               mountPath: /sys/kernel/debug
               readOnly: true
+            {{- if .Values.agent.policySigning.publicKey }}
+            - name: policy-pubkey
+              mountPath: /etc/ariguard
+              readOnly: true
+            {{- end }}
       volumes:
         - name: cgroup
           hostPath:
@@ -108,3 +116,8 @@ spec:
         - name: debugfs
           hostPath:
             path: /sys/kernel/debug
+        {{- if .Values.agent.policySigning.publicKey }}
+        - name: policy-pubkey
+          configMap:
+            name: ariguard-policy-pubkey
+        {{- end }}

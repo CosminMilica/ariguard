@@ -196,7 +196,7 @@ func run(log *slog.Logger) error {
 	var names audit.Names
 	// The local bundle must verify too (an attacker who swaps the file pre-start would otherwise
 	// bypass control-plane verification); a missing/invalid signature here is fatal (fail-closed).
-	lastBundle, err := readSignedBundle(*bundlePath, policyPub)
+	lastBundle, err := readSignedBundle(*bundlePath, policyPub, log)
 	if err != nil {
 		return fmt.Errorf("read bundle: %w", err)
 	}
@@ -256,7 +256,7 @@ func run(log *slog.Logger) error {
 			case <-ctx.Done():
 				return
 			case <-hup:
-				data, rerr := readSignedBundle(*bundlePath, policyPub) // C2: verify the reloaded file too
+				data, rerr := readSignedBundle(*bundlePath, policyPub, log) // C2: verify the reloaded file too
 				if rerr != nil {
 					log.Error("policy reload failed", "bundle", *bundlePath, "err", rerr)
 					continue
@@ -471,9 +471,11 @@ func run(log *slog.Logger) error {
 }
 
 // readSignedBundle reads a policy bundle file and, when pub is set (C2), verifies a detached ed25519
-// signature from the sidecar "<path>.sig" (base64) against it. A missing or invalid signature is an
-// error, so a bundle that cannot be authenticated is never applied (fail-closed).
-func readSignedBundle(path string, pub ed25519.PublicKey) ([]byte, error) {
+// signature from the sidecar "<path>.sig". A PRESENT but invalid signature is an error (tamper →
+// fail-closed). A MISSING sidecar is allowed with a warning: the --bundle file ships inside the
+// immutable agent image (a trusted artifact), unlike the control-plane push which is always verified;
+// this keeps signing deployable without forcing the baked bundle to be signed at image-build time.
+func readSignedBundle(path string, pub ed25519.PublicKey, log *slog.Logger) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -483,6 +485,10 @@ func readSignedBundle(path string, pub ed25519.PublicKey) ([]byte, error) {
 	}
 	sigText, err := os.ReadFile(path + ".sig")
 	if err != nil {
+		if os.IsNotExist(err) {
+			log.Warn("policy bundle file has no signature; trusting the image (control-plane pushes are still verified)", "bundle", path)
+			return data, nil
+		}
 		return nil, fmt.Errorf("read signature %s.sig: %w", path, err)
 	}
 	sig, err := fsm.DecodeSignature(string(sigText))

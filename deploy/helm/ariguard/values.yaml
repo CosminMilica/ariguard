@@ -32,6 +32,13 @@ agent:
   # Poll the console (control plane) for a newer policy bundle and hot-swap it without an image
   # rebuild (F7). Needs a sink URL. Set false to pin the agent to its baked-in bundle.
   policySync: true
+  # Policy bundle signing (C2): set publicKey to a base64 ed25519 public key to make the agent verify
+  # every control-plane policy bundle against it before loading it into the kernel (fail-closed) — a
+  # stolen push token or a compromised console then cannot swap in a forged bundle. Generate a keypair
+  # with `ariguard-ctl keygen`; keep the private .key for the signing pusher (`ariguard-ctl policy
+  # push`), and put the public key here. Empty = no verification (backward-compatible).
+  policySigning:
+    publicKey: ""
   resources:
     requests:
       cpu: 50m
