@@ -39,7 +39,7 @@ func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/perf", a.perf)
 	mux.HandleFunc("POST /api/mutes", a.mute)
-	mux.HandleFunc("DELETE /api/mutes/{pod}", a.unmute)
+	mux.HandleFunc("DELETE /api/mutes/{namespace}/{pod}", a.unmute)
 	mux.HandleFunc("GET /api/observe-namespaces", a.observeNamespaces)
 	mux.HandleFunc("POST /api/observe-namespaces", a.observeNamespace)
 	mux.HandleFunc("DELETE /api/observe-namespaces/{ns}", a.unobserveNamespace)

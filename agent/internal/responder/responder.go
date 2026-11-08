@@ -127,7 +127,11 @@ func New(client kubernetes.Interface, mode Mode, fallback Fallback, muted func(s
 	return &Responder{client: client, mode: mode, fallback: fallback, muted: muted, observeNs: observeNs, report: report, release: release, log: log, seen: map[string]bool{}}
 }
 
-func (r *Responder) isMuted(pod string) bool   { return r.muted != nil && r.muted(pod) }
+// isMuted reports whether the "namespace/pod" workload is muted (C4: mutes are namespace-scoped, so
+// two pods with the same name in different namespaces do not share a mute).
+func (r *Responder) isMuted(ns, pod string) bool {
+	return r.muted != nil && r.muted(ns+"/"+pod)
+}
 func (r *Responder) isObserved(ns string) bool { return r.observeNs != nil && r.observeNs(ns) }
 
 // React quarantines the pod behind a confirmed terminal mitigation. It returns immediately and
@@ -142,7 +146,7 @@ func (r *Responder) React(ctx context.Context, e audit.Event) {
 	if e.Pod == "" || e.Namespace == "" || systemNamespaces[e.Namespace] {
 		return
 	}
-	if r.isMuted(e.Pod) || r.isObserved(e.Namespace) {
+	if r.isMuted(e.Namespace, e.Pod) || r.isObserved(e.Namespace) {
 		return
 	}
 	key := e.Namespace + "/" + e.Pod
@@ -257,7 +261,7 @@ func (r *Responder) reconcileReleases(ctx context.Context) {
 	var toRelease []string
 	for key := range r.seen {
 		ns, pod, ok := splitKey(key)
-		if ok && (r.isMuted(pod) || r.isObserved(ns)) {
+		if ok && (r.isMuted(ns, pod) || r.isObserved(ns)) {
 			toRelease = append(toRelease, key)
 		}
 	}

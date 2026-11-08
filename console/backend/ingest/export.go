@@ -92,7 +92,7 @@ func (h *Handler) RuleTelemetry(w http.ResponseWriter, r *http.Request) {
 		  COALESCE(SUM(CASE WHEN m.pod IS NOT NULL THEN 1 ELSE 0 END),0),
 		  MIN(a.ts_ns), MAX(a.ts_ns)
 		FROM audit_events a
-		LEFT JOIN mutes m ON m.pod = a.pod
+		LEFT JOIN mutes m ON m.pod = a.namespace || '/' || a.pod
 		WHERE a.rule != '' AND a.to_state IN ` + threatStatesSQL + `
 		GROUP BY a.rule ORDER BY a.rule`)
 	if err != nil {

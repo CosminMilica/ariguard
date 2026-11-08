@@ -78,7 +78,7 @@ func TestRuleTelemetryCountsHitsAndBenignFires(t *testing.T) {
 	insertAudit(t, h, "auto-b", "podMuted", "compromised", base)
 	// a non-threat state must NOT count as a hit
 	insertAudit(t, h, "auto-a", "podC", "connected", base+2*day)
-	if _, err := h.DB.Exec(`INSERT INTO mutes(pod) VALUES('podMuted')`); err != nil {
+	if _, err := h.DB.Exec(`INSERT INTO mutes(pod) VALUES('/podMuted')`); err != nil {
 		t.Fatalf("mute: %v", err)
 	}
 

@@ -40,7 +40,7 @@ func (a *API) autonomyView(w http.ResponseWriter, r *http.Request) {
 			SELECT a.rule AS rule, COUNT(*) AS hits, COUNT(DISTINCT a.pod) AS pods,
 			       COALESCE(SUM(CASE WHEN m.pod IS NOT NULL THEN 1 ELSE 0 END),0) AS benign,
 			       MIN(a.ts_ns) AS first_ns, MAX(a.ts_ns) AS last_ns
-			FROM audit_events a LEFT JOIN mutes m ON m.pod = a.pod
+			FROM audit_events a LEFT JOIN mutes m ON m.pod = a.namespace || '/' || a.pod
 			WHERE a.rule != '' AND a.to_state IN ` + threatStatesSQL + `
 			GROUP BY a.rule
 		) t ON t.rule = r.name
