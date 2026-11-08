@@ -30,7 +30,7 @@ func (a *API) overview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	states := map[string]int{"normal": 0, "suspicious": 0, "escalating": 0, "breakout_imminent": 0, "compromised": 0}
-	rows, err := a.DB.Query(`SELECT state, COUNT(*) FROM workloads WHERE pod NOT IN (SELECT pod FROM mutes) GROUP BY state`)
+	rows, err := a.DB.Query(`SELECT state, COUNT(*) FROM workloads WHERE namespace || '/' || pod NOT IN (SELECT pod FROM mutes) GROUP BY state`)
 	if err != nil {
 		fail(w, err)
 		return

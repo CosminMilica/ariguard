@@ -114,12 +114,12 @@ func TestIngestAndRead(t *testing.T) {
 		t.Fatalf("rules window: %v", rw)
 	}
 
-	post("/api/mutes", `{"pod":"p1"}`)
+	post("/api/mutes", `{"namespace":"ns","pod":"p1"}`)
 	get("/api/workloads", &wl)
 	if len(wl) != 1 {
 		t.Fatalf("muted workloads: %v", wl)
 	}
-	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/mutes/p1", nil)
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/mutes/ns/p1", nil)
 	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 204 {
 		t.Fatalf("unmute: %v %v", err, resp)
 	}

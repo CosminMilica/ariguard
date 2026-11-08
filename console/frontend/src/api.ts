@@ -292,15 +292,20 @@ export async function refresh() {
   }
 }
 
-export async function mute(pod: string) {
-  await req('POST', '/api/mutes', {}, { pod })
-  if (!store.muted.includes(pod)) store.muted.push(pod)
+// Mutes are keyed by "namespace/pod" (C4): a pod name alone is ambiguous across namespaces.
+export function muteKey(namespace: string, pod: string) { return `${namespace}/${pod}` }
+export function isMuted(namespace: string, pod: string) { return store.muted.includes(muteKey(namespace, pod)) }
+
+export async function mute(namespace: string, pod: string) {
+  await req('POST', '/api/mutes', {}, { namespace, pod })
+  const k = muteKey(namespace, pod)
+  if (!store.muted.includes(k)) store.muted.push(k)
   await refresh()
 }
 
-export async function unmute(pod: string) {
-  await req('DELETE', `/api/mutes/${encodeURIComponent(pod)}`)
-  store.muted = store.muted.filter(p => p !== pod)
+export async function unmute(namespace: string, pod: string) {
+  await req('DELETE', `/api/mutes/${encodeURIComponent(namespace)}/${encodeURIComponent(pod)}`)
+  store.muted = store.muted.filter(k => k !== muteKey(namespace, pod))
   await refresh()
 }
 

@@ -78,7 +78,7 @@ func (m mutedCgroups) PodCgroups() []uint64 {
 			out = append(out, c)
 			continue
 		}
-		if m.muted.Has(info.Pod) || m.observe.Has(info.Namespace) {
+		if m.muted.Has(info.Namespace+"/"+info.Pod) || m.observe.Has(info.Namespace) {
 			continue
 		}
 		out = append(out, c)

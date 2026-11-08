@@ -36,10 +36,17 @@ func TestAuthGuardsControlPlane(t *testing.T) {
 	}
 }
 
-func TestAuthLeavesReadAPIOpen(t *testing.T) {
-	// the browser read API (/api/...) is not under /api/v1 and needs no token
-	if c := authProbe(t, "s3cr3t", "/api/overview", ""); c != http.StatusOK {
-		t.Fatalf("read api -> %d, want 200", c)
+func TestAuthGuardsReadAPI(t *testing.T) {
+	// M5: with a token set, the read API requires it too (it leaks rules/coverage/chains otherwise)
+	if c := authProbe(t, "s3cr3t", "/api/overview", ""); c != http.StatusUnauthorized {
+		t.Fatalf("read api no token -> %d, want 401", c)
+	}
+	if c := authProbe(t, "s3cr3t", "/api/overview", "Bearer s3cr3t"); c != http.StatusOK {
+		t.Fatalf("read api with token -> %d, want 200", c)
+	}
+	// static assets (outside /api/) stay open so the operator can reach Settings to set the token
+	if c := authProbe(t, "s3cr3t", "/index.html", ""); c != http.StatusOK {
+		t.Fatalf("static asset -> %d, want 200 (open)", c)
 	}
 }
 
@@ -63,13 +70,12 @@ func TestAuthGuardsOperatorWrites(t *testing.T) {
 				t.Fatalf("%s %s with token -> %d, want 200", m, p, c)
 			}
 		}
-		// GET stays open (the frontend lists these without a token)
-		if c := authProbeM(t, http.MethodGet, tok, p, ""); c != http.StatusOK {
-			t.Fatalf("GET %s -> %d, want 200 (open)", p, c)
+		// GET now also requires the token (M5: the whole /api/ surface is gated when a token is set)
+		if c := authProbeM(t, http.MethodGet, tok, p, ""); c != http.StatusUnauthorized {
+			t.Fatalf("GET %s no token -> %d, want 401", p, c)
 		}
-	}
-	// an unrelated read-API write is NOT gated (only the operator-write paths are)
-	if c := authProbeM(t, http.MethodPost, tok, "/api/something-else", ""); c != http.StatusOK {
-		t.Fatalf("non-operator POST -> %d, want 200", c)
+		if c := authProbeM(t, http.MethodGet, tok, p, "Bearer "+tok); c != http.StatusOK {
+			t.Fatalf("GET %s with token -> %d, want 200", p, c)
+		}
 	}
 }

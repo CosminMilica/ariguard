@@ -55,7 +55,7 @@ func TestAutonomyRetireOnBenignFire(t *testing.T) {
 	mustPost(t, srv, "/api/v1/register", `{"node":"n1","bundle":{"rules":[
 		{"name":"auto-x","scope":"process","terminal_action":"observe","num_states":2,
 		 "states":["normal"],"events":["e"],"transitions":[{"from":"normal","event":"e","to":"normal","action":"observe"}]}]}}`)
-	mustPost(t, srv, "/api/mutes", `{"pod":"known-good"}`)
+	mustPost(t, srv, "/api/mutes", `{"namespace":"ns","pod":"known-good"}`)
 	now := time.Now().UnixNano()
 	mustPost(t, srv, "/api/v1/audit",
 		`[`+evJSON(now-1000, "known-good", "auto-x", "normal", "compromised", "observe", false, nil)+`]`)

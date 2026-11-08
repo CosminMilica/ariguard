@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import RowMenu from '../components/RowMenu.vue'
-import { store, isAlerting, isKill, mute, unmute, inspectChain, type Workload } from '../api'
+import { store, isAlerting, isKill, mute, unmute, isMuted, inspectChain, type Workload } from '../api'
 
 const nodes = computed(() => [...new Set(store.allWorkloads.map(w => w.node))].sort())
 const alerting = computed(() => store.allWorkloads.filter(isAlerting).length)
@@ -24,7 +24,7 @@ async function act(a: 'details' | 'chain' | 'copy' | 'mute') {
   else if (a === 'chain') inspectChain(w.pod)
   else if (a === 'copy') navigator.clipboard?.writeText(w.pod).catch(() => {})
   else {
-    try { store.muted.includes(w.pod) ? await unmute(w.pod) : await mute(w.pod) } catch { store.offline = true }
+    try { isMuted(w.namespace, w.pod) ? await unmute(w.namespace, w.pod) : await mute(w.namespace, w.pod) } catch { store.offline = true }
   }
 }
 const close = () => { menu.value = null }
@@ -52,7 +52,7 @@ onBeforeUnmount(() => { document.removeEventListener('click', close); document.r
         <tbody>
           <tr v-if="!store.workloads.length"><td colspan="8" class="empty">{{ total ? 'No workloads match this filter.' : 'No workloads reported yet.' }}</td></tr>
           <tr v-for="w in store.workloads" :key="w.pod + w.node">
-            <td class="mono">{{ w.pod }}<span v-if="store.muted.includes(w.pod)" class="dim"> · muted</span></td>
+            <td class="mono">{{ w.pod }}<span v-if="isMuted(w.namespace, w.pod)" class="dim"> · muted</span></td>
             <td class="mono dim">{{ w.namespace }}</td><td class="mono dim">{{ w.node }}</td><td class="mono">{{ w.comm }}</td>
             <td class="mono"><span v-if="!w.rule || w.rule === '—'" class="dim">—</span><template v-else>{{ w.rule }}</template></td>
             <td><span class="st" :class="w.state">{{ w.state.replace('_', ' ') }}</span></td>
@@ -64,7 +64,7 @@ onBeforeUnmount(() => { document.removeEventListener('click', close); document.r
     </div>
   </section>
 
-  <RowMenu v-if="menu" :x="menu.x" :y="menu.y" :muted="store.muted.includes(menu.w.pod)" @action="act" />
+  <RowMenu v-if="menu" :x="menu.x" :y="menu.y" :muted="isMuted(menu.w.namespace, menu.w.pod)" @action="act" />
 
   <div v-if="detail" class="modal-bg" @click="detail = null">
     <div class="modal" @click.stop>

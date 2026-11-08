@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import ContainmentBar from '../components/ContainmentBar.vue'
 import QuarantineBadge from '../components/QuarantineBadge.vue'
-import { store, clockNs, toMs, openChainModal, exportIncident, mute, unmute, type TriageRow } from '../api'
+import { store, clockNs, toMs, openChainModal, exportIncident, mute, unmute, isMuted, type TriageRow } from '../api'
 
 const stateLabel = (s: string) => (s || '').replace(/_/g, ' ')
 const key = (t: TriageRow) => t.pod + t.started_ts_ns
@@ -29,9 +29,9 @@ function onExport(e: Event, pod: string) {
   exportIncident(pod)
 }
 // Operator response: muting a pod stops further kill/quarantine and releases it if isolated (F6).
-async function onMute(e: Event, pod: string) {
+async function onMute(e: Event, ns: string, pod: string) {
   e.stopPropagation()
-  try { store.muted.includes(pod) ? await unmute(pod) : await mute(pod) } catch { store.offline = true }
+  try { isMuted(ns, pod) ? await unmute(ns, pod) : await mute(ns, pod) } catch { store.offline = true }
 }
 </script>
 
@@ -66,9 +66,9 @@ async function onMute(e: Event, pod: string) {
             <td class="mono dim">{{ clockNs(t.last_ts_ns) }}</td>
             <td><span :class="outcome(t.outcome).cls">{{ outcome(t.outcome).text }}</span><QuarantineBadge v-if="t.quarantined" class="qb" /></td>
             <td class="right nowrap">
-              <button class="btn" :class="{ warn: t.quarantined && !store.muted.includes(t.pod) }" @click="onMute($event, t.pod)"
-                :title="store.muted.includes(t.pod) ? 'Re-enable enforcement' : 'Mute: stop kill/quarantine and release if isolated'">
-                {{ store.muted.includes(t.pod) ? 'Muted' : (t.quarantined ? 'Release' : 'Mute') }}
+              <button class="btn" :class="{ warn: t.quarantined && !isMuted(t.namespace, t.pod) }" @click="onMute($event, t.namespace, t.pod)"
+                :title="isMuted(t.namespace, t.pod) ? 'Re-enable enforcement' : 'Mute: stop kill/quarantine and release if isolated'">
+                {{ isMuted(t.namespace, t.pod) ? 'Muted' : (t.quarantined ? 'Release' : 'Mute') }}
               </button>
               <button class="btn" @click="onExport($event, t.pod)">Export</button>
             </td>

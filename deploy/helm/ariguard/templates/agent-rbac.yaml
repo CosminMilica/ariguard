@@ -13,12 +13,31 @@ metadata:
   labels:
     {{- include "ariguard.labels" . | nindent 4 }}
 rules:
+  # Read pod metadata cluster-wide for cgroup->pod resolution (podmeta polls Pods(AllNamespaces).List).
+  # Always granted; carries no destructive power. See docs/agent-rbac.md.
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["list", "watch", "get", "patch", "delete"] # patch: (un)label on quarantine/release; delete: --isolate-fallback=evict
+    verbs:
+      - get
+      - list
+      - watch
+      {{- if ne .Values.agent.isolate "off" }}
+      # (un)label pods on quarantine / release. Only with autonomous isolation (agent.isolate != off).
+      - patch
+      {{- end }}
+      {{- if eq .Values.agent.isolateFallback "evict" }}
+      # Delete (evict) a quarantined pod. Only with agent.isolateFallback=evict.
+      - delete
+      {{- end }}
+  {{- if eq .Values.agent.isolate "on" }}
+  # Create the deny-all NetworkPolicy that quarantines a compromised pod. Only agent.isolate=on
+  # applies one (dryrun only labels, so it never touches the networking API); the responder only
+  # ever creates it (AlreadyExists is success), so no update/get/list/patch is needed.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["get", "list", "create", "update"] # deny-all NetworkPolicy to isolate a compromised pod
+    verbs:
+      - create
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -112,10 +112,10 @@ func TestPerfHandler(t *testing.T) {
 
 func TestMuteRoundTrip(t *testing.T) {
 	srv := newServer(t)
-	mustPost(t, srv, "/api/mutes", `{"pod":"p1"}`)
+	mustPost(t, srv, "/api/mutes", `{"namespace":"ns","pod":"p1"}`)
 	var muted []string
 	mustGet(t, srv, "/api/v1/mutes", &muted)
-	if len(muted) != 1 || muted[0] != "p1" {
+	if len(muted) != 1 || muted[0] != "ns/p1" {
 		t.Fatalf("muted=%+v", muted)
 	}
 	// empty pod is rejected
@@ -124,7 +124,7 @@ func TestMuteRoundTrip(t *testing.T) {
 		t.Fatalf("empty mute: status=%d", resp.StatusCode)
 	}
 	// unmute
-	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/mutes/p1", nil)
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/mutes/ns/p1", nil)
 	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("unmute: status=%d", resp.StatusCode)

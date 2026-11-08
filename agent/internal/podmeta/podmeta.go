@@ -22,7 +22,13 @@ const DefaultCgroupRoot = "/sys/fs/cgroup"
 
 const (
 	refreshInterval = 2 * time.Second
-	listTimeout     = time.Second
+	// missWalkInterval bounds how often an IsPod cache MISS forces an immediate re-walk. The periodic
+	// walk only refreshes every refreshInterval, so a pod created just after a walk is invisible for up
+	// to ~2s — long enough for a fast init-time attack to go unaudited and un-kill-gated (H4). Re-walking
+	// on a miss (rate-limited) shrinks that window to ~this interval without walking the tree on every
+	// miss for genuine non-pod (host/system) cgroups.
+	missWalkInterval = 250 * time.Millisecond
+	listTimeout      = time.Second
 )
 
 // Info names a container; fields are empty when unknown.
@@ -65,12 +71,13 @@ type Resolver struct {
 	log    *slog.Logger
 	now    func() time.Time
 
-	mu         sync.Mutex
-	paths      map[uint64]string
-	walkedAt   time.Time
-	containers map[string]Info
-	byIP       map[string]Info // pod IP -> pod identity, for connect-destination resolution (F2)
-	listedAt   time.Time
+	mu           sync.Mutex
+	paths        map[uint64]string
+	walkedAt     time.Time
+	missWalkedAt time.Time // last re-walk forced by an IsPod cache miss (H4 rate limit)
+	containers   map[string]Info
+	byIP         map[string]Info // pod IP -> pod identity, for connect-destination resolution (F2)
+	listedAt     time.Time
 }
 
 // New returns a resolver over the cgroup tree at root; client may be nil (no pod names).
@@ -130,7 +137,11 @@ func (r *Resolver) IsPod(cgroupID uint64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	path, ok := r.paths[cgroupID]
-	if !ok && r.due(r.walkedAt) {
+	// On a miss, force a re-walk — the periodic walk may be up to refreshInterval stale, missing a
+	// just-created pod (H4). Rate-limited to missWalkInterval so a stream of misses for genuine non-pod
+	// cgroups does not re-walk the whole tree on every call.
+	if !ok && (r.due(r.walkedAt) || r.now().Sub(r.missWalkedAt) >= missWalkInterval) {
+		r.missWalkedAt = r.now()
 		r.walk()
 		path, ok = r.paths[cgroupID]
 	}

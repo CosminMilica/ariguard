@@ -17,7 +17,7 @@ func (a *API) workloads(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 
 	query := `SELECT pod,namespace,node,comm,rule,state,action FROM workloads
-		WHERE pod NOT IN (SELECT pod FROM mutes)`
+		WHERE namespace || '/' || pod NOT IN (SELECT pod FROM mutes)`
 	var args []any
 	switch filter {
 	case "", "all":

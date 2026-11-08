@@ -324,3 +324,23 @@ func TestPodCgroups(t *testing.T) {
 		t.Fatalf("PodCgroups = %v, want [%d]", got, pod)
 	}
 }
+
+func TestIsPodReWalksOnMiss(t *testing.T) {
+	root := t.TempDir()
+	mkdir(t, root, "")
+	if err := os.WriteFile(filepath.Join(root, "cgroup.procs"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, _, c := newResolver(t, root)
+	// first lookup walks an empty tree
+	if r.IsPod(1 << 40) {
+		t.Fatal("unexpected pod before any exist")
+	}
+	// a pod appears just after that walk, still within refreshInterval (periodic walk not due yet)
+	rel := "kubepods.slice/kubepods-pod9.slice/cri-containerd-" + idA + ".scope"
+	ino := mkdir(t, root, rel)
+	c.t = c.t.Add(300 * time.Millisecond) // < refreshInterval, >= missWalkInterval
+	if !r.IsPod(ino) {
+		t.Fatal("a pod created just after a walk must be picked up by the miss re-walk (H4)")
+	}
+}

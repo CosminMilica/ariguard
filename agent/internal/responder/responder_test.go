@@ -223,7 +223,7 @@ func TestReactSkips(t *testing.T) {
 
 func TestReactRespectsMute(t *testing.T) {
 	c := fake.NewSimpleClientset(newPod("ariguard-eval", "muted"))
-	r := New(c, ModeOn, FallbackOff, func(pod string) bool { return pod == "muted" }, nil, nil, nil, quiet)
+	r := New(c, ModeOn, FallbackOff, func(key string) bool { return key == "ariguard-eval/muted" }, nil, nil, nil, quiet)
 	r.React(context.Background(), kill("ariguard-eval", "muted"))
 	time.Sleep(100 * time.Millisecond)
 	if p, _ := c.CoreV1().Pods("ariguard-eval").Get(context.Background(), "muted", metav1.GetOptions{}); p.Labels[QuarantineLabel] != "" {

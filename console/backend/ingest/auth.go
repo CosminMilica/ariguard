@@ -10,32 +10,18 @@ import (
 // register, audit, quarantine, traces and above all the policy PUT that every agent hot-swaps.
 const AuthPrefix = "/api/v1/"
 
-// operatorWritePrefixes are the read-API paths whose POST/DELETE change fleet behaviour (the
-// detect/enforce mode, the mute allowlist, the observe-only and learn-mode namespace sets). They live
-// on the browser-facing /api/ surface, but the *writes* must be token-gated: otherwise any in-cluster
-// pod could flip the whole fleet to detect-only or mute the pod it is about to compromise. GET on
-// these paths stays open (the frontend lists them without a token); only mutations require it.
-var operatorWritePrefixes = []string{
-	"/api/mode",
-	"/api/mutes",
-	"/api/observe-namespaces",
-	"/api/learn-namespaces",
-}
+// apiPrefix is the whole API surface. When a token is configured, EVERY /api/ request requires it
+// (M5): the read API otherwise leaks the full rule set, detection coverage and per-pod attack chains
+// to any in-cluster pod, letting an attacker map coverage and craft a bypass. The frontend attaches
+// the operator token (set in Settings) to all requests, so the browser UI keeps working. Static
+// assets are served outside /api/ and stay open so the operator can reach the Settings page to set
+// the token. An empty token (dev) disables the check.
+const apiPrefix = "/api/"
 
-// needsAuth reports whether r must carry the token: every /api/v1/ request, plus any POST/DELETE to
-// an operator-write path.
+// needsAuth reports whether r must carry the token: any request under /api/ (which includes the
+// fleet-facing /api/v1/ control plane and the browser read/operator API).
 func needsAuth(r *http.Request) bool {
-	if strings.HasPrefix(r.URL.Path, AuthPrefix) {
-		return true
-	}
-	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
-		for _, p := range operatorWritePrefixes {
-			if strings.HasPrefix(r.URL.Path, p) {
-				return true
-			}
-		}
-	}
-	return false
+	return strings.HasPrefix(r.URL.Path, apiPrefix)
 }
 
 // Auth wraps next so protected requests (see needsAuth) must carry "Authorization: Bearer <token>".
