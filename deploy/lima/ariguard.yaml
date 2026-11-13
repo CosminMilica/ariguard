@@ -71,7 +71,7 @@ provision:
       #!/bin/bash
       set -euo pipefail
       ARCH="$(dpkg --print-architecture)"  # arm64 | amd64
-      GO_VERSION=1.27.3
+      GO_VERSION=1.27.4
       if [ "$(/usr/local/go/bin/go env GOVERSION 2>/dev/null)" != "go${GO_VERSION}" ]; then
         rm -rf /usr/local/go
         curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
