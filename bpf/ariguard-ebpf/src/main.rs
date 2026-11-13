@@ -434,10 +434,30 @@ fn state_is(key: &FsmKey, state: u32) -> bool {
 // (policy.enforce == 1 && cgroup in AG_PODS); when the committed transition's action is
 // KILL and can_kill holds, the current task is SIGKILLed and the audit record is marked
 // enforced (F5). Detection, state and audit are identical to Phase 1.5 otherwise.
-#[inline(always)]
-fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill: bool) {
+//
+// This is a bpf-to-bpf subprogram (inline(never)), NOT inlined into handle(): handle() is itself
+// inlined into all 16 sw_<hook> tracepoint programs, and its binding loop calls advance up to
+// MAX_BINDINGS_PER_HOOK times. Inlining advance would copy its whole body (map lookups, transition,
+// state write, deny token, audit emit) ~14x into each of the 16 programs and sit on the 5.15
+// verifier instruction ceiling. As a subprogram it is emitted once per program and each call site is
+// a single `call`, which frees the budget H5's new hooks/fields need (M2). It takes only scalars and
+// touches only global maps/helpers, so it is subprogram-safe on 5.15.
+//
+// advance does NOT call bpf_send_signal: it returns whether the caller must SIGKILL (the committed
+// action is KILL under enforcement) so the kill stays in handle()'s tracepoint context. bpf-linker
+// places this subprogram in a shared .text section; the BPF LSM programs (lsm_sb_mount/move_mount)
+// pull it in at link time, and bpf_send_signal is not permitted in BPF_PROG_TYPE_LSM on 5.15, so its
+// presence in advance made the whole LSM program fail to verify — the loader then silently skipped
+// the LSM attach and the DENY path went dead. Keeping send_signal out of advance keeps it LSM-safe.
+#[inline(never)]
+fn advance(rule: u32, event: u32, hook_kill: u32, cgroup_id: u64, tgid: u32) -> bool {
+    // BPF bpf-to-bpf calls pass at most 5 scalar args in registers (r1-r5); a 6th goes on the callee
+    // frame, which the 5.15 verifier rejects ("R11 is invalid"). hook is < NUM_HOOKS (16), so can_kill
+    // rides in its top bit — keeping advance at 5 args with no behaviour change.
+    let can_kill = (hook_kill >> 31) != 0;
+    let hook = hook_kill & 0x7fff_ffff;
     let Some(rp) = AG_RULES.get_ptr(rule) else {
-        return;
+        return false;
     };
     let (num_states, num_events, trans_base, scope, terminal_from, window_ns) = unsafe {
         (
@@ -450,7 +470,7 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
         )
     };
     if num_states == 0 || num_events == 0 || event >= num_events {
-        return;
+        return false;
     }
 
     let id = if scope == SCOPE_PROCESS {
@@ -470,16 +490,16 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
         state = STATE_INITIAL;
     }
     if state >= num_states {
-        return;
+        return false;
     }
 
     let rel = state * num_events + event;
     let index = trans_base + rel;
     if rel >= num_states * num_events || index >= MAX_TRANSITIONS {
-        return;
+        return false;
     }
     let Some(tp) = AG_TRANSITIONS.get_ptr(index) else {
-        return;
+        return false;
     };
     let (next_state, action) = unsafe { ((*tp).next_state, (*tp).action) };
 
@@ -551,12 +571,9 @@ fn advance(rule: u32, event: u32, hook: u32, cgroup_id: u64, tgid: u32, can_kill
         }
     }
 
-    if enforced {
-        unsafe {
-            bpf_send_signal(SIGKILL);
-        }
-        bump_metric(METRIC_KILLS);
-    }
+    // The caller (handle, inlined into the tracepoint program) issues the SIGKILL: see the header
+    // note on why send_signal cannot live in this subprogram.
+    enforced
 }
 
 // Consumes a deny token armed by the tracepoint for the current task (phase 2b). Returns
@@ -682,7 +699,19 @@ fn handle(ctx: &TracePointContext, hook: u32) -> u32 {
         }
 
         bump_metric(METRIC_EVENTS);
-        advance(rule, b.event, hook, cgroup_id, tgid, can_kill);
+        let kill = advance(
+            rule,
+            b.event,
+            hook | ((can_kill as u32) << 31),
+            cgroup_id,
+            tgid,
+        );
+        if kill {
+            unsafe {
+                bpf_send_signal(SIGKILL);
+            }
+            bump_metric(METRIC_KILLS);
+        }
         done |= 1 << rule;
     }
     0
